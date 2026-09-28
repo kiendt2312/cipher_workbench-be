@@ -494,14 +494,15 @@ curl -sS -o /dev/null -w '%{http_code}\n' http://localhost:8000/openapi.json
 
 - `db`: PostgreSQL 17, dữ liệu nằm trong volume `pgdata`, có healthcheck;
 - `migrate`: chạy `alembic upgrade head` một lần sau khi `db` healthy;
-- `app`: chạy sau khi `migrate` thành công, cổng `8000`.
+- `app`: chạy sau khi `migrate` thành công; trong container vẫn là cổng `8000`,
+  máy host truy cập qua `http://localhost:${APP_HOST_PORT}` (mặc định `8080`).
 
 ```bash
 cp .env.example .env   # đổi POSTGRES_PASSWORD và DATABASE_URL cho khớp
 docker compose up --build
-curl -s http://localhost:8000/api/health
+curl -s http://localhost:8080/api/health
 # {"success":true,"result":{"app":"ok","database":"ok"}}
-curl -s 'http://localhost:8000/api/history?limit=5'
+curl -s 'http://localhost:8080/api/history?limit=5'
 docker compose down        # giữ dữ liệu
 docker compose down -v     # xóa luôn volume dữ liệu
 ```

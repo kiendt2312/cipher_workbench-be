@@ -28,7 +28,7 @@ services:
   app:
     build: .
     ports:
-      - "8000:8000"
+      - "${APP_HOST_PORT:-8080}:8000"
     environment:
       DATABASE_URL: ${DATABASE_URL}
     depends_on:
