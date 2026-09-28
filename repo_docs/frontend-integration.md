@@ -1230,9 +1230,8 @@ Các invariant UI Week 1 tiếp tục bắt buộc khi mở rộng thêm cipher:
 - Tabs/selectors/drop zone có semantics/ARIA phù hợp; copy failure có thông báo
   tiếng Việt và không làm UI kẹt.
 
-Ma trận UI đầy đủ vẫn nằm trong
-[web-ui spec](../openspec/specs/web-ui/spec.md);
-phần tóm tắt này không làm yếu bất kỳ requirement nào của spec đó.
+UI thuộc phạm vi FE; BE không giữ OpenSpec cho UI. Các invariant trên chỉ là
+khuyến nghị để FE bám theo contract API.
 
 ## 12. Migration checklist từ 12 lên 15 route (chỉ cho FE cũ)
 
