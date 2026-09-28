@@ -425,14 +425,20 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 Không đặt `DATABASE_URL` thì app chạy không có database: 15 route cipher hoạt
 động bình thường, `/api/health` báo `database: "disabled"` và `/api/history` trả
-503. Muốn bật lịch sử khi chạy local bằng uv, trỏ tới một PostgreSQL đang chạy và
-áp migration trước:
+503. Muốn chạy app bằng uv (có `--reload`) nhưng dùng PostgreSQL của
+docker-compose, chỉ bật service `db`; nó mở cổng `127.0.0.1:${DB_HOST_PORT}`
+(mặc định `5433`):
 
 ```bash
-export DATABASE_URL=postgresql+asyncpg://cipher:change-me@localhost:5432/cipher_workbench
+docker compose up -d db
+set -a && . ./.env && set +a
+export DATABASE_URL="postgresql+asyncpg://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:${DB_HOST_PORT:-5433}/$POSTGRES_DB"
 uv run alembic upgrade head
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
+
+Nếu service `app` của compose cũng đang chạy thì dừng nó trước
+(`docker compose stop app`) để giải phóng cổng `8000`.
 
 Sau khi server khởi động, đối chiếu runtime tại `/docs` hoặc `/openapi.json` thay
 vì duy trì một bản OpenAPI sao chép trong README.
