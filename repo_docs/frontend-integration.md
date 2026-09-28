@@ -9,8 +9,8 @@ thuần, nhưng hành vi API và trạng thái quan sát được phải giữ �
 - **Người mới:** đọc mục **A. Bắt đầu nhanh** (khoảng 10 phút) rồi dùng file
   [`examples/cipher-api.ts`](examples/cipher-api.ts). Các mục 1–17 là tra cứu chi tiết.
 - **Đã tích hợp trước đây:** đọc mục **0. Thay đổi gần đây**.
-- UI tĩnh tại `/` của backend là một FE chạy được theo đúng tài liệu này; mở nó để
-  xem hành vi mẫu.
+- Backend **không có UI**: giao diện thuộc project FE. Thử API tại `/docs`
+  (<http://localhost:8080/docs> khi chạy docker-compose).
 
 ## A. Bắt đầu nhanh
 
@@ -126,13 +126,24 @@ Checklist nghiệm thu đầy đủ ở mục 14.
 
 ## 0. Thay đổi gần đây
 
-### 0.0 UI static tại `/` hỗ trợ đủ 5 cipher (`2026-09-28`)
+### 0.0 Backend bỏ UI static tại `/` (`2026-09-28`)
 
-UI đi kèm backend không còn là Caesar-only: có bộ chọn 5 cipher, ô khóa theo từng
-cipher (Affine có hai ô `a`/`b`), cảnh báo Playfair, lịch sử trên trình duyệt (mục 17)
-và tab lịch sử máy chủ (mục 16). UI chỉ dùng API công khai trong tài liệu này, nên là
-ví dụ chạy được của contract: mở `http://localhost:8080/` khi chạy docker-compose.
-FE riêng không phải đổi gì vì thay đổi này.
+Backend không còn phục vụ giao diện: `GET /` và `/static/*` trả 404. Giao diện do
+project FE sở hữu. `/docs` (Swagger) và `/openapi.json` vẫn là nơi xem và thử API;
+15 route cipher, `/api/health` và `/api/history` không đổi.
+
+Nếu backend trên máy vẫn là bản cũ (mở `/` còn thấy UI, hoặc `/api/health` thiếu
+`history`), build lại từ `main` mới nhất:
+
+```bash
+git pull
+docker compose up -d --build
+curl -s http://localhost:8080/api/health
+# {"success":true,"result":{"app":"ok","database":"ok","history":"enabled"}}
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080/   # 404
+```
+
+FE không phải đổi code vì thay đổi này.
 
 ### 0.1 Khóa lịch sử server, retention 30 ngày, lịch sử trên trình duyệt (`2026-09-28`)
 
@@ -242,7 +253,7 @@ FastAPI :8000 (compose publish ra host :8080)
   └── PostgreSQL (tùy chọn): bảng cipher_operations ← /api/history, /api/health
 ```
 
-Backend phục vụ UI và API cùng origin. Trong container và khi chạy bằng uv, app
+Backend chỉ phục vụ API, `/docs` và `/openapi.json`; không có UI. Trong container và khi chạy bằng uv, app
 nghe cổng `8000`; docker-compose publish ra máy host ở cổng `8080`
 (`APP_HOST_PORT`). FE gọi đường dẫn tương đối, ví dụ `/api/vigenere/encrypt`;
 không ghi cứng backend host/port trong code.
@@ -1263,9 +1274,6 @@ khuyến nghị để FE bám theo contract API.
   không yêu cầu CORS.
 - [ ] Health check dùng `GET /api/health`, không dùng `/health`.
 
-Checklist này mô tả công việc của FE riêng. UI static đi kèm backend đã làm theo
-checklist này trong change `update-static-ui-all-ciphers`.
-
 ## 13. Hành vi demo cũ không được sao chép
 
 [`Caesar_Cipher_Tool_Demo.html`](../Caesar_Cipher_Tool_Demo.html) chỉ là reference UI cũ.
@@ -1386,7 +1394,7 @@ Cần Docker. Trong thư mục repo backend:
 cp .env.example .env          # lần đầu; đổi POSTGRES_PASSWORD và DATABASE_URL cho khớp
 docker compose up -d --build  # db + migrate + app
 curl -s http://localhost:8080/api/health
-# {"success":true,"result":{"app":"ok","database":"ok"}}
+# {"success":true,"result":{"app":"ok","database":"ok","history":"enabled"}}
 ```
 
 - Backend ở `http://localhost:8080`; proxy `/api` của FE dev server về đây.
@@ -1395,7 +1403,7 @@ curl -s http://localhost:8080/api/health
 - Muốn thử màn hình lịch sử khi không có DB: chạy backend bằng
   `uv run uvicorn app.main:app --port 8000` mà không đặt `DATABASE_URL`; khi đó
   `database` là `disabled` và `/api/history` trả 503.
-- Tạo dữ liệu mẫu: gọi vài request encrypt/decrypt bất kỳ qua UI hoặc `curl`, mỗi
+- Tạo dữ liệu mẫu: gọi vài request encrypt/decrypt bất kỳ qua `/docs` hoặc `curl`, mỗi
   request sinh một dòng lịch sử.
 
 ### 16.2 `GET /api/health`
