@@ -499,7 +499,7 @@ curl -sS -o /dev/null -w '%{http_code}\n' http://localhost:8000/openapi.json
 cp .env.example .env   # đổi POSTGRES_PASSWORD và DATABASE_URL cho khớp
 docker compose up --build
 curl -s http://localhost:8080/api/health
-# {"success":true,"result":{"app":"ok","database":"ok"}}
+# {"success":true,"result":{"app":"ok","database":"ok","history":"enabled"}}
 curl -s 'http://localhost:8080/api/history?limit=5'
 docker compose down        # giữ dữ liệu
 docker compose down -v     # xóa luôn volume dữ liệu
