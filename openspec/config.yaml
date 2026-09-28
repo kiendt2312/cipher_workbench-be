@@ -7,14 +7,13 @@ context: |
   cho giới hạn/thông báo lỗi - khi mâu thuẫn thì theo docx).
 
   Tech stack (đã chốt):
-  - Python 3.12, FastAPI + uvicorn, phục vụ luôn cả UI (không tách project frontend, same-origin, không CORS)
+  - Python 3.12, FastAPI + uvicorn, chỉ phục vụ API; UI thuộc project FE riêng (không CORS, FE proxy `/api`)
   - Quản lý dependency bằng uv (pyproject.toml)
   - Test: pytest + pytest-cov, coverage backend tối thiểu 90%
   - Lint/format: Ruff (check + format)
   - Docker: Dockerfile multi-stage; app chạy cổng 8000 cho cả local lẫn Docker
   - Database (tùy chọn, bật bằng DATABASE_URL): PostgreSQL 17, SQLAlchemy 2.x async + asyncpg,
     migration bằng Alembic, môi trường local qua docker-compose (db + migrate + app)
-  - UI: static HTML/CSS/JS thuần (không React), phục vụ qua StaticFiles/Jinja2
 
   Ràng buộc nghiệp vụ chốt từ docx (ưu tiên hơn HTML demo):
   - Dung lượng file tối đa 5 MiB (5 * 1024 * 1024 bytes); đúng 5 MiB thì nhận, 5 MiB + 1 byte thì từ chối
@@ -38,5 +37,5 @@ rules:
     - Scenario phải phủ đủ bảng validation docx mục 5 gồm HTTP status và thông báo chính xác
     - Ngoại lệ hạ tầng ngoài docx chỉ được thêm khi chủ sở hữu phê duyệt rõ ràng; phải gắn nhãn "ngoại lệ hạ tầng được chủ sở hữu phê duyệt", không được sửa hoặc trình bày sai nguồn sự thật nghiệp vụ trong docx
   tasks:
-    - Chia task theo module (Caesar Core, File Processing, HTTP Adapter, Web UI, Exception Handling, Test, Docker)
+    - Chia task theo module (Caesar Core, File Processing, HTTP Adapter, Exception Handling, Test, Docker)
     - Mỗi task tối đa khoảng 2 giờ và ghi rõ tiêu chí hoàn thành

@@ -32,7 +32,7 @@ ALLOWED_EXTERNAL_ROOTS = {
     "config": set(),
     "db": {"sqlalchemy"},
     "history": {"sqlalchemy"},
-    "main": {"fastapi", "jinja2", "pydantic", "starlette", "uvicorn"},
+    "main": {"fastapi", "pydantic", "starlette", "uvicorn"},
 }
 FORBIDDEN_CORE_IMPORTS = (
     "fastapi",
