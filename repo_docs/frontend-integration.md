@@ -12,8 +12,9 @@ API và trạng thái quan sát được phải giữ đúng contract dưới đ
   (commit `fb459dd`).
 - Ngày cập nhật guide: `2026-09-28` (khóa lịch sử server, retention 30 ngày, lịch sử trên
   trình duyệt; PostgreSQL, health và lịch sử; Playfair decrypt bỏ filler cuối; xem mục 0).
-- Backend hiện có 15 endpoint cipher; UI static đang đi kèm backend vẫn là UI
-  Caesar-only. Change backend này không triển khai FE; consumer có thể bổ sung control riêng.
+- Backend hiện có 15 endpoint cipher. UI static đi kèm backend tại `/` đã hỗ trợ đủ
+  5 cipher và hai loại lịch sử (change `update-static-ui-all-ciphers`); có thể dùng làm
+  bản tham chiếu hành vi khi FE riêng tích hợp.
 - [OpenSpec Columnar đang active](../openspec/changes/add-columnar-transposition-cipher/),
   [OpenSpec Affine](../openspec/changes/add-affine-cipher/),
   [OpenSpec Playfair/Vigenère đã hoàn thành](../openspec/changes/add-playfair-vigenere-ciphers/),
@@ -24,6 +25,14 @@ API và trạng thái quan sát được phải giữ đúng contract dưới đ
   [add-postgres-persistence](../openspec/changes/add-postgres-persistence/).
 
 ## 0. Thay đổi gần đây
+
+### 0.0 UI static tại `/` hỗ trợ đủ 5 cipher (`2026-09-28`)
+
+UI đi kèm backend không còn là Caesar-only: có bộ chọn 5 cipher, ô khóa theo từng
+cipher (Affine có hai ô `a`/`b`), cảnh báo Playfair, lịch sử trên trình duyệt (mục 17)
+và tab lịch sử máy chủ (mục 16). UI chỉ dùng API công khai trong tài liệu này, nên là
+ví dụ chạy được của contract: mở `http://localhost:8080/` khi chạy docker-compose.
+FE riêng không phải đổi gì vì thay đổi này.
 
 ### 0.1 Khóa lịch sử server, retention 30 ngày, lịch sử trên trình duyệt (`2026-09-28`)
 
@@ -1155,9 +1164,8 @@ phần tóm tắt này không làm yếu bất kỳ requirement nào của spec 
   không yêu cầu CORS.
 - [ ] Health check dùng `GET /api/health`, không dùng `/health`.
 
-Checklist này mô tả công việc consumer tương lai; change backend
-`add-columnar-transposition-cipher`
-không triển khai hoặc sửa UI static/runtime FE.
+Checklist này mô tả công việc của FE riêng. UI static đi kèm backend đã làm theo
+checklist này trong change `update-static-ui-all-ciphers`.
 
 ## 13. Hành vi demo cũ không được sao chép
 
