@@ -1336,8 +1336,8 @@ Thứ tự áp dụng:
 
 1. Primary authority, theo thứ tự nội bộ: accepted requirements trong
    [OpenSpec UI năm cipher](../openspec/changes/update-static-ui-all-ciphers/),
-   [OpenSpec khóa lịch sử và retention](../openspec/changes/add-history-access-retention/),
-   [OpenSpec PostgreSQL và lịch sử](../openspec/changes/add-postgres-persistence/),
+   [OpenSpec khóa lịch sử và retention](../openspec/changes/archive/2026-09-28-add-history-access-retention/),
+   [OpenSpec PostgreSQL và lịch sử](../openspec/changes/archive/2026-09-28-add-postgres-persistence/),
    [OpenSpec Columnar](../openspec/changes/add-columnar-transposition-cipher/),
    [OpenSpec Affine](../openspec/changes/add-affine-cipher/),
    [completed OpenSpec Playfair/Vigenère](../openspec/changes/add-playfair-vigenere-ciphers/)
