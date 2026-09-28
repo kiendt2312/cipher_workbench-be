@@ -153,4 +153,58 @@ def test_health_reports_ok(db_url: str) -> None:
     with TestClient(app) as client:
         response = client.get("/api/health")
     assert response.status_code == 200
-    assert response.json()["result"] == {"app": "ok", "database": "ok"}
+    assert response.json()["result"] == {"app": "ok", "database": "ok", "history": "enabled"}
+
+
+def _insert_aged(url: str, days_old: list[int]) -> None:
+    for age in days_old:
+        run_sql(
+            url,
+            "INSERT INTO cipher_operations "
+            "(created_at, cipher, operation, source, http_status, succeeded, duration_ms) "
+            f"VALUES (now() - make_interval(days => {age}), 'caesar', 'encrypt', 'text', 200, "
+            "true, 1)",
+        )
+
+
+def test_purge_removes_only_expired_rows(db_url: str) -> None:
+    import asyncio
+
+    from app.db.engine import create_database
+    from app.history.retention import purge_expired
+
+    _insert_aged(db_url, [0, 29, 31, 45])
+
+    async def purge() -> int:
+        database = create_database(db_url)
+        try:
+            return await purge_expired(database, 30)
+        finally:
+            await database.engine.dispose()
+
+    assert asyncio.run(purge()) == 2
+    remaining = run_sql(
+        db_url,
+        "SELECT count(*) FROM cipher_operations WHERE created_at > now() - interval '30 days'",
+    )
+    assert run_sql(db_url, "SELECT count(*) FROM cipher_operations") == remaining == [(2,)]
+
+
+def test_purge_command_reports_deleted_rows(db_url: str) -> None:
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    _insert_aged(db_url, [1, 40, 50])
+    result = subprocess.run(
+        [sys.executable, "-m", "app.history.retention"],
+        cwd=Path(__file__).resolve().parents[2],
+        env={**os.environ, "DATABASE_URL": db_url, "HISTORY_RETENTION_DAYS": "30"},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0
+    assert "Deleted 2 history rows older than 30 days" in result.stdout
+    assert run_sql(db_url, "SELECT count(*) FROM cipher_operations") == [(1,)]

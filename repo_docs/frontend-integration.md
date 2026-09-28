@@ -10,8 +10,8 @@ API và trạng thái quan sát được phải giữ đúng contract dưới đ
   `c813b55719ed65b650c49d1c8353fcb7281ed084`; change OpenSpec vẫn active và chưa archive.
 - Backend áp dụng: Playfair bỏ filler cuối khi decrypt đã merge vào `main` qua PR #1
   (commit `fb459dd`).
-- Ngày cập nhật guide: `2026-09-28` (PostgreSQL, health và lịch sử; Playfair decrypt bỏ
-  filler cuối; xem mục 0).
+- Ngày cập nhật guide: `2026-09-28` (khóa lịch sử server, retention 30 ngày, lịch sử trên
+  trình duyệt; PostgreSQL, health và lịch sử; Playfair decrypt bỏ filler cuối; xem mục 0).
 - Backend hiện có 15 endpoint cipher; UI static đang đi kèm backend vẫn là UI
   Caesar-only. Change backend này không triển khai FE; consumer có thể bổ sung control riêng.
 - [OpenSpec Columnar đang active](../openspec/changes/add-columnar-transposition-cipher/),
@@ -25,7 +25,25 @@ API và trạng thái quan sát được phải giữ đúng contract dưới đ
 
 ## 0. Thay đổi gần đây
 
-### 0.1 PostgreSQL, health và lịch sử thao tác (`2026-09-28`)
+### 0.1 Khóa lịch sử server, retention 30 ngày, lịch sử trên trình duyệt (`2026-09-28`)
+
+Project không có đăng nhập, nên:
+
+- `GET /api/history` **mặc định tắt**. Khi tắt, endpoint trả HTTP 404 với message
+  "Lịch sử không được bật trên máy chủ này.". Môi trường dev (`.env.example`) bật
+  sẵn; môi trường dùng chung hoặc public sẽ tắt.
+- `GET /api/health` có thêm `result.history`: `"enabled"` hoặc `"disabled"`.
+- Lịch sử server chỉ giữ 30 ngày.
+- Lịch sử **cá nhân** của người dùng (xem lại input/kết quả của chính họ) do FE lưu
+  trên trình duyệt, không gửi lên server (mục 17).
+
+**FE cần làm:**
+
+1. Chỉ hiện màn hình lịch sử server khi health trả `history: "enabled"` và
+   `database: "ok"`; xử lý thêm 404 từ `/api/history` (mục 16.3).
+2. Làm lịch sử cá nhân trên trình duyệt theo mục 17 nếu cần tính năng "xem lại".
+
+### 0.2 PostgreSQL, health và lịch sử thao tác (`2026-09-28`)
 
 **Endpoint mới:** `GET /api/health` và `GET /api/history`. 15 route cipher giữ
 nguyên request, response, status và message.
@@ -45,7 +63,7 @@ nguyên request, response, status và message.
    `GET /api/history` theo contract ở mục 16.
 3. Không thay đổi gì ở luồng encrypt/decrypt.
 
-### 0.2 Playfair decrypt bỏ filler cuối (`2026-09-28`)
+### 0.3 Playfair decrypt bỏ filler cuối (`2026-09-28`)
 
 **Endpoint bị ảnh hưởng:** `POST /api/playfair/decrypt` và `POST /api/playfair/file`
 với `action=decrypt` (cả `response_mode=content` lẫn `file`). Encrypt, request
@@ -1199,8 +1217,10 @@ hiện tại luôn thắng demo.
 - [ ] FE dùng same-origin `/api`; local dev dùng proxy, không mock/CORS/API base cũ.
 - [ ] `/docs` và `/openapi.json` được dùng để đối chiếu runtime contract; health check
   dùng `GET /api/health`.
-- [ ] Nếu có màn hình lịch sử: xử lý đủ ba trạng thái `database` (`ok`, `disabled`,
-  `unavailable`), phân trang bằng `nextCursor`, lỗi 422/503 theo mục 16.3.
+- [ ] Nếu có màn hình lịch sử server: chỉ hiện khi health có `history: "enabled"` và
+  `database: "ok"`; phân trang bằng `nextCursor`; xử lý lỗi 404/422/503 theo mục 16.3.
+- [ ] Lịch sử cá nhân (nếu có) lưu trên trình duyệt theo mục 17: tối đa 50 mục, có nút
+  xóa, có công tắc tắt lưu, mọi truy cập storage bọc `try/catch`.
 
 ## 15. Source precedence và bảo trì
 
@@ -1269,17 +1289,23 @@ curl -s http://localhost:8080/api/health
 ### 16.2 `GET /api/health`
 
 ```json
-{"success": true, "result": {"app": "ok", "database": "ok"}}
+{"success": true, "result": {"app": "ok", "database": "ok", "history": "enabled"}}
 ```
 
 | `database` | HTTP | Ý nghĩa |
 |---|---|---|
 | `ok` | 200 | DB trả lời `SELECT 1` trong 1 giây |
-| `disabled` | 200 | Backend chạy không có DB; lịch sử tắt |
+| `disabled` | 200 | Backend chạy không có DB; không ghi lịch sử |
 | `unavailable` | 503 | Đã cấu hình DB nhưng không kết nối được |
 
-FE có thể dùng `database` để ẩn hoặc hiện màn hình lịch sử. Cipher vẫn hoạt động
-trong cả ba trạng thái.
+| `history` | Ý nghĩa |
+|---|---|
+| `enabled` | `GET /api/history` được phép gọi |
+| `disabled` | `GET /api/history` trả 404; đây là mặc định trên môi trường dùng chung |
+
+`history` không ảnh hưởng HTTP status của health. Chỉ hiện màn hình lịch sử server
+khi `history` là `enabled` và `database` là `ok`. Cipher vẫn hoạt động trong mọi
+trạng thái.
 
 ### 16.3 `GET /api/history`
 
@@ -1372,19 +1398,22 @@ Lỗi dùng envelope chung `{"success": false, "message": …}`:
 | 422 | `Giới hạn phải là số nguyên từ 1 đến 100.` | `limit` sai |
 | 422 | `Con trỏ phân trang không hợp lệ.` | `cursor` hỏng hoặc bị sửa |
 | 422 | `Bộ lọc lịch sử không hợp lệ.` | `cipher`/`operation` ngoài tập cho phép |
+| 404 | `Lịch sử không được bật trên máy chủ này.` | Server tắt `HISTORY_API_ENABLED`; kiểm tra trước mọi query |
 | 503 | `Lịch sử tạm thời không khả dụng.` | Backend không có DB hoặc DB lỗi |
 
 Lưu ý cho FE:
 
 - Lịch sử là best-effort: nếu DB lỗi đúng lúc, request đó có thể không xuất hiện.
-- Endpoint chưa có xác thực và trả lịch sử chung của cả instance, không theo user.
-- Không có API xóa lịch sử.
+- Endpoint không có xác thực và trả lịch sử chung của cả instance, không theo user.
+  Vì vậy nó mặc định tắt; chỉ bật ở môi trường dev hoặc nội bộ.
+- Server chỉ giữ 30 ngày gần nhất (có thể lệch tối đa 6 giờ). Không có API xóa.
 
 ### 16.4 Gợi ý UI cho màn hình lịch sử
 
-- Gọi `GET /api/health` khi mở màn hình: `ok` thì tải lịch sử; `disabled` thì ẩn
-  màn hình hoặc hiện "Lịch sử chưa được bật"; `unavailable` thì hiện lỗi và nút thử
-  lại.
+- Gọi `GET /api/health` khi mở màn hình. `history: "disabled"` hoặc
+  `database: "disabled"` thì ẩn màn hình lịch sử server; `database: "unavailable"` thì
+  hiện lỗi và nút thử lại; còn lại thì tải lịch sử. Vẫn xử lý 404 phòng khi cấu hình
+  server đổi giữa chừng.
 - Phân trang kiểu "Tải thêm": giữ `nextCursor` của trang cuối, gọi lại với
   `cursor=<nextCursor>`, nối thêm vào danh sách; ẩn nút khi `nextCursor` là `null`.
 - Khi đổi bộ lọc `cipher`/`operation`, bỏ cursor cũ và tải lại từ trang đầu.
@@ -1393,3 +1422,89 @@ Lưu ý cho FE:
   gốc trong lịch sử.
 - Danh sách trống (`items: []`, `nextCursor: null`) là trạng thái hợp lệ, cần có
   empty state riêng.
+
+## 17. Lịch sử cá nhân trên trình duyệt
+
+Project không có đăng nhập, nên server không thể biết request nào của ai. Tính năng
+"xem lại thao tác của tôi" (kèm input và kết quả) do FE lưu trong `localStorage` của
+trình duyệt. Dữ liệu này **không gửi lên server** và không liên quan tới
+`/api/history`.
+
+### 17.1 Quy tắc
+
+- Chỉ lưu request **thành công** (`success: true`).
+- Tối đa **50 mục**, mới nhất trước; thêm mục thứ 51 thì bỏ mục cũ nhất.
+- Mỗi mục gồm thời điểm, cipher, operation, input, key và kết quả.
+- Với file: chỉ lưu tên file, không lưu nội dung file tải lên hay file kết quả.
+- Mọi lệnh đọc/ghi `localStorage` bọc `try/catch`. Trình duyệt chặn storage (chế độ
+  riêng tư, bị đầy) thì bỏ qua lịch sử, encrypt/decrypt vẫn chạy bình thường.
+- Có nút **"Xóa lịch sử trên máy này"** và công tắc **"Lưu lịch sử trên máy này"**.
+- Hiện cảnh báo ngắn: lịch sử chứa cả key, chỉ nên bật trên máy cá nhân.
+
+### 17.2 Mẫu code
+
+```ts
+const STORAGE_KEY = "cipher-workbench.history.v1";
+const ENABLED_KEY = "cipher-workbench.history.enabled";
+const MAX_ENTRIES = 50;
+
+type LocalHistoryEntry = {
+  at: string; // new Date().toISOString()
+  cipher: "caesar" | "vigenere" | "playfair" | "affine" | "columnar";
+  operation: "encrypt" | "decrypt";
+  source: "text" | "file";
+  input: string;          // text nhập, hoặc tên file với source "file"
+  key: Record<string, string | number>; // { key } hoặc { a, b } với Affine
+  result: string | null;  // null với file tải về
+};
+
+function readLocalHistory(): LocalHistoryEntry[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function isLocalHistoryEnabled(): boolean {
+  try {
+    return localStorage.getItem(ENABLED_KEY) !== "false";
+  } catch {
+    return false;
+  }
+}
+
+function addLocalHistory(entry: LocalHistoryEntry): void {
+  if (!isLocalHistoryEnabled()) return;
+  try {
+    const next = [entry, ...readLocalHistory()].slice(0, MAX_ENTRIES);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    // Storage blocked or full: skip history, never break the cipher flow.
+  }
+}
+
+function clearLocalHistory(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Nothing to clear.
+  }
+}
+```
+
+Gọi `addLocalHistory` ngay sau khi nhận response thành công. Khi người dùng tắt
+công tắc "Lưu lịch sử trên máy này", đặt `ENABLED_KEY` là `"false"` và hỏi có muốn
+xóa lịch sử đã lưu không.
+
+### 17.3 Khác nhau giữa hai loại lịch sử
+
+| | Lịch sử cá nhân (mục 17) | Lịch sử server (mục 16) |
+|---|---|---|
+| Nơi lưu | `localStorage` trên máy người dùng | PostgreSQL trên server |
+| Ai xem được | Người dùng trên đúng trình duyệt đó | Ai gọi được `/api/history` khi cờ bật |
+| Nội dung | Input, key, kết quả | Chỉ metadata, không có nội dung |
+| Thời hạn | Đến khi người dùng xóa (tối đa 50 mục) | 30 ngày |
+| Mục đích | Xem lại thao tác của mình | Thống kê và theo dõi vận hành |

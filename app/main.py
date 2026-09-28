@@ -1,5 +1,7 @@
 """Application assembly for the Caesar Cipher service and same-origin UI."""
 
+import asyncio
+import contextlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -24,15 +26,26 @@ from app.api.routes_text import router as text_router
 from app.db.engine import create_database
 from app.errors import messages
 from app.errors.handlers import register_exception_handlers
+from app.history.retention import purge_periodically
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    retention_days = config.history_retention_days()  # Fail fast on a bad value.
     url = config.database_url()
     app.state.db = create_database(url) if url else None
+    purge_task = (
+        asyncio.create_task(purge_periodically(app.state.db, retention_days))
+        if app.state.db is not None
+        else None
+    )
     try:
         yield
     finally:
+        if purge_task is not None:
+            purge_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await purge_task
         if app.state.db is not None:
             await app.state.db.engine.dispose()
 

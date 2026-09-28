@@ -33,6 +33,7 @@ INVALID_HISTORY_LIMIT = "Giới hạn phải là số nguyên từ 1 đến 100.
 INVALID_HISTORY_CURSOR = "Con trỏ phân trang không hợp lệ."
 INVALID_HISTORY_FILTER = "Bộ lọc lịch sử không hợp lệ."
 HISTORY_UNAVAILABLE = "Lịch sử tạm thời không khả dụng."
+HISTORY_DISABLED = "Lịch sử không được bật trên máy chủ này."
 
 # Owner-approved infrastructure exception; not a canonical DOCX §5 business message.
 REQUEST_TOO_LARGE = "Yêu cầu vượt quá dung lượng cho phép."
@@ -73,4 +74,5 @@ CANONICAL_MESSAGES = (
     INVALID_HISTORY_CURSOR,
     INVALID_HISTORY_FILTER,
     HISTORY_UNAVAILABLE,
+    HISTORY_DISABLED,
 )

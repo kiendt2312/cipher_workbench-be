@@ -74,4 +74,5 @@ def db_url(test_database_url: str, monkeypatch: pytest.MonkeyPatch) -> str:
 
     run_sql(test_database_url, "TRUNCATE cipher_operations RESTART IDENTITY")
     monkeypatch.setenv("DATABASE_URL", test_database_url)
+    monkeypatch.setenv("HISTORY_API_ENABLED", "true")
     return test_database_url

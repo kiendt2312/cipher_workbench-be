@@ -10,10 +10,12 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
+from app import config
 from app.db.engine import Database
 from app.db.models import CIPHERS, OPERATIONS, CipherOperation
 from app.errors import messages
 from app.errors.exceptions import (
+    HistoryDisabledError,
     HistoryUnavailableError,
     InvalidHistoryFilterError,
     InvalidHistoryLimitError,
@@ -102,6 +104,10 @@ def _item(row: CipherOperation) -> HistoryItem:
     response_model=HistoryResponse,
     response_model_by_alias=True,
     responses={
+        404: {
+            "description": messages.HISTORY_DISABLED,
+            "content": {"application/json": {"schema": _ERROR_CONTENT}},
+        },
         422: {
             "description": messages.INVALID_HISTORY_FILTER,
             "content": {"application/json": {"schema": _ERROR_CONTENT}},
@@ -113,6 +119,8 @@ def _item(row: CipherOperation) -> HistoryItem:
     },
 )
 async def list_history(request: Request) -> HistoryResponse:
+    if not config.history_api_enabled():
+        raise HistoryDisabledError()
     query = request.query_params
     limit = _parse_limit(query.get("limit"))
     raw_cursor = query.get("cursor")

@@ -21,8 +21,8 @@ ALLOWED_APP_TARGETS = {
     "errors": {"errors"},
     "config": set(),
     "db": {"db", "config"},
-    "history": {"history", "db", "errors"},
-    "main": {"core", "services", "api", "errors", "config", "main", "db"},
+    "history": {"history", "db", "errors", "config"},
+    "main": {"core", "services", "api", "errors", "config", "main", "db", "history"},
 }
 ALLOWED_EXTERNAL_ROOTS = {
     "core": set(),
