@@ -20,16 +20,29 @@ RECORD_TIMEOUT_SECONDS = 0.5
 _NOTES_KEY = "history_notes"
 
 
-def note_history(request: Request, **fields: Any) -> None:
-    """Attach metadata the middleware cannot see: operation, response mode and lengths.
+def note_history(
+    request: Request,
+    *,
+    operation: str | None = None,
+    response_mode: str | None = None,
+    input_length: int | None = None,
+    output_length: int | None = None,
+) -> None:
+    """Attach metadata the middleware cannot see; arguments left as ``None`` are kept.
 
-    Only ``operation``, ``response_mode``, ``input_length`` and ``output_length`` are
-    stored. Callers must pass lengths, never the content itself.
+    Callers must pass lengths, never the content itself.
     """
 
     notes = getattr(request.state, _NOTES_KEY, None)
-    if notes is not None:
-        notes.update(fields)
+    if notes is None:
+        return
+    fields = {
+        "operation": operation,
+        "response_mode": response_mode,
+        "input_length": input_length,
+        "output_length": output_length,
+    }
+    notes.update({name: value for name, value in fields.items() if value is not None})
 
 
 class OperationHistoryRecorder:
@@ -58,10 +71,8 @@ class OperationHistoryRecorder:
                 status = message["status"]
             await send(message)
 
-        try:
-            await self.app(scope, receive, send_with_status)
-        finally:
-            entry = OperationEntry(
+        def entry() -> OperationEntry:
+            return OperationEntry(
                 cipher=route.cipher,
                 source=route.source,
                 operation=route.operation or notes.get("operation"),
@@ -72,7 +83,24 @@ class OperationHistoryRecorder:
                 succeeded=200 <= status < 300,
                 duration_ms=round((time.perf_counter() - started) * 1000),
             )
-            await _record_quietly(database, entry)
+
+        try:
+            await self.app(scope, receive, send_with_status)
+        except BaseException:
+            # ServerErrorMiddleware sends the 500 only after this re-raise, so the
+            # write must not hold it back.
+            _record_in_background(database, entry())
+            raise
+        await _record_quietly(database, entry())
+
+
+_background_records: set[asyncio.Task[None]] = set()
+
+
+def _record_in_background(database: Database, entry: OperationEntry) -> None:
+    task = asyncio.create_task(_record_quietly(database, entry))
+    _background_records.add(task)
+    task.add_done_callback(_background_records.discard)
 
 
 async def _record_quietly(database: Database, entry: OperationEntry) -> None:

@@ -28,6 +28,7 @@ from app.services.file_processing import (
     decode_file_bytes,
     has_allowed_extension,
     read_limited_bytes,
+    result_byte_length,
 )
 
 CipherName = Literal["vigenere", "playfair"]
@@ -139,7 +140,7 @@ async def _process_file(
     if cipher == "playfair":
         validate_playfair_content(text, parsed_action)
     result = transformer(text, parsed_key, parsed_action)
-    note_history(request, output_length=len(result.encode("utf-8")))
+    note_history(request, output_length=result_byte_length(result, had_bom))
 
     if parsed_response_mode == "content":
         return JSONResponse(

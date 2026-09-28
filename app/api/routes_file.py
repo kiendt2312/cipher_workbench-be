@@ -21,6 +21,7 @@ from app.services.file_processing import (
     decode_file_bytes,
     has_allowed_extension,
     read_limited_bytes,
+    result_byte_length,
 )
 
 router = APIRouter(prefix="/api/caesar", tags=["file"])
@@ -103,7 +104,7 @@ async def process_file(
     text, had_bom = decode_file_bytes(raw)
     del raw  # Release the upload buffer before transforming or constructing the response.
     result = transform_text(text, parsed_key, parsed_action)
-    note_history(request, output_length=len(result.encode("utf-8")))
+    note_history(request, output_length=result_byte_length(result, had_bom))
 
     if parsed_response_mode == "content":
         return JSONResponse(

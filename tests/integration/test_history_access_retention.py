@@ -179,3 +179,19 @@ def test_purge_command_requires_database_url() -> None:
     )
     assert result.returncode == 1
     assert "DATABASE_URL must be set" in result.stderr
+
+
+def test_purge_command_failure_prints_no_connection_details() -> None:
+    env = dict(os.environ)
+    env["DATABASE_URL"] = "postgresql+asyncpg://nobody:topsecret@127.0.0.1:1/none"
+    result = subprocess.run(
+        [sys.executable, "-m", "app.history.retention"],
+        cwd=PROJECT_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 1
+    assert result.stderr.strip() == "Could not purge history rows"
+    assert "topsecret" not in result.stdout + result.stderr

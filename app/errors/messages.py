@@ -34,6 +34,7 @@ INVALID_HISTORY_CURSOR = "Con trỏ phân trang không hợp lệ."
 INVALID_HISTORY_FILTER = "Bộ lọc lịch sử không hợp lệ."
 HISTORY_UNAVAILABLE = "Lịch sử tạm thời không khả dụng."
 HISTORY_DISABLED = "Lịch sử không được bật trên máy chủ này."
+DATABASE_UNAVAILABLE = "Cơ sở dữ liệu không khả dụng."
 
 # Owner-approved infrastructure exception; not a canonical DOCX §5 business message.
 REQUEST_TOO_LARGE = "Yêu cầu vượt quá dung lượng cho phép."

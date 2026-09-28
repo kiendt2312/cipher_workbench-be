@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from app import config
 from app.db.engine import Database, ping
+from app.errors import messages
 
 router = APIRouter(prefix="/api", tags=["Health"])
 
@@ -34,7 +35,7 @@ async def _database_status(database: Database | None) -> DatabaseStatus:
 @router.get(
     "/health",
     response_model=HealthResponse,
-    responses={503: {"model": HealthResponse, "description": "Database unavailable"}},
+    responses={503: {"model": HealthResponse, "description": messages.DATABASE_UNAVAILABLE}},
 )
 async def health(request: Request) -> JSONResponse:
     status = await _database_status(getattr(request.app.state, "db", None))
