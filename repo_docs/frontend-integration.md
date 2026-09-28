@@ -8,7 +8,7 @@ API và trạng thái quan sát được phải giữ đúng contract dưới đ
 - Backend áp dụng: Columnar được publish trên branch
   `feature/add-columnar-transposition-cipher` tại commit đã xác minh
   `c813b55719ed65b650c49d1c8353fcb7281ed084`; change OpenSpec vẫn active và chưa archive.
-- Ngày cập nhật guide: `2026-09-24`.
+- Ngày cập nhật guide: `2026-09-28` (Playfair decrypt bỏ filler cuối, xem mục 0).
 - Backend hiện có 15 endpoint cipher; UI static đang đi kèm backend vẫn là UI
   Caesar-only. Change backend này không triển khai FE; consumer có thể bổ sung control riêng.
 - [OpenSpec Columnar đang active](../openspec/changes/add-columnar-transposition-cipher/),
@@ -16,6 +16,37 @@ API và trạng thái quan sát được phải giữ đúng contract dưới đ
   [OpenSpec Playfair/Vigenère đã hoàn thành](../openspec/changes/add-playfair-vigenere-ciphers/),
   [OpenSpec Caesar Week 1](../openspec/changes/caesar-cipher-week1-mvp/) và runtime/OpenAPI
   của working tree này là nguồn có thẩm quyền. Guide chỉ phản chiếu contract đó.
+
+## 0. Thay đổi mới nhất — Playfair decrypt bỏ filler cuối (`2026-09-28`)
+
+**Endpoint bị ảnh hưởng:** `POST /api/playfair/decrypt` và `POST /api/playfair/file`
+với `action=decrypt` (cả `response_mode=content` lẫn `file`). Encrypt, request
+shape, status code, message lỗi và filename **không đổi**.
+
+**Hành vi mới:** sau khi giải mã, backend bỏ đúng **một** filler ở cuối kết quả:
+
+- kết quả kết thúc bằng `XQ` → bỏ `Q`;
+- ngược lại, kết quả kết thúc bằng `X` → bỏ `X`;
+- filler giữa chuỗi (cặp chữ lặp) vẫn giữ nguyên.
+
+| Ciphertext (key `PLAYFAIR EXAMPLE`) | Trước | Sau |
+|---|---|---|
+| `PDGW` (từ `ABX`) | `ABXQ` | `ABX` |
+| `BMODZBXDNAGE` (từ `HIDE THE GOLD`) | `HIDETHEGOLDX` | `HIDETHEGOLD` |
+| `GWGW` (từ `XX`) | `XQXQ` | `XQX` |
+| `BMODZBXDNABEKUDMUIXMMOUVIF` | `HIDETHEGOLDINTHETREXESTUMP` | không đổi |
+| Encrypt + decrypt `BALLOON` | `BALXLOON` | không đổi (filler giữa chuỗi) |
+
+**Giới hạn đã chấp nhận:** ciphertext không phân biệt được filler với chữ thật,
+nên plaintext có số chữ chẵn kết thúc bằng `X` sẽ mất `X` cuối (`AX → A`).
+
+**FE cần làm:**
+
+1. Hiển thị nguyên `result` từ server; **không** tự strip thêm X/Q ở client.
+   Nếu FE đã từng tự bỏ X/Q cuối, xóa logic đó để tránh cắt hai lần.
+2. Cập nhật mock/fixture/test: `GWGW → XQX`, `PDGW → ABX`,
+   `BMODZBXDNAGE → HIDETHEGOLD`.
+3. Cập nhật copy cảnh báo Playfair theo mục 11 (không còn ghi "giữ filler X/Q").
 
 ## 1. Nguyên tắc tích hợp
 
@@ -188,13 +219,15 @@ Các vector bắt buộc:
 | Decrypt | `BMODZBXDNABEKUDMUIXMMOUVIF` | — | `HIDETHEGOLDINTHETREXESTUMP` |
 | Encrypt | `XX` | `XQXQ` | `GWGW` |
 | Encrypt | `ABX` | `ABXQ` | `PDGW` |
-| Decrypt | `GWGW` | — | `XQXQ` |
+| Decrypt | `PDGW` | — | `ABX` |
+| Decrypt | `GWGW` | — | `XQX` |
 
-Playfair output luôn uppercase ASCII. Decrypt giữ nguyên mọi `X`/`Q`; backend
-không đoán filler nào được chèn và không phục hồi `J`, case, whitespace, dấu câu
-hoặc Unicode đã bị loại. FE **không được heuristic-strip filler** và **không được
+Playfair output luôn uppercase ASCII. Decrypt giữ filler giữa chuỗi nhưng backend
+tự bỏ đúng một filler cuối (`…XQ → …X`, `…X → …`); plaintext chẵn kết thúc bằng `X`
+vì vậy mất `X` cuối (`AX → A`). Backend không phục hồi `J`, case, whitespace, dấu câu
+hoặc Unicode đã bị loại. FE **không được tự strip thêm filler** và **không được
 cố dựng lại formatting nguyên bản**. UI phải cảnh báo rõ rằng round-trip Playfair
-chỉ trả prepared plaintext, không phải input ban đầu.
+chỉ trả prepared plaintext (đã bỏ filler cuối), không phải input ban đầu.
 
 ### 4.4 Affine modulo 26
 
@@ -950,7 +983,7 @@ FE không được:
 - trim/sửa `text`, string key hoặc raw multipart key rồi gửi giá trị khác người dùng
   nhập; riêng numeric JSON control giữ raw state nhưng được canonicalize thành true
   JSON integer token ở bước serialize;
-- xóa filler Playfair hoặc phục hồi formatting bằng heuristic;
+- tự xóa thêm filler Playfair hoặc phục hồi formatting bằng heuristic;
 - dùng preview Blob làm official download cho nguồn file;
 - branch business logic theo chuỗi message tiếng Việt.
 
@@ -987,8 +1020,8 @@ view       = result | analysis
 
 Playfair phải có cảnh báo luôn nhìn thấy trước submit hoặc cạnh result:
 
-> Playfair chuẩn hóa thành chữ hoa ASCII, gộp J/I, loại định dạng và giữ filler
-> X/Q khi giải mã; kết quả không khôi phục nguyên văn đầu vào.
+> Playfair chuẩn hóa thành chữ hoa ASCII, gộp J/I, loại định dạng; khi giải mã giữ
+> filler X giữa chuỗi và bỏ filler cuối; kết quả không khôi phục nguyên văn đầu vào.
 
 Trong loading, khóa mọi đường thay đổi/gửi lặp: click, keyboard shortcut,
 Enter/Space trên drop zone và file drop. Status/error/result thay đổi phải được công
@@ -1032,7 +1065,7 @@ phần tóm tắt này không làm yếu bất kỳ requirement nào của spec 
   phải giải thích numeric permutation/keyword, ASCII-only trim và bounds 2..256.
 - [ ] Columnar text gửi exact JSON `text,key`; Columnar multipart gửi exact
   `file,key,action,response_mode`; không gửi key kiểu number hoặc upload part.
-- [ ] Thêm cảnh báo Playfair lossy, uppercase, `J→I` và retained filler `X/Q`.
+- [ ] Thêm cảnh báo Playfair lossy, uppercase, `J→I` và filler `X` giữa chuỗi.
 - [ ] Xóa stale result khi cipher/mode/source/input/key/a/b thay đổi hoặc request thất bại.
 - [ ] Preview file dùng `response_mode=content`; download dùng request thứ hai mode `file`.
 - [ ] Dùng server attachment và filename; không tạo official file từ preview.
@@ -1073,13 +1106,13 @@ hiện tại luôn thắng demo.
 - [ ] Cả 15 endpoint được chọn đúng theo cipher/source/operation.
 - [ ] Caesar vector `Hello World`, key `3` cho `Khoor Zruog` và decrypt đúng chiều ngược lại.
 - [ ] Vigenère vector `Attack at dawn!`/`LEMON` cho `Lxfopv ef rnhr!` và decrypt đúng.
-- [ ] Playfair canonical vector cho `BMODZBXDNABEKUDMUIXMMOUVIF` và decrypt giữ prepared text.
-- [ ] Playfair `XX→XQXQ→GWGW`, `ABX→ABXQ→PDGW`, `GWGW→XQXQ` đều đúng.
+- [ ] Playfair canonical vector cho `BMODZBXDNABEKUDMUIXMMOUVIF` và decrypt trả prepared text đã bỏ filler cuối.
+- [ ] Playfair `XX→XQXQ→GWGW`, `ABX→ABXQ→PDGW`, `PDGW→ABX`, `GWGW→XQX` đều đúng.
 - [ ] Affine `HELLO→RCLLA→HELLO` với `(5,8)` và mixed/Unicode/CRLF giữ đúng contract.
 - [ ] Affine có đúng 12 residue `a'`, 26 residue `b'` và 312 cặp normalized hợp lệ.
 - [ ] Columnar `ABCDE → BDAEC → ABCDE` với `3 1 4 2`, keyword `BALLOON` và
   Unicode/CRLF/uneven/`m>n` round-trip đúng contract, không padding/normalize.
-- [ ] FE không strip filler và hiển thị cảnh báo Playfair không lossless.
+- [ ] FE không tự strip thêm filler và hiển thị cảnh báo Playfair không lossless.
 - [ ] Caesar text gửi một JSON integer; Affine gửi hai integer `a,b`;
   Vigenère/Playfair/Columnar gửi string key.
 - [ ] Affine integer ngoài JS safe range không bị chuyển qua `number` hoặc làm tròn.

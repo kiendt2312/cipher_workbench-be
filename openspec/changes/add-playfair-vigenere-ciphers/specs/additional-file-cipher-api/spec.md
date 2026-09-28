@@ -107,7 +107,7 @@ File mode SHALL thêm lại UTF-8 BOM `EF BB BF` nếu và chỉ nếu file đ�
 
 ### Requirement: Hành vi nội dung file theo từng thuật toán
 
-Vigenère SHALL giữ nguyên line break, whitespace, số, dấu câu và Unicode, đồng thời không làm tiến key trên các ký tự đó. Playfair SHALL normalize toàn bộ nội dung file thành stream ASCII uppercase, loại non-letter và map `J` thành `I`; do đó line break/format trong input Playfair không xuất hiện trong output. Decrypt Playfair SHALL giữ filler `X`/`Q`. (Truy vết: scope mới BE-VIG-03, BE-PLAY-03; quyết định chủ sở hữu cho change này)
+Vigenère SHALL giữ nguyên line break, whitespace, số, dấu câu và Unicode, đồng thời không làm tiến key trên các ký tự đó. Playfair SHALL normalize toàn bộ nội dung file thành stream ASCII uppercase, loại non-letter và map `J` thành `I`; do đó line break/format trong input Playfair không xuất hiện trong output. Decrypt Playfair SHALL giữ filler giữa chuỗi và bỏ đúng một filler cuối như `playfair-core`. (Truy vết: scope mới BE-VIG-03, BE-PLAY-03; quyết định chủ sở hữu cho change này)
 
 #### Scenario: Vigenère giữ CRLF
 - **WHEN** file Vigenère chứa `A\r\nA` và key `BC`

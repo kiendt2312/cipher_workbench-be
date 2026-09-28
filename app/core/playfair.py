@@ -81,6 +81,14 @@ def validate_ciphertext(text: str) -> str:
     return normalized
 
 
+def strip_trailing_filler(text: str) -> str:
+    """Drop one trailing filler: ``Q`` after ``X``, otherwise a final ``X``."""
+
+    if text.endswith(("XQ", "X")):
+        return text[:-1]
+    return text
+
+
 def _matrix_positions(matrix: Matrix) -> Positions:
     return {
         char: (row_index, column_index)
@@ -127,7 +135,8 @@ def transform_text(text: str, keyword: str, operation: Operation) -> str:
     matrix = build_matrix(keyword)
     prepared = prepare_plaintext(text) if operation == "encrypt" else validate_ciphertext(text)
     positions = _matrix_positions(matrix)
-    return "".join(
+    result = "".join(
         _transform_pair(prepared[index : index + 2], matrix, positions, operation)
         for index in range(0, len(prepared), 2)
     )
+    return strip_trailing_filler(result) if operation == "decrypt" else result

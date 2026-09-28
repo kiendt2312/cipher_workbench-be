@@ -44,7 +44,7 @@ Phương án không chọn: `text.upper()` rồi `isalpha()`, loại dấu bằn
 
 ### 3. Playfair preprocessing và decrypt là hai pipeline khác nhau
 
-Encrypt sẽ normalize plaintext rồi duyệt bằng index: cặp khác nhau tiêu thụ hai ký tự; cặp lặp tiêu thụ một và chèn `X`, riêng ký tự `X` dùng `Q`; ký tự cuối dùng cùng lựa chọn filler. Decrypt chỉ normalize ciphertext, kiểm non-empty/even/no identical digraph rồi transform từng cặp; không chèn hoặc bỏ filler.
+Encrypt sẽ normalize plaintext rồi duyệt bằng index: cặp khác nhau tiêu thụ hai ký tự; cặp lặp tiêu thụ một và chèn `X`, riêng ký tự `X` dùng `Q`; ký tự cuối dùng cùng lựa chọn filler. Decrypt chỉ normalize ciphertext, kiểm non-empty/even/no identical digraph rồi transform từng cặp; không chèn filler, chỉ bỏ đúng một filler cuối (`XQ → X`, `X → ""`) theo quyết định chủ sở hữu 2026-09-28.
 
 Lý do: tách pipeline ngăn decrypt vô tình “sửa” ciphertext và làm rõ round-trip chỉ về prepared plaintext. Các vector `XX → XQXQ → GWGW` và `ABX → ABXQ → PDGW` là regression anchors.
 
