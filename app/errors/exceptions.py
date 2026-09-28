@@ -135,3 +135,23 @@ class UnexpectedError(CaesarError):
 class InvalidRequestBodyError(CaesarError):
     def __init__(self) -> None:
         super().__init__(422, messages.INVALID_REQUEST_BODY)
+
+
+class InvalidHistoryLimitError(CaesarError):
+    def __init__(self) -> None:
+        super().__init__(422, messages.INVALID_HISTORY_LIMIT)
+
+
+class InvalidHistoryCursorError(CaesarError):
+    def __init__(self) -> None:
+        super().__init__(422, messages.INVALID_HISTORY_CURSOR)
+
+
+class InvalidHistoryFilterError(CaesarError):
+    def __init__(self) -> None:
+        super().__init__(422, messages.INVALID_HISTORY_FILTER)
+
+
+class HistoryUnavailableError(CaesarError):
+    def __init__(self) -> None:
+        super().__init__(503, messages.HISTORY_UNAVAILABLE)

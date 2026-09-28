@@ -17,10 +17,12 @@ PIPELINE_RANK = {
 ALLOWED_APP_TARGETS = {
     "core": set(),
     "services": {"core", "services", "config", "errors"},
-    "api": {"core", "services", "api", "config", "errors"},
+    "api": {"core", "services", "api", "config", "errors", "db", "history"},
     "errors": {"errors"},
     "config": set(),
-    "main": {"core", "services", "api", "errors", "config", "main"},
+    "db": {"db", "config"},
+    "history": {"history", "db", "errors"},
+    "main": {"core", "services", "api", "errors", "config", "main", "db"},
 }
 ALLOWED_EXTERNAL_ROOTS = {
     "core": set(),
@@ -28,6 +30,8 @@ ALLOWED_EXTERNAL_ROOTS = {
     "api": {"fastapi", "pydantic", "starlette"},
     "errors": set(),
     "config": set(),
+    "db": {"sqlalchemy"},
+    "history": {"sqlalchemy"},
     "main": {"fastapi", "jinja2", "pydantic", "starlette", "uvicorn"},
 }
 FORBIDDEN_CORE_IMPORTS = (

@@ -16,9 +16,10 @@ consumer contract chi tiết cho cả 15 endpoint.
 
 ## 1. Tổng quan hành vi
 
-Ứng dụng chạy stateless trong một tiến trình FastAPI trên cổng `8000`. Runtime
-phục vụ API, OpenAPI và UI static cùng origin; không có database, authentication,
-session hoặc lịch sử thao tác, và không lưu input, key, file hay kết quả sau request.
+Ứng dụng chạy trong một tiến trình FastAPI trên cổng `8000`. Runtime phục vụ API,
+OpenAPI và UI static cùng origin; không có authentication hay session, và không lưu
+input, key, tên file, nội dung file hay kết quả sau request. Khi đặt `DATABASE_URL`,
+app ghi thêm **metadata** của mỗi request cipher vào PostgreSQL (xem mục 9.1).
 
 ```text
 JSON text hoặc multipart .txt
@@ -371,8 +372,11 @@ preview thành file thay thế.
 - Swagger UI: <http://localhost:8000/docs>
 - OpenAPI JSON: <http://localhost:8000/openapi.json>
 - Trang static đi kèm: <http://localhost:8000/>
-- Runtime không công bố `/health`; đừng xây readiness/liveness contract dựa trên
-  endpoint này.
+- Health: `GET /api/health` trả `{"success":true,"result":{"app":"ok","database":…}}`
+  với `database` là `ok`, `unavailable` (HTTP 503) hoặc `disabled` (không có
+  `DATABASE_URL`).
+- Lịch sử: `GET /api/history?limit=&cursor=&cipher=&operation=` trả metadata thao
+  tác, mới nhất trước; contract chi tiết nằm trong `repo_docs/frontend-integration.md`.
 - Request guard có trần hạ tầng `64 MiB` cho một `Content-Length` decimal hợp lệ;
   trần này không thay đổi giới hạn nghiệp vụ file 5 MiB. Cả năm route file được
   phân loại bằng file-size message và multipart-completion guard; các route text
@@ -419,6 +423,23 @@ uv sync --frozen
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
+Không đặt `DATABASE_URL` thì app chạy không có database: 15 route cipher hoạt
+động bình thường, `/api/health` báo `database: "disabled"` và `/api/history` trả
+503. Muốn chạy app bằng uv (có `--reload`) nhưng dùng PostgreSQL của
+docker-compose, chỉ bật service `db`; nó mở cổng `127.0.0.1:${DB_HOST_PORT}`
+(mặc định `5433`):
+
+```bash
+docker compose up -d db
+set -a && . ./.env && set +a
+export DATABASE_URL="postgresql+asyncpg://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:${DB_HOST_PORT:-5433}/$POSTGRES_DB"
+uv run alembic upgrade head
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+Nếu service `app` của compose cũng đang chạy thì dừng nó trước
+(`docker compose stop app`) để giải phóng cổng `8000`.
+
 Sau khi server khởi động, đối chiếu runtime tại `/docs` hoặc `/openapi.json` thay
 vì duy trì một bản OpenAPI sao chép trong README.
 
@@ -430,6 +451,20 @@ uv run pytest --no-cov tests/integration/test_app_runtime.py
 uv run ruff check .
 uv run ruff format --check .
 ```
+
+Test đánh dấu `db` cần PostgreSQL thật và tự bỏ qua khi không có
+`TEST_DATABASE_URL`. Chạy đầy đủ với một container tạm:
+
+```bash
+docker run -d --name cipher-test-db -e POSTGRES_USER=cipher -e POSTGRES_PASSWORD=cipher \
+  -e POSTGRES_DB=cipher_test -p 127.0.0.1:55432:5432 postgres:17
+export TEST_DATABASE_URL=postgresql+asyncpg://cipher:cipher@127.0.0.1:55432/cipher_test
+uv run pytest
+docker rm -f cipher-test-db
+```
+
+Fixture tự chạy `alembic upgrade head` và xóa sạch bảng giữa các test, nên chỉ dùng
+một database dành riêng cho test.
 
 `pyproject.toml` cấu hình coverage cho `app/`, bật branch coverage và chặn dưới
 `90%`. Các phiên bản package cụ thể được khóa trong `uv.lock`; không cần nâng cấp
@@ -453,6 +488,36 @@ curl -sS -o /dev/null -w '%{http_code}\n' http://localhost:8000/docs
 curl -sS -o /dev/null -w '%{http_code}\n' http://localhost:8000/openapi.json
 ```
 
+### 9.1 docker-compose với PostgreSQL
+
+`docker-compose.yml` dựng ba service:
+
+- `db`: PostgreSQL 17, dữ liệu nằm trong volume `pgdata`, có healthcheck;
+- `migrate`: chạy `alembic upgrade head` một lần sau khi `db` healthy;
+- `app`: chạy sau khi `migrate` thành công; trong container vẫn là cổng `8000`,
+  máy host truy cập qua `http://localhost:${APP_HOST_PORT}` (mặc định `8080`).
+
+```bash
+cp .env.example .env   # đổi POSTGRES_PASSWORD và DATABASE_URL cho khớp
+docker compose up --build
+curl -s http://localhost:8080/api/health
+# {"success":true,"result":{"app":"ok","database":"ok"}}
+curl -s 'http://localhost:8080/api/history?limit=5'
+docker compose down        # giữ dữ liệu
+docker compose down -v     # xóa luôn volume dữ liệu
+```
+
+`.env` bị gitignore và dockerignore. App không tự tạo bảng khi khởi động; schema
+chỉ thay đổi qua migration Alembic trong `alembic/versions/`.
+
+Bảng `cipher_operations` chỉ lưu metadata: cipher, operation, nguồn text/file,
+response mode, độ dài input/output (code point cho text, byte UTF-8 cho file),
+HTTP status, thành công hay lỗi và thời gian xử lý. Không lưu plaintext,
+ciphertext, key, tên file, nội dung file, IP hay user agent. Ghi lịch sử là
+best-effort: DB lỗi hoặc chậm quá 500 ms thì bản ghi bị bỏ qua, response cipher
+không đổi. `GET /api/history` chưa có xác thực, nên ai truy cập được app đều đọc
+được lịch sử chung.
+
 Container chạy trực tiếp Uvicorn; repository không cấu hình production reverse
 proxy, TLS, rate limiting, cloud deployment hoặc orchestration.
 
@@ -465,7 +530,7 @@ thêm rate limiting; cấu hình và triển khai lớp đó nằm ngoài phạm
 ```text
 app/
 ├── main.py                         # assembly, router, middleware, UI static
-├── config.py                       # giới hạn file/request và cổng
+├── config.py                       # giới hạn file/request, cổng, DATABASE_URL
 ├── core/
 │   ├── caesar.py                   # Caesar thuần
 │   ├── vigenere.py                 # Vigenère repeating-key thuần
@@ -481,10 +546,20 @@ app/
 │   ├── routes_affine_file.py       # Affine multipart strict
 │   ├── routes_columnar_text.py     # Columnar JSON strict
 │   ├── routes_columnar_file.py     # Columnar multipart strict
+│   ├── routes_health.py            # GET /api/health
+│   ├── routes_history.py           # GET /api/history
+│   ├── history_recorder.py         # middleware ghi metadata sau response
 │   ├── schemas.py                  # parse/validation và response schema
 │   └── request_size_guard.py       # 64 MiB + multipart completion guards
 ├── services/
 │   └── file_processing.py          # size, UTF-8/BOM và filename helpers
+├── db/
+│   ├── engine.py                   # async engine, session factory, ping
+│   └── models.py                   # bảng cipher_operations
+├── history/
+│   ├── routes.py                   # 15 route cipher được ghi lịch sử
+│   ├── cursor.py                   # cursor phân trang opaque
+│   └── store.py                    # ghi/đọc cipher_operations
 ├── errors/
 │   ├── messages.py                 # message public canonical
 │   ├── exceptions.py               # lỗi ứng dụng có status
@@ -492,9 +567,12 @@ app/
 ├── templates/                      # UI static Caesar-only
 └── static/
 
+alembic/                            # migration schema (alembic upgrade head)
+docker-compose.yml                  # db + migrate + app
+
 tests/
 ├── unit/                            # core, validation, file helpers, layering
-└── integration/                     # HTTP/OpenAPI, guards, UI assets
+└── integration/                     # HTTP/OpenAPI, guards, UI assets, lịch sử/PostgreSQL
 ```
 
 Các core là module thuần, không phụ thuộc FastAPI/file transport. HTTP adapters
@@ -510,7 +588,8 @@ Frontend năm thuật toán hiện hành.
 
 Ngoài phạm vi hiện tại:
 
-- authentication, authorization, database, persistence, session và history;
+- authentication, authorization, session, lịch sử theo từng user và retention/xóa lịch sử tự động;
+- lưu nội dung người dùng (input, key, file, kết quả) vào database;
 - cipher khác ngoài năm cipher này, autokey Vigenère, Playfair 6×6 hoặc Playfair Unicode/lossless;
 - phục hồi format, `J` hoặc filler giữa chuỗi khi decrypt Playfair;
 - CORS cho frontend khác origin;

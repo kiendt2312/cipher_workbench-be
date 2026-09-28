@@ -4,6 +4,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.api.history_recorder import note_history
 from app.api.request_size_guard import MultipartCompletionGuard
 from app.api.schemas import FileCipherResponse, validate_columnar_file_form
 from app.core.columnar import transform_text
@@ -113,16 +114,19 @@ async def process_columnar_file(request: Request) -> Response:
         raise StarletteHTTPException(status_code=400, detail="Malformed multipart body")
 
     file, ranks, action, response_mode = validate_columnar_file_form(form)
+    note_history(request, operation=action, response_mode=response_mode)
     if not has_allowed_extension(file.filename):
         raise UnsupportedFileTypeError()
 
     raw = await read_limited_bytes(file)
+    note_history(request, input_length=len(raw))
     if raw == b"":
         raise EmptyFileError()
 
     text, had_bom = decode_file_bytes(raw)
     del raw
     result = transform_text(text, ranks, action)
+    note_history(request, output_length=len(result.encode("utf-8")))
 
     if response_mode == "content":
         return JSONResponse(
