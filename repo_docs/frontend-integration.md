@@ -8,7 +8,8 @@ API và trạng thái quan sát được phải giữ đúng contract dưới đ
 - Backend áp dụng: Columnar được publish trên branch
   `feature/add-columnar-transposition-cipher` tại commit đã xác minh
   `c813b55719ed65b650c49d1c8353fcb7281ed084`; change OpenSpec vẫn active và chưa archive.
-- Ngày cập nhật guide: `2026-09-28` (Playfair decrypt bỏ filler cuối, xem mục 0).
+- Ngày cập nhật guide: `2026-09-28` (PostgreSQL, health và lịch sử; Playfair decrypt bỏ
+  filler cuối; xem mục 0).
 - Backend hiện có 15 endpoint cipher; UI static đang đi kèm backend vẫn là UI
   Caesar-only. Change backend này không triển khai FE; consumer có thể bổ sung control riêng.
 - [OpenSpec Columnar đang active](../openspec/changes/add-columnar-transposition-cipher/),
@@ -17,9 +18,32 @@ API và trạng thái quan sát được phải giữ đúng contract dưới đ
   [OpenSpec Caesar Week 1](../openspec/changes/caesar-cipher-week1-mvp/) và runtime/OpenAPI
   của working tree này là nguồn có thẩm quyền. Guide chỉ phản chiếu contract đó.
 - Health và lịch sử thao tác (PostgreSQL, metadata-only): xem mục 16. Hai endpoint
-  GET này không đổi contract của 15 route cipher.
+  GET này không đổi contract của 15 route cipher. OpenSpec:
+  [add-postgres-persistence](../openspec/changes/add-postgres-persistence/).
 
-## 0. Thay đổi mới nhất — Playfair decrypt bỏ filler cuối (`2026-09-28`)
+## 0. Thay đổi gần đây
+
+### 0.1 PostgreSQL, health và lịch sử thao tác (`2026-09-28`)
+
+**Endpoint mới:** `GET /api/health` và `GET /api/history`. 15 route cipher giữ
+nguyên request, response, status và message.
+
+**Hành vi mới:**
+
+- Backend có thể chạy kèm PostgreSQL. Khi có DB, mỗi request cipher (kể cả request
+  lỗi) được ghi lại dưới dạng metadata: cipher, operation, text/file, độ dài, status,
+  thời gian xử lý. Không lưu text, key, tên file, nội dung file hay kết quả.
+- Khi chạy bằng docker-compose, backend ở `http://localhost:8080`. Khi chạy bằng
+  `uv run uvicorn` mặc định vẫn là `http://localhost:8000`.
+
+**FE cần làm:**
+
+1. Trỏ dev proxy `/api` tới đúng cổng backend đang chạy (mục 2 và 16.1).
+2. Nếu làm màn hình lịch sử: gọi `GET /api/health` để biết có DB không, rồi dùng
+   `GET /api/history` theo contract ở mục 16.
+3. Không thay đổi gì ở luồng encrypt/decrypt.
+
+### 0.2 Playfair decrypt bỏ filler cuối (`2026-09-28`)
 
 **Endpoint bị ảnh hưởng:** `POST /api/playfair/decrypt` và `POST /api/playfair/file`
 với `action=decrypt` (cả `response_mode=content` lẫn `file`). Encrypt, request
@@ -71,7 +95,8 @@ Browser / FE
   │
   │  same-origin: /api/{cipher}/...
   ▼
-FastAPI :8000
+FastAPI :8000 (compose publish ra host :8080)
+  ├── history recorder: ghi metadata sau response (chỉ khi có DB)
   ├── request guards: valid Content-Length > 64 MiB + multipart framing
   ├── HTTP adapters + validation precedence
   ├── file processing: .txt / 5 MiB / UTF-8 / BOM / filename
@@ -83,26 +108,47 @@ FastAPI :8000
         ├── Affine
         └── Columnar Transposition
   │
-  └── JSON preview/error hoặc text/plain attachment
+  ├── JSON preview/error hoặc text/plain attachment
+  │
+  └── PostgreSQL (tùy chọn): bảng cipher_operations ← /api/history, /api/health
 ```
 
-Backend phục vụ UI và API cùng origin trên cổng `8000`. FE gọi đường dẫn tương đối,
-ví dụ `/api/vigenere/encrypt`; không ghi cứng backend host/port trong production.
+Backend phục vụ UI và API cùng origin. Trong container và khi chạy bằng uv, app
+nghe cổng `8000`; docker-compose publish ra máy host ở cổng `8080`
+(`APP_HOST_PORT`). FE gọi đường dẫn tương đối, ví dụ `/api/vigenere/encrypt`;
+không ghi cứng backend host/port trong code.
 
-Khi chạy FE dev server riêng, cấu hình dev proxy theo contract tương đương:
+Khi chạy FE dev server riêng, cấu hình dev proxy tới cổng backend đang chạy:
+
+| Cách chạy backend | Proxy target |
+|---|---|
+| `docker compose up` (có PostgreSQL) | `http://localhost:8080` |
+| `uv run uvicorn app.main:app --port 8000` | `http://localhost:8000` |
 
 ```text
-/api/*  ──proxy──>  http://localhost:8000/api/*
+/api/*  ──proxy──>  http://localhost:8080/api/*   (hoặc :8000 khi chạy bằng uv)
+```
+
+Ví dụ Vite, đọc target từ biến môi trường để mỗi người tự chọn:
+
+```ts
+// vite.config.ts
+export default defineConfig({
+  server: {
+    proxy: { "/api": process.env.BACKEND_URL ?? "http://localhost:8080" },
+  },
+});
 ```
 
 Backend không hứa hẹn CORS cho origin tách riêng. FE dev server khác origin phải
-proxy `/api` về `http://localhost:8000`; không khôi phục `API_BASE` trỏ
-`localhost:8080`, mock toggle hoặc local cipher service từ demo cũ.
+proxy `/api`; không khôi phục `API_BASE` ghi cứng trong code, mock toggle hoặc local
+cipher service từ demo cũ.
 
-Machine-readable surfaces của backend đang chạy:
+Machine-readable surfaces của backend đang chạy (thay `8080` bằng `8000` nếu chạy
+bằng uv):
 
-- Swagger UI: <http://localhost:8000/docs>
-- OpenAPI JSON: <http://localhost:8000/openapi.json>
+- Swagger UI: <http://localhost:8080/docs>
+- OpenAPI JSON: <http://localhost:8080/openapi.json>
 
 OpenAPI hiện hữu có ba giới hạn biểu diễn mà FE codegen phải overlay thay vì biến
 thành validation chặt hơn runtime:
@@ -116,11 +162,11 @@ thành validation chặt hơn runtime:
 
 Các giới hạn trên không tạo contract mới và không thu hẹp behavior runtime đã test.
 
-Runtime hiện tại không công bố `/health`; FE, probe và deployment không được giả
-định endpoint này tồn tại. Việc bổ sung health check là một thay đổi contract riêng.
+Health check nằm ở `GET /api/health` (mục 16.2), không phải `/health`.
 
 Không copy OpenAPI thành một YAML tĩnh khác trong FE vì bản sao sẽ dễ trôi lệch.
-Backend stateless: không lưu input, key, file, result, session hoặc history sau request.
+Backend không lưu input, key, file, result hay session. Khi có PostgreSQL, backend
+chỉ lưu metadata thao tác, đọc qua `GET /api/history` (mục 16).
 
 ## 3. Danh mục 15 endpoint
 
@@ -134,6 +180,9 @@ Backend stateless: không lưu input, key, file, result, session hoặc history 
 
 Text endpoints nhận `application/json` hoặc `application/*+json`. File endpoints
 nhận `multipart/form-data` và có cùng hai response mode: `content` hoặc `file`.
+
+Ngoài 15 route cipher, backend có hai route đọc: `GET /api/health` và
+`GET /api/history` (mục 16).
 
 Contract wire riêng của ba route Columnar:
 
@@ -576,6 +625,9 @@ Quy tắc request attachment lần hai ở phần file chỉ áp dụng cho **ng
 
 ### 7.3 curl
 
+Các lệnh dưới đây dùng cổng `8000` (backend chạy bằng uv); khi chạy bằng
+docker-compose, đổi thành `8080`.
+
 ```bash
 curl -sS -X POST http://localhost:8000/api/caesar/encrypt \
   -H 'Content-Type: application/json' \
@@ -774,6 +826,9 @@ Sau khi nhận `AttachmentResult`, FE tạo object URL, kích hoạt download b�
 `filename` từ server và gọi `URL.revokeObjectURL()` sau khi dùng.
 
 ### 8.4 curl
+
+Các lệnh dưới đây dùng cổng `8000` (backend chạy bằng uv); khi chạy bằng
+docker-compose, đổi thành `8080`.
 
 ```bash
 # Caesar preview
@@ -1075,9 +1130,10 @@ phần tóm tắt này không làm yếu bất kỳ requirement nào của spec 
   hoặc metadata và không branch theo nội dung message.
 - [ ] Cập nhật OpenAPI snapshot/generated types nếu FE thực sự dùng chúng; thêm
   contract test đếm đúng 15 route và test Columnar text/preview/download/error.
-- [ ] Gỡ mock, `USE_MOCK`, local cipher result và hard-coded `API_BASE`/cổng 8080.
-- [ ] Dev server proxy `/api` tới backend 8000; không yêu cầu CORS.
-- [ ] Không probe `/health` vì runtime hiện không công bố endpoint đó.
+- [ ] Gỡ mock, `USE_MOCK`, local cipher result và `API_BASE` ghi cứng trong code.
+- [ ] Dev server proxy `/api` tới backend (`8080` khi chạy compose, `8000` khi chạy uv);
+  không yêu cầu CORS.
+- [ ] Health check dùng `GET /api/health`, không dùng `/health`.
 
 Checklist này mô tả công việc consumer tương lai; change backend
 `add-columnar-transposition-cipher`
@@ -1139,8 +1195,10 @@ hiện tại luôn thắng demo.
 - [ ] Loading chặn submit/drop lặp; UI có keyboard, focus và live-region behavior.
 - [ ] Caesar regression: ba endpoint và integer-key contract cũ vẫn hoạt động như trước.
 - [ ] FE dùng same-origin `/api`; local dev dùng proxy, không mock/CORS/API base cũ.
-- [ ] `/docs` và `/openapi.json` được dùng để đối chiếu runtime contract; không giả
-  định `/health` tồn tại.
+- [ ] `/docs` và `/openapi.json` được dùng để đối chiếu runtime contract; health check
+  dùng `GET /api/health`.
+- [ ] Nếu có màn hình lịch sử: xử lý đủ ba trạng thái `database` (`ok`, `disabled`,
+  `unavailable`), phân trang bằng `nextCursor`, lỗi 422/503 theo mục 16.3.
 
 ## 15. Source precedence và bảo trì
 
@@ -1186,7 +1244,27 @@ ghi lại dưới dạng **metadata**. Backend không lưu text, key, tên file,
 hay kết quả. Contract của 15 route cipher không đổi: FE không phải sửa gì ở luồng
 encrypt/decrypt.
 
-### 16.1 `GET /api/health`
+### 16.1 Chạy backend có PostgreSQL khi dev FE
+
+Cần Docker. Trong thư mục repo backend:
+
+```bash
+cp .env.example .env          # lần đầu; đổi POSTGRES_PASSWORD và DATABASE_URL cho khớp
+docker compose up -d --build  # db + migrate + app
+curl -s http://localhost:8080/api/health
+# {"success":true,"result":{"app":"ok","database":"ok"}}
+```
+
+- Backend ở `http://localhost:8080`; proxy `/api` của FE dev server về đây.
+- Dữ liệu lịch sử được giữ qua các lần khởi động lại. `docker compose down -v` xóa sạch
+  dữ liệu khi cần làm lại từ đầu.
+- Muốn thử màn hình lịch sử khi không có DB: chạy backend bằng
+  `uv run uvicorn app.main:app --port 8000` mà không đặt `DATABASE_URL`; khi đó
+  `database` là `disabled` và `/api/history` trả 503.
+- Tạo dữ liệu mẫu: gọi vài request encrypt/decrypt bất kỳ qua UI hoặc `curl`, mỗi
+  request sinh một dòng lịch sử.
+
+### 16.2 `GET /api/health`
 
 ```json
 {"success": true, "result": {"app": "ok", "database": "ok"}}
@@ -1201,7 +1279,7 @@ encrypt/decrypt.
 FE có thể dùng `database` để ẩn hoặc hiện màn hình lịch sử. Cipher vẫn hoạt động
 trong cả ba trạng thái.
 
-### 16.2 `GET /api/history`
+### 16.3 `GET /api/history`
 
 Query (tất cả tùy chọn):
 
@@ -1282,7 +1360,7 @@ async function fetchHistory(params: {
 ```
 
 ```bash
-curl -s 'http://localhost:8000/api/history?limit=5&cipher=playfair'
+curl -s 'http://localhost:8080/api/history?limit=5&cipher=playfair'
 ```
 
 Lỗi dùng envelope chung `{"success": false, "message": …}`:
@@ -1299,3 +1377,17 @@ Lưu ý cho FE:
 - Lịch sử là best-effort: nếu DB lỗi đúng lúc, request đó có thể không xuất hiện.
 - Endpoint chưa có xác thực và trả lịch sử chung của cả instance, không theo user.
 - Không có API xóa lịch sử.
+
+### 16.4 Gợi ý UI cho màn hình lịch sử
+
+- Gọi `GET /api/health` khi mở màn hình: `ok` thì tải lịch sử; `disabled` thì ẩn
+  màn hình hoặc hiện "Lịch sử chưa được bật"; `unavailable` thì hiện lỗi và nút thử
+  lại.
+- Phân trang kiểu "Tải thêm": giữ `nextCursor` của trang cuối, gọi lại với
+  `cursor=<nextCursor>`, nối thêm vào danh sách; ẩn nút khi `nextCursor` là `null`.
+- Khi đổi bộ lọc `cipher`/`operation`, bỏ cursor cũ và tải lại từ trang đầu.
+- `createdAt` là UTC; đổi sang giờ địa phương khi hiển thị.
+- Hiển thị `httpStatus`/`succeeded` để phân biệt request lỗi; không có message lỗi
+  gốc trong lịch sử.
+- Danh sách trống (`items: []`, `nextCursor: null`) là trạng thái hợp lệ, cần có
+  empty state riêng.
