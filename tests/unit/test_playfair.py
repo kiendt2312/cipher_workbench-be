@@ -9,6 +9,7 @@ from app.core.playfair import (
     normalize_keyword,
     normalize_text,
     prepare_plaintext,
+    strip_trailing_filler,
     transform_pair,
     transform_text,
     validate_ciphertext,
@@ -96,11 +97,38 @@ def test_collision_and_text_file_vectors(plaintext: str, prepared: str, cipherte
     assert transform_text(plaintext, KEY, "encrypt") == ciphertext
 
 
-def test_decrypt_keeps_fillers_and_does_not_restore_format() -> None:
-    assert transform_text("GWGW", KEY, "decrypt") == "XQXQ"
+def test_decrypt_drops_only_trailing_filler_and_does_not_restore_format() -> None:
+    assert transform_text("GWGW", KEY, "decrypt") == "XQX"
 
     encrypted = transform_text("Jig saw!", KEY, "encrypt")
-    assert transform_text(encrypted, KEY, "decrypt") == prepare_plaintext("Jig saw!")
+    assert transform_text(encrypted, KEY, "decrypt") == "IXIGSAW"
+
+
+@pytest.mark.parametrize(
+    "plaintext, expected",
+    [
+        pytest.param("ABX", "ABX", id="trailing-q-after-x"),
+        pytest.param("ABC", "ABC", id="trailing-x"),
+        pytest.param("HIDE THE GOLD", "HIDETHEGOLD", id="odd-tail"),
+        pytest.param("BALLOON", "BALXLOON", id="middle-filler-kept"),
+        pytest.param("HELLOS", "HELXLOS", id="middle-kept-tail-dropped"),
+        pytest.param("AB", "AB", id="no-filler"),
+    ],
+)
+def test_decrypt_round_trip_drops_trailing_filler(plaintext: str, expected: str) -> None:
+    assert transform_text(transform_text(plaintext, KEY, "encrypt"), KEY, "decrypt") == expected
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [("ABXQ", "ABX"), ("ABCX", "ABC"), ("XQXQ", "XQX"), ("ABQX", "ABQ"), ("ABCD", "ABCD")],
+)
+def test_strip_trailing_filler_removes_one_filler(text: str, expected: str) -> None:
+    assert strip_trailing_filler(text) == expected
+
+
+def test_even_plaintext_ending_in_x_is_known_ambiguity() -> None:
+    assert transform_text(transform_text("AX", KEY, "encrypt"), KEY, "decrypt") == "A"
 
 
 @pytest.mark.parametrize(

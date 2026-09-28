@@ -108,11 +108,16 @@ Các vector chuẩn:
 | Decrypt | `BMODZBXDNABEKUDMUIXMMOUVIF` | — | `HIDETHEGOLDINTHETREXESTUMP` |
 | Encrypt | `XX` | `XQXQ` | `GWGW` |
 | Encrypt | `ABX` | `ABXQ` | `PDGW` |
-| Decrypt | `GWGW` | — | `XQXQ` |
+| Decrypt | `PDGW` | — | `ABX` |
+| Decrypt | `GWGW` | — | `XQX` |
 
-Playfair cố ý mất thông tin. Decrypt trả uppercase prepared plaintext và giữ mọi
-filler `X`/`Q`; server không đoán filler, không phục hồi `J`, case, whitespace,
-dấu câu hay Unicode đã bị loại. Vì vậy round-trip không nhất thiết bằng input gốc.
+Playfair cố ý mất thông tin. Decrypt trả uppercase prepared plaintext, giữ filler
+`X` giữa chuỗi (ví dụ `BALXLOON`) nhưng **bỏ đúng một filler cuối chuỗi**: nếu kết
+quả kết thúc bằng `XQ` thì bỏ `Q`, ngược lại nếu kết thúc bằng `X` thì bỏ `X`.
+Vì ciphertext không phân biệt được filler với chữ thật, plaintext chẵn kết thúc
+bằng `X` sẽ mất `X` cuối (ví dụ `AX → A`). Server không phục hồi `J`, case,
+whitespace, dấu câu hay Unicode đã bị loại, nên round-trip không nhất thiết bằng
+input gốc.
 
 ### 2.4 Affine modulo 26
 
@@ -507,7 +512,7 @@ Ngoài phạm vi hiện tại:
 
 - authentication, authorization, database, persistence, session và history;
 - cipher khác ngoài năm cipher này, autokey Vigenère, Playfair 6×6 hoặc Playfair Unicode/lossless;
-- phục hồi format, `J` hoặc filler gốc khi decrypt Playfair;
+- phục hồi format, `J` hoặc filler giữa chuỗi khi decrypt Playfair;
 - CORS cho frontend khác origin;
 - production reverse proxy, TLS, rate limiting, cloud deployment và CI/CD;
 - streaming file lớn hơn giới hạn nghiệp vụ.

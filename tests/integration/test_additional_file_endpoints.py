@@ -113,7 +113,7 @@ def test_omitted_response_mode_defaults_to_content(
             b"BMODZBXDNAGE",
             "PLAYFAIR EXAMPLE",
             "decrypt",
-            b"HIDETHEGOLDX",
+            b"HIDETHEGOLD",
             "bao.cao.decrypted.txt",
         ),
     ],
@@ -179,7 +179,7 @@ def test_vigenere_preserves_crlf_unicode_and_key_position(client: TestClient) ->
     )
 
 
-def test_playfair_file_normalizes_format_and_retains_decrypt_fillers(
+def test_playfair_file_normalizes_format_and_drops_trailing_decrypt_filler(
     client: TestClient,
 ) -> None:
     encrypted = _post_file(
@@ -197,7 +197,7 @@ def test_playfair_file_normalizes_format_and_retains_decrypt_fillers(
         key="PLAYFAIR EXAMPLE",
         action="decrypt",
     )
-    _assert_content(decrypted, "XQXQ")
+    _assert_content(decrypted, "XQX")
 
 
 @pytest.mark.parametrize("path", FILE_PATHS)

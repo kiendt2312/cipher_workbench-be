@@ -114,7 +114,8 @@ Hệ thống SHALL tạo đúng các vector bên dưới với keyword `PLAYFAIR
 
 #### Scenario: Decrypt vector fallback Q
 - **WHEN** decrypt `GWGW` với keyword `PLAYFAIR EXAMPLE`
-- **THEN** kết quả là `XQXQ`
+- **THEN** kết quả là `XQX`
+- **AND** chỉ filler `Q` cuối bị bỏ
 
 ### Requirement: Chuẩn hóa và kiểm tra ciphertext trước khi decrypt
 
@@ -133,14 +134,22 @@ Ciphertext Playfair SHALL được chuẩn hóa bằng uppercase, giữ lại AS
 - **THEN** hệ thống không ghép thêm `Q` hoặc `X`
 - **AND** input bị coi là không hợp lệ
 
-### Requirement: Decrypt giữ nguyên filler và không hứa round-trip lossless
+### Requirement: Decrypt bỏ filler cuối và không hứa round-trip lossless
 
-Kết quả decrypt SHALL là chuỗi uppercase đã được biến đổi từ các digraph ciphertext. Hệ thống MUST giữ nguyên mọi `X` và `Q` trong kết quả, không đoán ký tự nào là filler, không phục hồi whitespace/case/dấu câu/Unicode đã bị loại và không đổi `I` trở lại `J`. Vì vậy `decrypt(encrypt(input))` chỉ SHALL bằng prepared plaintext của input, không nhất thiết bằng input ban đầu. Response thành công MUST chỉ chứa `result`; MUST NOT thêm `normalizedInput`. (Truy vết: scope mới BE-PLAY-02, BE-PLAY-06; quyết định chủ sở hữu cho change này)
+Kết quả decrypt SHALL là chuỗi uppercase đã được biến đổi từ các digraph ciphertext, sau đó bỏ đúng một filler cuối chuỗi: nếu kết quả kết thúc bằng `XQ` thì bỏ `Q`, ngược lại nếu kết thúc bằng `X` thì bỏ `X`. Hệ thống MUST giữ nguyên mọi `X`/`Q` khác, không phục hồi whitespace/case/dấu câu/Unicode đã bị loại và không đổi `I` trở lại `J`. Vì ciphertext không phân biệt filler với chữ thật, plaintext có số chữ chẵn kết thúc bằng `X` SHALL mất `X` cuối. (Truy vết: quyết định chủ sở hữu 2026-09-28, thay thế quy tắc giữ mọi filler) Response thành công MUST chỉ chứa `result`; MUST NOT thêm `normalizedInput`. (Truy vết: scope mới BE-PLAY-02, BE-PLAY-06; quyết định chủ sở hữu cho change này)
 
 #### Scenario: Filler giữa chữ lặp được giữ lại
 - **WHEN** encrypt rồi decrypt plaintext `BALLOON` với cùng keyword hợp lệ
 - **THEN** kết quả decrypt là `BALXLOON`
-- **AND** hệ thống không tự loại `X`
+- **AND** hệ thống không tự loại `X` giữa chuỗi
+
+#### Scenario: Filler cuối bị bỏ
+- **WHEN** encrypt rồi decrypt plaintext `ABX` hoặc `ABC` với keyword `PLAYFAIR EXAMPLE`
+- **THEN** kết quả decrypt lần lượt là `ABX` và `ABC`
+
+#### Scenario: Plaintext chẵn kết thúc bằng X mất X cuối
+- **WHEN** encrypt rồi decrypt plaintext `AX` với keyword `PLAYFAIR EXAMPLE`
+- **THEN** kết quả decrypt là `A`
 
 #### Scenario: Chuỗi gốc không thể được phục hồi lossless
 - **WHEN** encrypt rồi decrypt plaintext `Jig saw!` với cùng keyword hợp lệ
