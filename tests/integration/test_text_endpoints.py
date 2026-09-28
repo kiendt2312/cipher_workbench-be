@@ -1,7 +1,7 @@
 """Integration coverage for all 45 text-cipher-api scenarios.
 
 The inventory below follows the scenario order in
-``openspec/changes/caesar-cipher-week1-mvp/specs/text-cipher-api/spec.md``.
+``openspec/specs/text-cipher-api/spec.md``.
 The numbered comments on the tests map the inventory to executable coverage;
 the same request cases are exercised against both endpoint paths where the
 spec requires shared validation.
