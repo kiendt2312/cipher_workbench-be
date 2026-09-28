@@ -624,11 +624,11 @@ hoàn chỉnh.
 README là bản nhập môn, không thay thế đặc tả hoặc OpenAPI. Khi có khác biệt, dùng
 thứ tự sau:
 
-1. [OpenSpec Columnar đã hoàn tất implementation và đang active](openspec/changes/add-columnar-transposition-cipher/)
-   cho Columnar, [OpenSpec Affine](openspec/changes/add-affine-cipher/) cho Affine,
-   [OpenSpec Playfair/Vigenère đã hoàn thành](openspec/changes/add-playfair-vigenere-ciphers/)
+1. [OpenSpec Columnar đã hoàn thành](openspec/changes/archive/2026-09-28-add-columnar-transposition-cipher/)
+   cho Columnar, [OpenSpec Affine](openspec/changes/archive/2026-09-28-add-affine-cipher/) cho Affine,
+   [OpenSpec Playfair/Vigenère đã hoàn thành](openspec/changes/archive/2026-09-28-add-playfair-vigenere-ciphers/)
    cho hai cipher đó, cùng
-   [OpenSpec Caesar Week 1 đã hoàn thành](openspec/changes/caesar-cipher-week1-mvp/)
+   [OpenSpec Caesar Week 1 đã hoàn thành](openspec/changes/archive/2026-09-28-caesar-cipher-week1-mvp/)
    cho Caesar và contract dùng chung.
 2. Runtime trong `app/`, các test contract và `/openapi.json` xác nhận cách đặc tả
    được hiện thực ở revision đang chạy.

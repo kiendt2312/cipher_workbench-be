@@ -1231,7 +1231,7 @@ Các invariant UI Week 1 tiếp tục bắt buộc khi mở rộng thêm cipher:
   tiếng Việt và không làm UI kẹt.
 
 Ma trận UI đầy đủ vẫn nằm trong
-[accepted web-ui spec](../openspec/changes/caesar-cipher-week1-mvp/specs/web-ui/spec.md);
+[web-ui spec](../openspec/specs/web-ui/spec.md);
 phần tóm tắt này không làm yếu bất kỳ requirement nào của spec đó.
 
 ## 12. Migration checklist từ 12 lên 15 route (chỉ cho FE cũ)
@@ -1335,13 +1335,13 @@ hiện tại luôn thắng demo.
 Thứ tự áp dụng:
 
 1. Primary authority, theo thứ tự nội bộ: accepted requirements trong
-   [OpenSpec UI năm cipher](../openspec/changes/update-static-ui-all-ciphers/),
+   [OpenSpec UI năm cipher](../openspec/changes/archive/2026-09-28-update-static-ui-all-ciphers/),
    [OpenSpec khóa lịch sử và retention](../openspec/changes/archive/2026-09-28-add-history-access-retention/),
    [OpenSpec PostgreSQL và lịch sử](../openspec/changes/archive/2026-09-28-add-postgres-persistence/),
-   [OpenSpec Columnar](../openspec/changes/add-columnar-transposition-cipher/),
-   [OpenSpec Affine](../openspec/changes/add-affine-cipher/),
-   [completed OpenSpec Playfair/Vigenère](../openspec/changes/add-playfair-vigenere-ciphers/)
-   và [completed OpenSpec Caesar Week 1](../openspec/changes/caesar-cipher-week1-mvp/);
+   [OpenSpec Columnar](../openspec/changes/archive/2026-09-28-add-columnar-transposition-cipher/),
+   [OpenSpec Affine](../openspec/changes/archive/2026-09-28-add-affine-cipher/),
+   [completed OpenSpec Playfair/Vigenère](../openspec/changes/archive/2026-09-28-add-playfair-vigenere-ciphers/)
+   và [completed OpenSpec Caesar Week 1](../openspec/changes/archive/2026-09-28-caesar-cipher-week1-mvp/);
    sau đó current implementation/tests cho observed behavior; cuối cùng runtime
    `/openapi.json` là machine-readable projection. Known OpenAPI under-description
    ở §2 không được dùng để thu hẹp behavior đã được spec/runtime test chấp nhận.
