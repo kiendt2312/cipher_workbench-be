@@ -9,6 +9,8 @@ type Matrix = tuple[tuple[str, ...], ...]
 type Positions = dict[str, tuple[int, int]]
 
 ALPHABET = "ABCDEFGHIKLMNOPQRSTUVWXYZ"
+FILLER = "X"
+FALLBACK_FILLER = "Q"
 
 
 def _normalize_ascii_letters(value: str) -> str:
@@ -59,7 +61,7 @@ def prepare_plaintext(text: str) -> str:
         following = normalized[index + 1] if index + 1 < len(normalized) else None
 
         if following is None or following == current:
-            prepared.extend((current, "Q" if current == "X" else "X"))
+            prepared.extend((current, FALLBACK_FILLER if current == FILLER else FILLER))
             index += 1
         else:
             prepared.extend((current, following))
@@ -84,7 +86,7 @@ def validate_ciphertext(text: str) -> str:
 def strip_trailing_filler(text: str) -> str:
     """Drop one trailing filler: ``Q`` after ``X``, otherwise a final ``X``."""
 
-    if text.endswith(("XQ", "X")):
+    if text.endswith((FILLER + FALLBACK_FILLER, FILLER)):
         return text[:-1]
     return text
 

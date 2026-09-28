@@ -9,7 +9,7 @@
 - [x] 2.1 Thêm normalize keyword ASCII theo đúng thứ tự, deduplicate first occurrence và dựng matrix 5×5 row-major; hoàn thành khi matrix `PLAYFAIR EXAMPLE` và các case `J`, Unicode, `ß`, key rỗng sau normalize khớp spec.
 - [x] 2.2 Thêm normalize plaintext và digraph preparation xác định với filler `X`, fallback `Q`, repeated-letter consume-one và odd-tail policy; hoàn thành khi `BALLOON`, `XX`, `ABX` và `ABC` cho đúng prepared stream.
 - [x] 2.3 Thêm transform pair cùng hàng/cột/hình chữ nhật với wraparound cho encrypt/decrypt; hoàn thành khi unit tests khóa các vector `FP→PL`, decrypt `PB→TI` và `HI→BM`.
-- [x] 2.4 Hoàn thiện Playfair encrypt/decrypt pipeline và validation ciphertext non-empty/even/no identical digraph; hoàn thành khi vector canonical và các vector `GWGW`, `PDGW` đúng, decrypt giữ filler và không phục hồi format.
+- [x] 2.4 Hoàn thiện Playfair encrypt/decrypt pipeline và validation ciphertext non-empty/even/no identical digraph; hoàn thành khi vector canonical và các vector `GWGW`, `PDGW` đúng, decrypt giữ filler giữa chuỗi, bỏ đúng một filler cuối (cập nhật 2026-09-28) và không phục hồi format.
 - [x] 2.5 Thêm invariant/regression tests chứng minh matrix đủ 25 ô duy nhất, output digraph chẵn, core stateless và text/file cùng chuỗi logic cho cùng kết quả.
 
 ## 3. Exception Handling và Validation
@@ -29,7 +29,7 @@
 
 - [x] 5.1 Tạo orchestration file cho Vigenère/Playfair bằng các helper extension/read-limit/UTF-8/BOM/filename hiện có, không lưu temporary file; hoàn thành khi cùng nội dung text/file gọi cùng core và cho cùng result logic.
 - [x] 5.2 Thêm `POST /api/vigenere/file` với content/file modes; hoàn thành khi preview JSON, attachment, CRLF/Unicode, 5 MiB boundary, encoding, BOM và filename đều có integration test.
-- [x] 5.3 Thêm `POST /api/playfair/file` với content/file modes; hoàn thành khi normalization mất format, filler retention, normalized-empty/odd/duplicate-ciphertext errors, BOM và attachment đều có integration test.
+- [x] 5.3 Thêm `POST /api/playfair/file` với content/file modes; hoàn thành khi normalization mất format, bỏ filler cuối khi decrypt (cập nhật 2026-09-28), normalized-empty/odd/duplicate-ciphertext errors, BOM và attachment đều có integration test.
 - [x] 5.4 Phủ file validation precedence và malformed multipart cho cả hai route; hoàn thành khi key lỗi thắng extension/size và UTF-8 lỗi thắng Playfair content validation như delta spec.
 
 ## 6. Request Guards và Runtime

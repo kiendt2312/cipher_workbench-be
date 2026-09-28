@@ -53,6 +53,7 @@ def _assert_error(response, status: int, message: str) -> None:
         ),
         (PLAYFAIR_ENCRYPT, {"text": "XX", "key": "PLAYFAIR EXAMPLE"}, "GWGW"),
         (PLAYFAIR_ENCRYPT, {"text": "ABX", "key": "PLAYFAIR EXAMPLE"}, "PDGW"),
+        (PLAYFAIR_DECRYPT, {"text": "PDGW", "key": "PLAYFAIR EXAMPLE"}, "ABX"),
         (PLAYFAIR_DECRYPT, {"text": "GWGW", "key": "PLAYFAIR EXAMPLE"}, "XQX"),
     ],
 )
