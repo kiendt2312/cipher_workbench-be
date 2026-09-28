@@ -405,8 +405,8 @@ terminal mới trước khi chạy lệnh kiểm tra. Kết quả phải báo `u
 ### Chuẩn bị môi trường khóa dependency
 
 ```bash
-git clone git@github.com:kiendt2312/caesar-cipher-be.git
-cd caesar-cipher-be
+git clone git@github.com:kiendt2312/cipher_workbench-be.git
+cd cipher_workbench-be
 uv sync --frozen
 ```
 
