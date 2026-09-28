@@ -16,8 +16,8 @@ consumer contract chi tiết cho cả 15 endpoint.
 
 ## 1. Tổng quan hành vi
 
-Ứng dụng chạy trong một tiến trình FastAPI trên cổng `8000`. Runtime phục vụ API,
-OpenAPI và UI static cùng origin; không có authentication hay session, và không lưu
+Ứng dụng chạy trong một tiến trình FastAPI trên cổng `8000`. Runtime phục vụ API
+và OpenAPI; không có authentication hay session, và không lưu
 input, key, tên file, nội dung file hay kết quả sau request. Khi đặt `DATABASE_URL`,
 app ghi thêm **metadata** của mỗi request cipher vào PostgreSQL (xem mục 9.1).
 
@@ -34,10 +34,8 @@ JSON text hoặc multipart .txt
  JSON hai trường hoặc attachment UTF-8
 ```
 
-UI static đi kèm tại `/` hỗ trợ đủ năm thuật toán (text và file .txt), lịch sử
-trên trình duyệt và tab lịch sử máy chủ (hiện khi `/api/health` báo
-`history: "enabled"`). Nó là HTML/CSS/JS thuần, không có build step; Frontend riêng
-vẫn có thể tích hợp theo `repo_docs/frontend-integration.md`.
+Repo này chỉ có backend. UI do project FE riêng đảm nhiệm và tích hợp theo
+`repo_docs/frontend-integration.md`; app không phục vụ trang nào ở `/`.
 
 ## 2. Năm thuật toán
 
@@ -369,11 +367,10 @@ preview thành file thay thế.
 ## 6. Runtime boundary
 
 - Cổng ứng dụng: `8000` cho cả local và container.
-- UI và API cùng origin; app không bật CORS. FE dev server riêng nên proxy `/api`
-  tới `http://localhost:8000` và giữ URL API tương đối.
+- App không phục vụ UI và không bật CORS. FE dev server nên proxy `/api` tới
+  `http://localhost:8000` và giữ URL API tương đối.
 - Swagger UI: <http://localhost:8000/docs>
 - OpenAPI JSON: <http://localhost:8000/openapi.json>
-- Trang static đi kèm: <http://localhost:8000/>
 - Health: `GET /api/health` trả `{"success":true,"result":{"app":"ok","database":…}}`
   với `database` là `ok`, `unavailable` (HTTP 503) hoặc `disabled` (không có
   `DATABASE_URL`).
@@ -485,7 +482,6 @@ docker run --rm -p 8000:8000 caesar-cipher-be
 Kiểm tra từ terminal khác:
 
 ```bash
-curl -sS -o /dev/null -w '%{http_code}\n' http://localhost:8000/
 curl -sS -o /dev/null -w '%{http_code}\n' http://localhost:8000/docs
 curl -sS -o /dev/null -w '%{http_code}\n' http://localhost:8000/openapi.json
 ```
@@ -549,7 +545,7 @@ thêm rate limiting; cấu hình và triển khai lớp đó nằm ngoài phạm
 
 ```text
 app/
-├── main.py                         # assembly, router, middleware, UI static
+├── main.py                         # assembly, router, middleware
 ├── config.py                       # giới hạn file/request, cổng, DATABASE_URL
 ├── core/
 │   ├── caesar.py                   # Caesar thuần
@@ -580,19 +576,17 @@ app/
 │   ├── routes.py                   # 15 route cipher được ghi lịch sử
 │   ├── cursor.py                   # cursor phân trang opaque
 │   └── store.py                    # ghi/đọc cipher_operations
-├── errors/
-│   ├── messages.py                 # message public canonical
-│   ├── exceptions.py               # lỗi ứng dụng có status
-│   └── handlers.py                 # JSON envelope và log an toàn
-├── templates/                      # UI static năm thuật toán + lịch sử
-└── static/
+└── errors/
+    ├── messages.py                 # message public canonical
+    ├── exceptions.py               # lỗi ứng dụng có status
+    └── handlers.py                 # JSON envelope và log an toàn
 
 alembic/                            # migration schema (alembic upgrade head)
 docker-compose.yml                  # db + migrate + app
 
 tests/
 ├── unit/                            # core, validation, file helpers, layering
-└── integration/                     # HTTP/OpenAPI, guards, UI assets, lịch sử/PostgreSQL
+└── integration/                     # HTTP/OpenAPI, guards, lịch sử/PostgreSQL
 ```
 
 Các core là module thuần, không phụ thuộc FastAPI/file transport. HTTP adapters
@@ -603,8 +597,8 @@ bytes, encoding, BOM và attachment; error handlers dùng một envelope thống
 
 Repository này là backend cipher service cho Caesar, Vigenère, Playfair, Affine
 và Columnar Transposition.
-Nó có UI static năm thuật toán phục vụ cùng app; Frontend riêng (nếu có) là
-consumer tách biệt, tích hợp theo `repo_docs/frontend-integration.md`.
+UI thuộc project FE riêng, là consumer tách biệt tích hợp theo
+`repo_docs/frontend-integration.md`.
 
 Ngoài phạm vi hiện tại:
 

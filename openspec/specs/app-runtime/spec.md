@@ -2,41 +2,28 @@
 
 ## Purpose
 
-Định nghĩa cách ứng dụng Caesar Cipher được phục vụ và vận hành ở Tuần 1: một tiến trình duy nhất phục vụ cả giao diện web lẫn API trên cùng một origin và cùng cổng, truy cập được qua `/` và `/docs`, chạy được cả ở máy local lẫn trong container với hành vi giống nhau, và không lưu lại bất kỳ dữ liệu nào của người dùng sau khi request kết thúc.
+Định nghĩa cách ứng dụng được phục vụ và vận hành: một tiến trình duy nhất phục vụ API và tài liệu API trên cùng một origin và cùng cổng, truy cập được qua `/docs`, không kèm giao diện web, chạy được cả ở máy local lẫn trong container với hành vi giống nhau, và không lưu lại bất kỳ dữ liệu nào của người dùng sau khi request kết thúc.
 
 ## Requirements
 
-### Requirement: Một tiến trình duy nhất phục vụ cả giao diện lẫn API
+### Requirement: Một tiến trình duy nhất phục vụ API
 
-Ứng dụng SHALL phục vụ giao diện web và toàn bộ endpoint API từ cùng một tiến trình, trên cùng một origin (cùng scheme, host và cổng). Tuần 1 MUST KHÔNG có project frontend tách riêng và MUST KHÔNG có tiến trình phục vụ giao diện riêng biệt. Vì giao diện và API cùng origin nên ứng dụng SHALL KHÔNG cần và SHALL KHÔNG cấu hình CORS ở Tuần 1: mọi lời gọi API từ giao diện đều là lời gọi cùng origin bằng đường dẫn tương đối, không phụ thuộc vào host hay cổng cụ thể. Tài nguyên tĩnh của giao diện (CSS, JS và các tài sản đi kèm) SHALL được phục vụ từ chính ứng dụng này, cùng origin với giao diện và API. (Truy vết: docx §2.2, §8)
+Ứng dụng SHALL phục vụ toàn bộ endpoint API, `/docs` và `/openapi.json` từ cùng một tiến trình, trên cùng một origin. Ứng dụng MUST NOT phục vụ giao diện web hay tài nguyên tĩnh của giao diện; UI thuộc project FE riêng. Ứng dụng SHALL KHÔNG cấu hình CORS: FE gọi API bằng đường dẫn tương đối `/api/...` qua proxy của dev server hoặc reverse proxy. (Truy vết: quyết định chủ sở hữu 2026-09-28)
 
-#### Scenario: Giao diện và API dùng chung một origin
+#### Scenario: Không còn giao diện ở tuyến gốc
 
-- **WHEN** người dùng mở giao diện web tại một địa chỉ bất kỳ đang phục vụ ứng dụng
-- **AND** giao diện gửi request tới một endpoint API của ứng dụng
-- **THEN** request đi tới cùng scheme, host và cổng với trang giao diện đang mở
-- **AND** request được xử lý thành công mà không cần bất kỳ header CORS nào trong phản hồi
+- **WHEN** client gửi `GET /`
+- **THEN** ứng dụng trả HTTP 404
 
-#### Scenario: Giao diện gọi API bằng đường dẫn tương đối
+#### Scenario: Không còn tài nguyên tĩnh
 
-- **WHEN** ứng dụng được phục vụ ở một host hoặc cổng khác với môi trường phát triển ban đầu
-- **THEN** giao diện vẫn gọi đúng các endpoint API mà không cần sửa đổi hay cấu hình lại địa chỉ backend
+- **WHEN** client gửi `GET /static/app.js`
+- **THEN** ứng dụng trả HTTP 404
 
-#### Scenario: Tài nguyên tĩnh của giao diện được phục vụ từ cùng ứng dụng
+#### Scenario: API không trả header CORS
 
-- **WHEN** trình duyệt tải trang giao diện và yêu cầu các tài nguyên tĩnh CSS/JS mà trang tham chiếu
-- **THEN** các tài nguyên đó được chính ứng dụng trả về thành công
-- **AND** giao diện hiển thị và hoạt động được mà không cần một máy chủ tĩnh nào khác
-
-### Requirement: Tuyến gốc trả về giao diện web
-
-Ứng dụng SHALL đáp ứng request tới tuyến gốc `/` bằng trang giao diện web của công cụ Caesar Cipher. Phản hồi MUST là một tài liệu HTML hiển thị được trực tiếp trên trình duyệt, không yêu cầu bước cài đặt hay mở file thủ công nào từ phía người dùng. (Truy vết: docx §2.2, §7)
-
-#### Scenario: Mở tuyến gốc trên trình duyệt
-
-- **WHEN** người dùng truy cập `/` trên ứng dụng đang chạy
-- **THEN** ứng dụng trả về trang giao diện web của công cụ Caesar Cipher
-- **AND** trang hiển thị được ngay trên trình duyệt mà không báo lỗi
+- **WHEN** client gọi một endpoint API
+- **THEN** phản hồi không có header `access-control-allow-origin`
 
 ### Requirement: Tuyến tài liệu API tương tác
 
@@ -50,29 +37,27 @@
 
 ### Requirement: Ứng dụng lắng nghe cổng 8000
 
-Ứng dụng SHALL lắng nghe trên cổng `8000` khi chạy ở máy local và khi chạy trong container, để địa chỉ truy cập là như nhau trong cả hai môi trường. Giao diện, tài nguyên tĩnh, tài liệu API và toàn bộ endpoint API MUST cùng được phục vụ trên cổng này; Tuần 1 MUST KHÔNG dùng thêm cổng thứ hai cho bất kỳ thành phần nào. (Truy vết: docx §7)
+Ứng dụng SHALL lắng nghe trên cổng `8000` khi chạy ở máy local và khi chạy trong container. Tài liệu API và toàn bộ endpoint API MUST cùng được phục vụ trên cổng này; ứng dụng MUST KHÔNG dùng thêm cổng thứ hai. (Truy vết: docx §7)
 
 #### Scenario: Truy cập ứng dụng chạy local qua cổng 8000
 
 - **WHEN** ứng dụng được khởi chạy ở máy local
-- **THEN** giao diện truy cập được tại `/` trên cổng `8000`
-- **AND** tài liệu API truy cập được tại `/docs` trên cùng cổng `8000`
+- **THEN** tài liệu API truy cập được tại `/docs` trên cổng `8000`
+- **AND** các endpoint `/api/*` truy cập được trên cùng cổng `8000`
 
 #### Scenario: Không có thành phần nào dùng cổng khác
 
-- **WHEN** ứng dụng đang chạy và phục vụ giao diện, tài nguyên tĩnh và các endpoint API
+- **WHEN** ứng dụng đang chạy và phục vụ tài liệu API và các endpoint API
 - **THEN** tất cả đều truy cập được qua cổng `8000`
-- **AND** không có thành phần nào của ứng dụng yêu cầu người dùng truy cập một cổng khác
 
 ### Requirement: Chạy được bằng Docker với hành vi giống hệt local
 
-Ứng dụng SHALL đóng gói và chạy được bằng Docker: từ mã nguồn trong repo có thể tạo được image và khởi chạy container mà không cần thao tác chuẩn bị thủ công nào ngoài các bước đã tài liệu hóa. Container đang chạy MUST phục vụ được `/` và `/docs` trên cổng `8000`, và hành vi quan sát được của ứng dụng — kết quả mã hóa/giải mã, HTTP status, cấu trúc phản hồi và thông báo lỗi — MUST giống hệt khi chạy local với cùng đầu vào. (Truy vết: docx §7)
+Ứng dụng SHALL đóng gói và chạy được bằng Docker: từ mã nguồn trong repo có thể tạo được image và khởi chạy container mà không cần thao tác chuẩn bị thủ công nào ngoài các bước đã tài liệu hóa. Container đang chạy MUST phục vụ được `/docs` trên cổng `8000`, và hành vi quan sát được của ứng dụng — kết quả mã hóa/giải mã, HTTP status, cấu trúc phản hồi và thông báo lỗi — MUST giống hệt khi chạy local với cùng đầu vào. (Truy vết: docx §7)
 
 #### Scenario: Truy cập ứng dụng chạy trong container
 
 - **WHEN** image được tạo từ mã nguồn trong repo và container được khởi chạy
-- **THEN** giao diện truy cập được tại `/` trên cổng `8000`
-- **AND** tài liệu API truy cập được tại `/docs` trên cùng cổng
+- **THEN** tài liệu API truy cập được tại `/docs` trên cổng `8000`
 
 #### Scenario: Kết quả giống nhau giữa container và local
 

@@ -1,14 +1,11 @@
-"""Application assembly for the Caesar Cipher service and same-origin UI."""
+"""Application assembly for the cipher API service."""
 
 import asyncio
 import contextlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+from fastapi import FastAPI
 
 from app import config
 from app.api.history_recorder import OperationHistoryRecorder
@@ -24,7 +21,6 @@ from app.api.routes_health import router as health_router
 from app.api.routes_history import router as history_router
 from app.api.routes_text import router as text_router
 from app.db.engine import create_database
-from app.errors import messages
 from app.errors.handlers import register_exception_handlers
 from app.history.retention import purge_periodically
 
@@ -68,39 +64,3 @@ app.include_router(columnar_text_router)
 app.include_router(columnar_file_router)
 app.include_router(vigenere_file_router)
 app.include_router(playfair_file_router)
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
-
-templates = Jinja2Templates(directory="app/templates")
-
-
-@app.get("/", response_class=HTMLResponse, include_in_schema=False)
-async def index(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse(
-        request=request,
-        name="index.html",
-        context={
-            "max_file_bytes": config.MAX_FILE_BYTES,
-            "ui_messages": {
-                "file_type": messages.UNSUPPORTED_FILE_TYPE,
-                "file_size": messages.FILE_TOO_LARGE,
-                "file_empty": messages.EMPTY_FILE,
-                "key_missing": messages.MISSING_KEY,
-                "key_invalid": messages.INVALID_KEY,
-                "system": messages.UNEXPECTED_FAILURE,
-            },
-            "cipher_messages": {
-                "textEmpty": messages.TEXT_EMPTY,
-                "keyMissing": messages.MISSING_KEY,
-                "caesarKey": messages.INVALID_KEY,
-                "vigenereKey": messages.INVALID_VIGENERE_KEY,
-                "playfairKey": messages.INVALID_PLAYFAIR_KEY,
-                "playfairText": messages.PLAYFAIR_TEXT_EMPTY,
-                "columnarKey": messages.INVALID_COLUMNAR_KEY,
-                "affineMissingA": messages.MISSING_AFFINE_MULTIPLIER,
-                "affineInvalidA": messages.INVALID_AFFINE_MULTIPLIER,
-                "affineNonInvertible": messages.NON_INVERTIBLE_AFFINE_MULTIPLIER,
-                "affineMissingB": messages.MISSING_AFFINE_SHIFT,
-                "affineInvalidB": messages.INVALID_AFFINE_SHIFT,
-            },
-        },
-    )
