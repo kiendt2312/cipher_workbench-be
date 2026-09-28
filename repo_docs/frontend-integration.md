@@ -1,28 +1,128 @@
 # Handoff tích hợp Frontend — Caesar, Vigenère, Playfair, Affine và Columnar
 
 Tài liệu này là **consumer contract duy nhất cho Frontend** khi tích hợp với backend
-Caesar, Vigenère, Playfair, Affine và Columnar Transposition. Nội dung độc lập
-framework: FE có thể dùng React, Vue, Svelte hoặc JavaScript thuần, nhưng hành vi
-API và trạng thái quan sát được phải giữ đúng contract dưới đây.
+cipher. Nội dung độc lập framework: FE có thể dùng React, Vue, Svelte hoặc JavaScript
+thuần, nhưng hành vi API và trạng thái quan sát được phải giữ đúng contract dưới đây.
 
-- Backend áp dụng: Columnar được publish trên branch
-  `feature/add-columnar-transposition-cipher` tại commit đã xác minh
-  `c813b55719ed65b650c49d1c8353fcb7281ed084`; change OpenSpec vẫn active và chưa archive.
-- Backend áp dụng: Playfair bỏ filler cuối khi decrypt đã merge vào `main` qua PR #1
-  (commit `fb459dd`).
-- Ngày cập nhật guide: `2026-09-28` (khóa lịch sử server, retention 30 ngày, lịch sử trên
-  trình duyệt; PostgreSQL, health và lịch sử; Playfair decrypt bỏ filler cuối; xem mục 0).
-- Backend hiện có 15 endpoint cipher. UI static đi kèm backend tại `/` đã hỗ trợ đủ
-  5 cipher và hai loại lịch sử (change `update-static-ui-all-ciphers`); có thể dùng làm
-  bản tham chiếu hành vi khi FE riêng tích hợp.
-- [OpenSpec Columnar đang active](../openspec/changes/add-columnar-transposition-cipher/),
-  [OpenSpec Affine](../openspec/changes/add-affine-cipher/),
-  [OpenSpec Playfair/Vigenère đã hoàn thành](../openspec/changes/add-playfair-vigenere-ciphers/),
-  [OpenSpec Caesar Week 1](../openspec/changes/caesar-cipher-week1-mvp/) và runtime/OpenAPI
-  của working tree này là nguồn có thẩm quyền. Guide chỉ phản chiếu contract đó.
-- Health và lịch sử thao tác (PostgreSQL, metadata-only): xem mục 16. Hai endpoint
-  GET này không đổi contract của 15 route cipher. OpenSpec:
-  [add-postgres-persistence](../openspec/changes/add-postgres-persistence/).
+- Cập nhật: `2026-09-28`. Backend có 15 route cipher, `GET /api/health`,
+  `GET /api/history` (tùy chọn, cần PostgreSQL).
+- **Người mới:** đọc mục **A. Bắt đầu nhanh** (khoảng 10 phút) rồi dùng file
+  [`examples/cipher-api.ts`](examples/cipher-api.ts). Các mục 1–17 là tra cứu chi tiết.
+- **Đã tích hợp trước đây:** đọc mục **0. Thay đổi gần đây**.
+- UI tĩnh tại `/` của backend là một FE chạy được theo đúng tài liệu này; mở nó để
+  xem hành vi mẫu.
+
+## A. Bắt đầu nhanh
+
+### A.1 Chạy backend
+
+```bash
+# Trong repo backend, cần Docker
+cp .env.example .env          # lần đầu; đổi POSTGRES_PASSWORD và DATABASE_URL cho khớp
+docker compose up -d --build  # PostgreSQL + migration + app
+curl -s http://localhost:8080/api/health
+# {"success":true,"result":{"app":"ok","database":"ok","history":"enabled"}}
+```
+
+Cấu hình dev server của FE proxy `/api` tới `http://localhost:8080` (hoặc
+`http://localhost:8000` nếu chạy backend bằng `uv run uvicorn`). Code FE luôn gọi URL
+tương đối `/api/...`; không ghi cứng host/port, backend không bật CORS.
+
+```ts
+// vite.config.ts
+export default defineConfig({
+  server: { proxy: { "/api": process.env.BACKEND_URL ?? "http://localhost:8080" } },
+});
+```
+
+Swagger để thử API: <http://localhost:8080/docs>.
+
+### A.2 Toàn bộ endpoint
+
+| Method | Path | Body | Thành công (HTTP 200) |
+|---|---|---|---|
+| POST | `/api/{cipher}/encrypt` | JSON, xem A.3 | `{"success":true,"result":"<bản mã>"}` |
+| POST | `/api/{cipher}/decrypt` | JSON, xem A.3 | `{"success":true,"result":"<bản rõ>"}` |
+| POST | `/api/{cipher}/file` | multipart: `file`, khóa (A.3), `action`, `response_mode` | `content`: JSON như trên; `file`: file `text/plain` đính kèm |
+| GET | `/api/health` | — | `{"success":true,"result":{"app","database","history"}}` (503 khi DB lỗi) |
+| GET | `/api/history` | query `limit`, `cursor`, `cipher`, `operation` | `{"success":true,"result":{"items":[...],"nextCursor":...}}` |
+
+`{cipher}` là một trong `caesar`, `vigenere`, `playfair`, `affine`, `columnar` (15 route
+POST). `action` là `encrypt`/`decrypt`; `response_mode` là `content` (mặc định) hoặc
+`file`.
+
+### A.3 Khóa theo cipher
+
+| Cipher | JSON text | Multipart | Quy tắc | Ví dụ |
+|---|---|---|---|---|
+| Caesar | `"key": 3` (**số**, không phải chuỗi) | `key` | Số nguyên có dấu, lớn tùy ý; file tối đa 32 ký tự | `{"text":"Hello World","key":3}` → `Khoor Zruog` |
+| Vigenère | `"key": "LEMON"` | `key` | Chỉ `A-Z`/`a-z`, không khoảng trắng | `Attack at dawn!` → `Lxfopv ef rnhr!` |
+| Playfair | `"key": "PLAYFAIR EXAMPLE"` | `key` | Có ít nhất một chữ cái; kết quả là văn bản chuẩn hóa (xem 4.3) | `HIDE THE GOLD` → `BMODZBXDNAGE` |
+| Affine | `"a": 5, "b": 8` (**số**) | `a`, `b` | Số nguyên có dấu; `a` mod 26 nguyên tố cùng nhau với 26 | `HELLO` → `RCLLA` |
+| Columnar | `"key": "3 1 4 2"` hoặc `"BALLOON"` | `key` | Hoán vị `1..m` (2–256 cột) hoặc từ khóa 2–256 chữ cái | `MEET ME AT NOON` + `BALLOON` → `EAM NETT EO NMO` |
+
+Ba điều hay sai nhất:
+
+1. Caesar và Affine gửi **JSON number**, nhưng giữ giá trị người dùng nhập dưới dạng
+   chuỗi và ghép token bằng `BigInt` để không mất độ chính xác (có sẵn trong file mẫu).
+2. Gửi `text` và chuỗi khóa **nguyên văn**: không `trim()`, không đổi hoa thường.
+3. File luôn hai request: `response_mode=content` để xem trước, rồi
+   `response_mode=file` để tải file chính thức với tên file từ header
+   `Content-Disposition`.
+
+### A.4 API client dùng ngay
+
+File [`examples/cipher-api.ts`](examples/cipher-api.ts) (TypeScript, không phụ thuộc
+thư viện) gồm `transformText`, `previewFile`, `downloadFile`, `saveBlob`, `getHealth`,
+`canShowServerHistory`, `getHistory` và bộ hàm lịch sử trên trình duyệt. File đã được
+compile với `tsc --strict` và chạy thử với backend thật.
+
+```ts
+import {
+  ApiError, transformText, previewFile, downloadFile, saveBlob,
+  getHealth, canShowServerHistory, getHistory, addLocalHistory,
+} from "./cipher-api";
+
+const result = await transformText({ cipher: "affine", operation: "encrypt", text: "HELLO", a: "5", b: "8" });
+// "RCLLA"
+
+const fileRequest = { cipher: "vigenere", operation: "encrypt", file, key: "LEMON" } as const;
+const preview = await previewFile(fileRequest);          // hiện trong UI
+const { blob, filename } = await downloadFile(fileRequest); // khi người dùng bấm tải
+saveBlob(blob, filename);
+
+if (canShowServerHistory(await getHealth())) {
+  const page = await getHistory({ limit: 20, cipher: "playfair" });
+  const next = page.nextCursor ? await getHistory({ limit: 20, cursor: page.nextCursor }) : null;
+}
+
+try {
+  await transformText({ cipher: "vigenere", operation: "encrypt", text: "hi", key: "LE MON" });
+} catch (error) {
+  if (error instanceof ApiError) showError(error.message); // message tiếng Việt từ server
+  else showError("Không thể gọi máy chủ. Vui lòng thử lại.");
+}
+```
+
+### A.5 Lỗi
+
+Mọi lỗi có dạng `{"success": false, "message": "<tiếng Việt>"}` với status 4xx/5xx
+(kể cả khi yêu cầu file). FE hiển thị nguyên `message`; không rẽ nhánh logic theo nội
+dung message. Lỗi mạng (không có response) thì tự hiện thông báo kết nối. Danh sách
+status và message đầy đủ ở mục 9 và 16.3.
+
+### A.6 UI tối thiểu phải có
+
+- Chọn cipher, chế độ mã hóa/giải mã, nguồn văn bản/file; ô khóa theo A.3 (Affine có
+  hai ô).
+- Xóa kết quả cũ mỗi khi cipher, chế độ, nguồn, input hoặc khóa thay đổi.
+- Khóa mọi control và chặn gửi lặp khi request đang chạy.
+- Cảnh báo Playfair luôn hiện khi chọn Playfair (câu chuẩn ở mục 11).
+- File: kiểm tra sơ bộ `.txt`, tối đa 5 MiB, không rỗng; xem trước rồi mới tải.
+- Lịch sử (tùy chọn): lịch sử trên máy theo mục 17; lịch sử máy chủ chỉ khi
+  `canShowServerHistory` trả `true` (mục 16).
+
+Checklist nghiệm thu đầy đủ ở mục 14.
 
 ## 0. Thay đổi gần đây
 
@@ -1134,7 +1234,7 @@ Ma trận UI đầy đủ vẫn nằm trong
 [accepted web-ui spec](../openspec/changes/caesar-cipher-week1-mvp/specs/web-ui/spec.md);
 phần tóm tắt này không làm yếu bất kỳ requirement nào của spec đó.
 
-## 12. Migration checklist từ 12 lên 15 route
+## 12. Migration checklist từ 12 lên 15 route (chỉ cho FE cũ)
 
 - [ ] Mở endpoint allowlist từ 12 lên đúng 15 route trong bảng; thêm selector
   `columnar`, không tạo route generalized/versioned.
@@ -1235,7 +1335,10 @@ hiện tại luôn thắng demo.
 Thứ tự áp dụng:
 
 1. Primary authority, theo thứ tự nội bộ: accepted requirements trong
-   [OpenSpec Columnar implementation-complete, active](../openspec/changes/add-columnar-transposition-cipher/),
+   [OpenSpec UI năm cipher](../openspec/changes/update-static-ui-all-ciphers/),
+   [OpenSpec khóa lịch sử và retention](../openspec/changes/add-history-access-retention/),
+   [OpenSpec PostgreSQL và lịch sử](../openspec/changes/add-postgres-persistence/),
+   [OpenSpec Columnar](../openspec/changes/add-columnar-transposition-cipher/),
    [OpenSpec Affine](../openspec/changes/add-affine-cipher/),
    [completed OpenSpec Playfair/Vigenère](../openspec/changes/add-playfair-vigenere-ciphers/)
    và [completed OpenSpec Caesar Week 1](../openspec/changes/caesar-cipher-week1-mvp/);
@@ -1259,9 +1362,11 @@ Các implementation link chính để audit contract là
 [`routes_affine_text.py`](../app/api/routes_affine_text.py) và
 [`routes_affine_file.py`](../app/api/routes_affine_file.py),
 [`routes_columnar_text.py`](../app/api/routes_columnar_text.py) và
-[`routes_columnar_file.py`](../app/api/routes_columnar_file.py). Contract Columnar
-trong guide được đối chiếu với commit publish đã xác minh
-`c813b55719ed65b650c49d1c8353fcb7281ed084`; change OpenSpec vẫn active và chưa archive.
+[`routes_columnar_file.py`](../app/api/routes_columnar_file.py),
+[`routes_health.py`](../app/api/routes_health.py) và
+[`routes_history.py`](../app/api/routes_history.py). File mẫu
+[`examples/cipher-api.ts`](examples/cipher-api.ts) phải được cập nhật cùng tài liệu
+khi contract đổi.
 
 Guide không lặp toàn bộ ma trận scenario hoặc decision history của OpenSpec. Khi
 API/behavior thay đổi, cập nhật OpenSpec trước, rồi cập nhật guide này trong cùng
