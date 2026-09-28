@@ -34,8 +34,10 @@ JSON text hoặc multipart .txt
  JSON hai trường hoặc attachment UTF-8
 ```
 
-UI static đi kèm tại `/` là UI Caesar-only từ phạm vi Week 1. Nó không đại diện
-cho toàn bộ khả năng API; Frontend năm thuật toán hiện hành là consumer tách biệt.
+UI static đi kèm tại `/` hỗ trợ đủ năm thuật toán (text và file .txt), lịch sử
+trên trình duyệt và tab lịch sử máy chủ (hiện khi `/api/health` báo
+`history: "enabled"`). Nó là HTML/CSS/JS thuần, không có build step; Frontend riêng
+vẫn có thể tích hợp theo `repo_docs/frontend-integration.md`.
 
 ## 2. Năm thuật toán
 
@@ -582,7 +584,7 @@ app/
 │   ├── messages.py                 # message public canonical
 │   ├── exceptions.py               # lỗi ứng dụng có status
 │   └── handlers.py                 # JSON envelope và log an toàn
-├── templates/                      # UI static Caesar-only
+├── templates/                      # UI static năm thuật toán + lịch sử
 └── static/
 
 alembic/                            # migration schema (alembic upgrade head)
@@ -601,8 +603,8 @@ bytes, encoding, BOM và attachment; error handlers dùng một envelope thống
 
 Repository này là backend cipher service cho Caesar, Vigenère, Playfair, Affine
 và Columnar Transposition.
-Nó có UI static Caesar-only phục vụ cùng app, nhưng không chứa codebase của
-Frontend năm thuật toán hiện hành.
+Nó có UI static năm thuật toán phục vụ cùng app; Frontend riêng (nếu có) là
+consumer tách biệt, tích hợp theo `repo_docs/frontend-integration.md`.
 
 Ngoài phạm vi hiện tại:
 

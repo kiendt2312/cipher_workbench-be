@@ -4,7 +4,8 @@ const byId = (id) => document.getElementById(id);
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const MAX_FILE_BYTES = Number(document.body.dataset.maxBytes);
 const REQUEST_TIMEOUT_MS = 15000;
-const KEY_PATTERN = /^[+-]?[0-9]+$/;
+const SIGNED_INTEGER_PATTERN = /^[+-]?[0-9]+$/;
+const MAX_MULTIPART_INTEGER_CHARS = 32;
 const MESSAGES = {
   fileType: document.body.dataset.messageFileType,
   fileSize: document.body.dataset.messageFileSize,
@@ -12,9 +13,151 @@ const MESSAGES = {
   keyMissing: document.body.dataset.messageKeyMissing,
   keyInvalid: document.body.dataset.messageKeyInvalid,
   system: document.body.dataset.messageSystem,
+  ...JSON.parse(byId("cipherMessages").textContent),
 };
 
+const LOCAL_HISTORY_KEY = "cipher-workbench.history.v1";
+const LOCAL_HISTORY_ENABLED_KEY = "cipher-workbench.history.enabled";
+const LOCAL_HISTORY_LIMIT = 50;
+const SERVER_HISTORY_PAGE_SIZE = 20;
+
+// Client-side checks only enable the action button; the server stays authoritative.
+function parseSignedInteger(raw, { forFile }) {
+  const trimmed = raw.trim();
+  if (trimmed === "") return { missing: true };
+  if ((forFile && trimmed.length > MAX_MULTIPART_INTEGER_CHARS) || !SIGNED_INTEGER_PATTERN.test(trimmed)) {
+    return { invalid: true };
+  }
+  return { value: BigInt(trimmed) };
+}
+
+const modulo26 = (value) => Number(((value % 26n) + 26n) % 26n);
+const gcd = (left, right) => (right === 0 ? left : gcd(right, left % right));
+
+// Columnar trims only the six ASCII whitespace characters, never Unicode spaces.
+const COLUMNAR_TRIM = /^[ \t\r\n\f\v]+|[ \t\r\n\f\v]+$/g;
+
+function isColumnarPermutation(key) {
+  let body = key;
+  if (body.startsWith("{") && body.endsWith("}")) body = body.slice(1, -1).replace(COLUMNAR_TRIM, "");
+  const tokens = body.split(/[ \t\r\n\f\v]*,[ \t\r\n\f\v]*|[ \t\r\n\f\v]+/);
+  if (tokens.length < 2 || tokens.length > 256) return false;
+  if (!tokens.every((token) => /^[1-9][0-9]*$/.test(token))) return false;
+  const ranks = new Set(tokens.map(Number));
+  return ranks.size === tokens.length && [...ranks].every((rank) => rank <= tokens.length);
+}
+
+const CIPHERS = {
+  caesar: {
+    name: "Caesar",
+    subtitle: "Dịch mỗi chữ cái ASCII A–Z, a–z đi một số vị trí cố định; ký tự khác giữ nguyên.",
+    keyPanelTitle: "Khóa dịch chuyển",
+    keyDescription: "Nhập số nguyên có dấu. Khóa được chuẩn hóa về 0–25 trước khi xử lý.",
+    keyNote: "Ví dụ: 29 → 3, −3 → 23, 26 → 0.",
+    placeholder: "ví dụ: +3 hoặc -3",
+    numeric: true,
+    fields: ["key"],
+    example: { text: "Hello World", keys: { key: "3" } },
+    validateKey({ key }, forFile) {
+      const parsed = parseSignedInteger(key, { forFile });
+      if (parsed.missing) return { missing: true, message: MESSAGES.keyMissing };
+      if (parsed.invalid) return { message: MESSAGES.caesarKey };
+      const normalized = modulo26(parsed.value);
+      return { valid: true, note: parsed.value === BigInt(normalized) ? "" : `Chuẩn hóa → ${normalized}` };
+    },
+    textBody: (text, { key }) => `{"text":${JSON.stringify(text)},"key":${BigInt(key.trim()).toString()}}`,
+    describeKey: ({ key }) => key.trim(),
+  },
+  vigenere: {
+    name: "Vigenère",
+    subtitle: "Dịch từng chữ cái theo một từ khóa lặp lại; ký tự khác giữ nguyên và không làm tiến khóa.",
+    keyPanelTitle: "Từ khóa",
+    keyDescription: "Từ khóa chỉ gồm chữ cái A–Z hoặc a–z, không có khoảng trắng hay dấu.",
+    keyNote: "Ví dụ: LEMON.",
+    placeholder: "ví dụ: LEMON",
+    fields: ["key"],
+    example: { text: "Attack at dawn!", keys: { key: "LEMON" } },
+    validateKey({ key }) {
+      if (key === "") return { missing: true, message: MESSAGES.keyMissing };
+      return /^[A-Za-z]+$/.test(key) ? { valid: true } : { message: MESSAGES.vigenereKey };
+    },
+    textBody: (text, { key }) => JSON.stringify({ text, key }),
+    describeKey: ({ key }) => key,
+  },
+  playfair: {
+    name: "Playfair",
+    subtitle: "Mã hóa theo từng cặp chữ trên ma trận 5×5 dựng từ từ khóa; I và J dùng chung một ô.",
+    keyPanelTitle: "Từ khóa ma trận",
+    keyDescription: "Từ khóa cần ít nhất một chữ cái A–Z; khoảng trắng và ký tự khác bị bỏ qua khi dựng ma trận.",
+    keyNote: "Ví dụ: PLAYFAIR EXAMPLE.",
+    placeholder: "ví dụ: PLAYFAIR EXAMPLE",
+    fields: ["key"],
+    example: { text: "HIDE THE GOLD IN THE TREE STUMP", keys: { key: "PLAYFAIR EXAMPLE" } },
+    validateText: (text) => (/[A-Za-z]/.test(text) ? null : MESSAGES.playfairText),
+    validateKey({ key }) {
+      if (key === "") return { missing: true, message: MESSAGES.keyMissing };
+      return /[A-Za-z]/.test(key) ? { valid: true } : { message: MESSAGES.playfairKey };
+    },
+    textBody: (text, { key }) => JSON.stringify({ text, key }),
+    describeKey: ({ key }) => key,
+  },
+  affine: {
+    name: "Affine",
+    subtitle: "Biến đổi mỗi chữ cái theo E(x) = (a·x + b) mod 26; ký tự khác giữ nguyên.",
+    keyPanelTitle: "Hệ số a và b",
+    keyDescription: "Nhập hai số nguyên a và b. a phải nguyên tố cùng nhau với 26: 1, 3, 5, 7, 9, 11, 15, 17, 19, 21, 23 hoặc 25 (sau khi lấy mod 26).",
+    keyNote: "Ví dụ: a = 5, b = 8.",
+    numeric: true,
+    fields: ["a", "b"],
+    example: { text: "HELLO", keys: { a: "5", b: "8" } },
+    validateKey({ a, b }, forFile) {
+      const parsedA = parseSignedInteger(a, { forFile });
+      if (parsedA.missing) return { missing: true, message: MESSAGES.affineMissingA };
+      if (parsedA.invalid) return { message: MESSAGES.affineInvalidA };
+      const normalizedA = modulo26(parsedA.value);
+      if (gcd(normalizedA, 26) !== 1) return { message: MESSAGES.affineNonInvertible };
+      const parsedB = parseSignedInteger(b, { forFile });
+      if (parsedB.missing) return { missing: true, message: MESSAGES.affineMissingB };
+      if (parsedB.invalid) return { message: MESSAGES.affineInvalidB };
+      return { valid: true, note: `a′ = ${normalizedA}, b′ = ${modulo26(parsedB.value)}` };
+    },
+    textBody: (text, { a, b }) => (
+      `{"text":${JSON.stringify(text)},"a":${BigInt(a.trim()).toString()},"b":${BigInt(b.trim()).toString()}}`
+    ),
+    describeKey: ({ a, b }) => `a = ${a.trim()}, b = ${b.trim()}`,
+  },
+  columnar: {
+    name: "Columnar",
+    subtitle: "Ghi văn bản theo hàng rồi đọc các cột theo thứ tự khóa; giữ nguyên mọi ký tự, không thêm ký tự đệm.",
+    keyPanelTitle: "Khóa cột",
+    keyDescription: "Nhập hoán vị số 1..m (2 đến 256 cột, cách nhau bằng dấu cách hoặc dấu phẩy) hoặc từ khóa gồm 2 đến 256 chữ cái A–Z.",
+    keyNote: "Ví dụ: 3 1 4 2 hoặc BALLOON.",
+    placeholder: "ví dụ: 3 1 4 2 hoặc BALLOON",
+    fields: ["key"],
+    example: { text: "MEET ME AT NOON", keys: { key: "BALLOON" } },
+    validateKey({ key }) {
+      const trimmed = key.replace(COLUMNAR_TRIM, "");
+      if (trimmed === "") return { missing: true, message: MESSAGES.keyMissing };
+      const valid = [...trimmed].length <= 2048
+        && (isColumnarPermutation(trimmed) || /^[A-Za-z]{2,256}$/.test(trimmed));
+      return valid ? { valid: true } : { message: MESSAGES.columnarKey };
+    },
+    textBody: (text, { key }) => JSON.stringify({ text, key }),
+    describeKey: ({ key }) => key.replace(COLUMNAR_TRIM, ""),
+  },
+};
+
+const emptyKeys = () => Object.fromEntries(
+  Object.entries(CIPHERS).map(([cipher, config]) => [
+    cipher,
+    Object.fromEntries(config.fields.map((field) => [field, ""])),
+  ]),
+);
+
 const elements = {
+  cipherTitle: byId("cipherTitle"),
+  cipherSubtitle: byId("cipherSubtitle"),
+  playfairWarning: byId("playfairWarning"),
   modeEncrypt: byId("modeEncrypt"),
   modeDecrypt: byId("modeDecrypt"),
   helperText: byId("helperText"),
@@ -33,7 +176,15 @@ const elements = {
   fileSize: byId("fileSize"),
   filePreview: byId("filePreview"),
   inputStatus: byId("inputStatus"),
+  keyHeading: byId("keyHeading"),
+  keyDescription: byId("keyDescription"),
+  keyPanelTitle: byId("keyPanelTitle"),
+  keyNote: byId("keyNote"),
+  singleKeyRow: byId("singleKeyRow"),
+  affineKeyRow: byId("affineKeyRow"),
   keyInput: byId("keyInput"),
+  affineA: byId("affineA"),
+  affineB: byId("affineB"),
   keyStatus: byId("keyStatus"),
   normalizedKey: byId("normalizedKey"),
   outputStatus: byId("outputStatus"),
@@ -48,16 +199,31 @@ const elements = {
   notice: byId("notice"),
   noticeTitle: byId("noticeTitle"),
   noticeMessage: byId("noticeMessage"),
+  shiftSection: byId("shiftSection"),
   shiftTitle: byId("shiftTitle"),
   sourceAlphabet: byId("sourceAlphabet"),
   shiftedAlphabet: byId("shiftedAlphabet"),
   sourceLabel: byId("sourceLabel"),
   shiftedLabel: byId("shiftedLabel"),
+  historyTabLocal: byId("historyTabLocal"),
+  historyTabServer: byId("historyTabServer"),
+  localHistoryPanel: byId("localHistoryPanel"),
+  localHistoryEnabled: byId("localHistoryEnabled"),
+  localHistoryList: byId("localHistoryList"),
+  localHistoryEmpty: byId("localHistoryEmpty"),
+  serverHistoryPanel: byId("serverHistoryPanel"),
+  serverHistoryCipher: byId("serverHistoryCipher"),
+  serverHistoryOperation: byId("serverHistoryOperation"),
+  serverHistoryRows: byId("serverHistoryRows"),
+  serverHistoryStatus: byId("serverHistoryStatus"),
+  loadMoreServerHistory: byId("loadMoreServerHistory"),
 };
 
 const state = {
+  cipher: "caesar",
   mode: "encrypt",
   inputType: "text",
+  keys: emptyKeys(),
   file: null,
   fileText: "",
   result: null,
@@ -65,7 +231,12 @@ const state = {
   loading: false,
   requestVersion: 0,
   fileReadVersion: 0,
+  historyTab: "local",
+  server: { available: false, items: [], cursor: null, loading: false, version: 0 },
 };
+
+const cipherConfig = () => CIPHERS[state.cipher];
+const currentKeys = () => state.keys[state.cipher];
 
 const escapeHtml = (value) => String(value).replace(
   /[&<>"]/g,
@@ -122,24 +293,13 @@ function currentInputText() {
   return state.inputType === "text" ? elements.textInput.value : state.fileText;
 }
 
-function parseKey() {
-  const raw = elements.keyInput.value.trim();
-  if (raw === "") {
-    return { valid: false, missing: true, raw };
-  }
-  if ((state.inputType === "file" && raw.length > 32) || !KEY_PATTERN.test(raw)) {
-    return { valid: false, missing: false, raw };
-  }
-  try {
-    return { valid: true, raw, value: BigInt(raw) };
-  } catch (error) {
-    return { valid: false, missing: false, raw, error };
-  }
+function checkKey() {
+  return cipherConfig().validateKey(currentKeys(), state.inputType === "file");
 }
 
-function normalizedKey(parsed = parseKey()) {
-  if (!parsed.valid) return null;
-  return Number(((parsed.value % 26n) + 26n) % 26n);
+function caesarShift() {
+  const parsed = parseSignedInteger(state.keys.caesar.key, { forFile: state.inputType === "file" });
+  return parsed.value === undefined ? 0 : modulo26(parsed.value);
 }
 
 function shiftAlphabet(key, operation) {
@@ -162,7 +322,9 @@ for (const letter of ALPHABET) {
 }
 
 function renderShiftTable() {
-  const key = normalizedKey() ?? 0;
+  elements.shiftSection.hidden = state.cipher !== "caesar";
+  if (elements.shiftSection.hidden) return;
+  const key = caesarShift();
   const shifted = shiftAlphabet(key, state.mode);
   const used = new Set(
     [...currentInputText()]
@@ -193,8 +355,13 @@ function validateInput() {
       setStatus(elements.inputStatus, "Chưa có dữ liệu");
       return false;
     }
+    const textError = cipherConfig().validateText?.(text);
+    if (textError) {
+      setStatus(elements.inputStatus, textError, "error");
+      return false;
+    }
     const lineCount = text.split(/\r\n|\r|\n/).length;
-    setStatus(elements.inputStatus, `Văn bản hợp lệ · ${text.length} ký tự · ${lineCount} dòng`, "valid");
+    setStatus(elements.inputStatus, `Văn bản hợp lệ · ${[...text].length} ký tự · ${lineCount} dòng`, "valid");
     return true;
   }
 
@@ -219,16 +386,14 @@ function validateInput() {
 }
 
 function validateKey() {
-  const parsed = parseKey();
-  if (!parsed.valid) {
+  const checked = checkKey();
+  if (!checked.valid) {
     elements.normalizedKey.textContent = "";
-    const message = parsed.missing ? MESSAGES.keyMissing : MESSAGES.keyInvalid;
-    setStatus(elements.keyStatus, message, parsed.missing ? "neutral" : "error");
+    setStatus(elements.keyStatus, checked.message, checked.missing ? "neutral" : "error");
     return false;
   }
-  const normalized = normalizedKey(parsed);
-  elements.normalizedKey.textContent = parsed.value === BigInt(normalized) ? "" : `Chuẩn hóa → ${normalized}`;
-  setStatus(elements.keyStatus, "Khóa hợp lệ", "valid");
+  elements.normalizedKey.textContent = state.cipher === "affine" ? "" : checked.note ?? "";
+  setStatus(elements.keyStatus, checked.note && state.cipher === "affine" ? `Khóa hợp lệ · ${checked.note}` : "Khóa hợp lệ", "valid");
   return true;
 }
 
@@ -251,12 +416,50 @@ function renderOutputView() {
   });
 }
 
+function renderCipherChrome() {
+  const config = cipherConfig();
+  const encrypting = state.mode === "encrypt";
+  document.querySelectorAll("[data-cipher]").forEach((tab) => {
+    const active = tab.dataset.cipher === state.cipher;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-selected", String(active));
+  });
+  elements.cipherTitle.textContent = `${config.name} Cipher`;
+  elements.cipherSubtitle.textContent = `${config.subtitle} Hỗ trợ văn bản và file .txt.`;
+  elements.helperText.textContent = encrypting
+    ? `Nhập bản rõ bên dưới để mã hóa bằng hệ mật ${config.name}.`
+    : `Nhập bản mã bên dưới để giải mã bằng hệ mật ${config.name}.`;
+  elements.playfairWarning.hidden = state.cipher !== "playfair";
+  elements.keyHeading.textContent = `Khóa ${config.name}`;
+  elements.keyDescription.textContent = config.keyDescription;
+  elements.keyPanelTitle.textContent = config.keyPanelTitle;
+  elements.keyNote.textContent = config.keyNote;
+  const affine = state.cipher === "affine";
+  elements.singleKeyRow.hidden = affine;
+  elements.affineKeyRow.hidden = !affine;
+  if (!affine) {
+    elements.keyInput.placeholder = config.placeholder;
+    elements.keyInput.inputMode = config.numeric ? "numeric" : "text";
+  }
+}
+
+function syncKeyControls() {
+  if (state.cipher === "affine") {
+    elements.affineA.value = state.keys.affine.a;
+    elements.affineB.value = state.keys.affine.b;
+  } else {
+    elements.keyInput.value = currentKeys().key;
+  }
+}
+
 function render() {
   const encrypting = state.mode === "encrypt";
   const hasResult = state.result !== null;
   const inputValid = validateInput();
   const keyValid = validateKey();
+  const hasKeyText = cipherConfig().fields.some((field) => currentKeys()[field] !== "");
 
+  renderCipherChrome();
   elements.modeEncrypt.classList.toggle("active", encrypting);
   elements.modeDecrypt.classList.toggle("active", !encrypting);
   elements.modeEncrypt.setAttribute("aria-selected", String(encrypting));
@@ -267,17 +470,8 @@ function render() {
   elements.fileWrap.hidden = state.inputType !== "file";
   elements.inputTitle.textContent = encrypting ? "Bản rõ" : "Bản mã";
   elements.outputTitle.textContent = encrypting ? "Bản mã" : "Bản rõ";
-  elements.helperText.textContent = encrypting
-    ? "Nhập bản rõ bên dưới để mã hóa bằng hệ mật Caesar."
-    : "Nhập bản mã bên dưới để giải mã bằng hệ mật Caesar.";
 
   elements.inputHighlight.innerHTML = colorize(elements.textInput.value);
-  elements.copyInput.disabled = state.loading || currentInputText() === "";
-  elements.copyKey.disabled = state.loading || elements.keyInput.value === "";
-  elements.copyOutput.disabled = state.loading || !hasResult;
-  elements.clearOutput.disabled = state.loading || !hasResult;
-  elements.downloadOutput.disabled = state.loading || !hasResult;
-  elements.actionButton.disabled = state.loading || !(inputValid && keyValid);
   elements.actionButton.classList.toggle("loading", state.loading);
   elements.actionButton.textContent = state.loading ? "Đang xử lý…" : encrypting ? "Mã hóa" : "Giải mã";
 
@@ -288,7 +482,7 @@ function render() {
   elements.dropZone.tabIndex = state.loading ? -1 : 0;
   if (!state.loading) {
     elements.copyInput.disabled = currentInputText() === "";
-    elements.copyKey.disabled = elements.keyInput.value === "";
+    elements.copyKey.disabled = !hasKeyText;
     elements.copyOutput.disabled = !hasResult;
     elements.clearOutput.disabled = !hasResult;
     elements.downloadOutput.disabled = !hasResult;
@@ -297,6 +491,14 @@ function render() {
 
   renderOutputView();
   renderShiftTable();
+}
+
+function selectCipher(cipher) {
+  if (!(cipher in CIPHERS) || cipher === state.cipher) return;
+  state.cipher = cipher;
+  syncKeyControls();
+  clearResult();
+  render();
 }
 
 function selectMode(mode) {
@@ -381,22 +583,31 @@ function showResult(result, source) {
   elements.result.innerHTML = colorize(result);
   elements.analysis.replaceChildren();
 
-  let uppercase = 0;
-  let lowercase = 0;
-  let unchanged = 0;
-  for (const character of source) {
-    const code = character.charCodeAt(0);
-    if (code >= 65 && code <= 90) uppercase += 1;
-    else if (code >= 97 && code <= 122) lowercase += 1;
-    else unchanged += 1;
-  }
+  const config = cipherConfig();
+  addAnalysisRow("Hệ mã", config.name);
   addAnalysisRow("Chế độ", state.mode === "encrypt" ? "Mã hóa" : "Giải mã");
   addAnalysisRow("Nguồn", state.inputType === "text" ? "Văn bản" : `File · ${state.file.name}`);
-  addAnalysisRow("Khóa nhập / chuẩn hóa", `${elements.keyInput.value.trim()} / ${normalizedKey()}`);
-  addAnalysisRow("Tổng ký tự", String(source.length));
-  addAnalysisRow("Chữ hoa dịch chuyển", String(uppercase));
-  addAnalysisRow("Chữ thường dịch chuyển", String(lowercase));
-  addAnalysisRow("Ký tự giữ nguyên", String(unchanged));
+  addAnalysisRow("Khóa", config.describeKey(currentKeys()));
+  addAnalysisRow("Ký tự đầu vào", String([...source].length));
+  addAnalysisRow("Ký tự kết quả", String([...result].length));
+  if (state.cipher === "caesar") {
+    let uppercase = 0;
+    let lowercase = 0;
+    let unchanged = 0;
+    for (const character of source) {
+      const code = character.charCodeAt(0);
+      if (code >= 65 && code <= 90) uppercase += 1;
+      else if (code >= 97 && code <= 122) lowercase += 1;
+      else unchanged += 1;
+    }
+    addAnalysisRow("Khóa chuẩn hóa", String(caesarShift()));
+    addAnalysisRow("Chữ hoa dịch chuyển", String(uppercase));
+    addAnalysisRow("Chữ thường dịch chuyển", String(lowercase));
+    addAnalysisRow("Ký tự giữ nguyên", String(unchanged));
+  }
+  if (state.cipher === "playfair") {
+    addAnalysisRow("Lưu ý", "Kết quả là văn bản đã chuẩn hóa, không phải nguyên văn đầu vào");
+  }
 }
 
 async function parseApiResponse(response) {
@@ -436,24 +647,22 @@ async function fetchWithTimeout(url, options) {
 }
 
 const realApi = {
-  async text(operation, text, key) {
-    const jsonKey = BigInt(key).toString();
-    const body = `{"text":${JSON.stringify(text)},"key":${jsonKey}}`;
-    const response = await fetchWithTimeout(`/api/caesar/${operation}`, {
+  async text(cipher, operation, text, keys) {
+    const response = await fetchWithTimeout(`/api/${cipher}/${operation}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body,
+      body: CIPHERS[cipher].textBody(text, keys),
     });
     return parseApiResponse(response);
   },
 
-  async file(operation, file, key, responseMode) {
+  async file(cipher, operation, file, keys, responseMode) {
     const data = new FormData();
     data.append("file", file);
-    data.append("key", key);
+    for (const field of CIPHERS[cipher].fields) data.append(field, keys[field]);
     data.append("action", operation);
     data.append("response_mode", responseMode);
-    const response = await fetchWithTimeout("/api/caesar/file", { method: "POST", body: data });
+    const response = await fetchWithTimeout(`/api/${cipher}/file`, { method: "POST", body: data });
     if (responseMode === "content") return parseApiResponse(response);
 
     const contentType = response.headers.get("content-type") || "";
@@ -512,16 +721,18 @@ async function processInput() {
   render();
 
   const source = currentInputText();
-  const key = elements.keyInput.value.trim();
+  const keys = { ...currentKeys() };
   const actionLabel = state.mode === "encrypt" ? "Mã hóa" : "Giải mã";
   try {
     const response = state.inputType === "text"
-      ? await realApi.text(state.mode, elements.textInput.value, key)
-      : await realApi.file(state.mode, state.file, key, "content");
+      ? await realApi.text(state.cipher, state.mode, elements.textInput.value, keys)
+      : await realApi.file(state.cipher, state.mode, state.file, keys, "content");
     if (requestVersion !== state.requestVersion) return;
     showResult(response.result, source);
-    setStatus(elements.outputStatus, `${actionLabel} thành công · ${response.result.length} ký tự`, "valid");
+    setStatus(elements.outputStatus, `${actionLabel} thành công · ${[...response.result].length} ký tự`, "valid");
     showNotice("success", `${actionLabel} thành công`, "Kết quả đã sẵn sàng để sao chép hoặc tải xuống.");
+    recordLocalHistory(response.result, keys);
+    if (state.historyTab === "server") loadServerHistory({ reset: true });
   } catch (error) {
     if (requestVersion !== state.requestVersion) return;
     clearResult({ keepNotice: true });
@@ -547,12 +758,7 @@ async function downloadResult() {
   try {
     let filename;
     if (state.inputType === "file") {
-      const response = await realApi.file(
-        state.mode,
-        state.file,
-        elements.keyInput.value.trim(),
-        "file",
-      );
+      const response = await realApi.file(state.cipher, state.mode, state.file, currentKeys(), "file");
       filename = filenameFromDisposition(response.disposition);
       if (filename === null) {
         const error = new Error(MESSAGES.system);
@@ -576,17 +782,214 @@ async function downloadResult() {
   }
 }
 
+// ---- History on this device (localStorage; never sent to the server) ----
+
+function readLocalHistory() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(LOCAL_HISTORY_KEY) || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    return [];
+  }
+}
+
+function isLocalHistoryEnabled() {
+  try {
+    return localStorage.getItem(LOCAL_HISTORY_ENABLED_KEY) !== "false";
+  } catch (error) {
+    return false;
+  }
+}
+
+function writeLocalHistory(entries) {
+  try {
+    if (entries.length === 0) localStorage.removeItem(LOCAL_HISTORY_KEY);
+    else localStorage.setItem(LOCAL_HISTORY_KEY, JSON.stringify(entries));
+  } catch (error) {
+    // Storage blocked or full: skip history, never break the cipher flow.
+  }
+}
+
+function recordLocalHistory(result, keys) {
+  if (!isLocalHistoryEnabled()) return;
+  const fromFile = state.inputType === "file";
+  const entry = {
+    at: new Date().toISOString(),
+    cipher: state.cipher,
+    operation: state.mode,
+    source: state.inputType,
+    input: fromFile ? state.file.name : elements.textInput.value,
+    key: keys,
+    result: fromFile ? null : result,
+  };
+  writeLocalHistory([entry, ...readLocalHistory()].slice(0, LOCAL_HISTORY_LIMIT));
+  renderLocalHistory();
+}
+
+const excerpt = (text, length = 90) => {
+  const characters = [...text];
+  return characters.length > length ? `${characters.slice(0, length).join("")}…` : text;
+};
+
+const formatTime = (iso) => {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleString("vi-VN");
+};
+
+function reuseLocalEntry(entry) {
+  if (state.loading || !(entry.cipher in CIPHERS)) return;
+  state.cipher = entry.cipher;
+  state.mode = entry.operation === "decrypt" ? "decrypt" : "encrypt";
+  state.inputType = "text";
+  state.keys[entry.cipher] = { ...state.keys[entry.cipher], ...entry.key };
+  elements.textInput.value = entry.input;
+  syncKeyControls();
+  clearResult();
+  render();
+  elements.actionButton.focus();
+}
+
+function renderLocalHistory() {
+  const entries = readLocalHistory();
+  elements.localHistoryEnabled.checked = isLocalHistoryEnabled();
+  elements.localHistoryEmpty.hidden = entries.length > 0;
+  elements.localHistoryList.replaceChildren(...entries.map((entry) => {
+    const item = document.createElement("li");
+    const head = document.createElement("div");
+    head.className = "history-item-head";
+    const title = document.createElement("strong");
+    const config = CIPHERS[entry.cipher];
+    title.textContent = `${config ? config.name : entry.cipher} · ${entry.operation === "decrypt" ? "Giải mã" : "Mã hóa"}`;
+    const time = document.createElement("time");
+    time.dateTime = entry.at;
+    time.textContent = formatTime(entry.at);
+    head.append(title, time);
+    if (entry.source === "text" && config) {
+      const reuse = document.createElement("button");
+      reuse.type = "button";
+      reuse.className = "mini-button";
+      reuse.textContent = "Dùng lại";
+      reuse.dataset.lockable = "";
+      reuse.disabled = state.loading;
+      reuse.addEventListener("click", () => reuseLocalEntry(entry));
+      head.append(reuse);
+    }
+    const details = document.createElement("dl");
+    const addDetail = (term, value) => {
+      const label = document.createElement("dt");
+      const content = document.createElement("dd");
+      label.textContent = term;
+      content.textContent = value;
+      details.append(label, content);
+    };
+    addDetail(entry.source === "file" ? "File" : "Đầu vào", excerpt(String(entry.input ?? "")));
+    if (config) addDetail("Khóa", config.describeKey({ ...emptyKeys()[entry.cipher], ...entry.key }));
+    if (entry.result !== null && entry.result !== undefined) addDetail("Kết quả", excerpt(String(entry.result)));
+    item.append(head, details);
+    return item;
+  }));
+}
+
+// ---- Server history (metadata only; shown when /api/health allows it) ----
+
+const CIPHER_LABELS = Object.fromEntries(Object.entries(CIPHERS).map(([cipher, config]) => [cipher, config.name]));
+
+function renderServerRows() {
+  elements.serverHistoryRows.replaceChildren(...state.server.items.map((item) => {
+    const row = document.createElement("tr");
+    const lengths = `${item.inputLength ?? "—"} → ${item.outputLength ?? "—"}`;
+    const source = item.source === "file" ? `File${item.responseMode ? ` (${item.responseMode})` : ""}` : "Văn bản";
+    const cells = [
+      formatTime(item.createdAt),
+      CIPHER_LABELS[item.cipher] ?? item.cipher,
+      item.operation === "encrypt" ? "Mã hóa" : item.operation === "decrypt" ? "Giải mã" : "—",
+      source,
+      lengths,
+      `${item.succeeded ? "Thành công" : "Lỗi"} · ${item.httpStatus}`,
+      `${item.durationMs} ms`,
+    ];
+    cells.forEach((text, index) => {
+      const cell = document.createElement("td");
+      cell.textContent = text;
+      if (index === 5) cell.className = item.succeeded ? "ok" : "failed";
+      row.appendChild(cell);
+    });
+    return row;
+  }));
+  elements.loadMoreServerHistory.hidden = state.server.cursor === null;
+  elements.loadMoreServerHistory.disabled = state.server.loading;
+}
+
+async function loadServerHistory({ reset }) {
+  if (!state.server.available) return;
+  const version = state.server.version + 1;
+  state.server.version = version;
+  state.server.loading = true;
+  if (reset) {
+    state.server.items = [];
+    state.server.cursor = null;
+  }
+  renderServerRows();
+  setStatus(elements.serverHistoryStatus, "Đang tải…");
+  const query = new URLSearchParams({ limit: String(SERVER_HISTORY_PAGE_SIZE) });
+  if (elements.serverHistoryCipher.value) query.set("cipher", elements.serverHistoryCipher.value);
+  if (elements.serverHistoryOperation.value) query.set("operation", elements.serverHistoryOperation.value);
+  if (!reset && state.server.cursor) query.set("cursor", state.server.cursor);
+  try {
+    const body = await parseApiResponse(await fetchWithTimeout(`/api/history?${query}`, {}));
+    if (version !== state.server.version) return;
+    state.server.items = [...state.server.items, ...body.result.items];
+    state.server.cursor = body.result.nextCursor;
+    const count = state.server.items.length;
+    setStatus(elements.serverHistoryStatus, count === 0 ? "Chưa có thao tác nào" : `Đang hiện ${count} thao tác`, "valid");
+  } catch (error) {
+    if (version !== state.server.version) return;
+    state.server.cursor = null;
+    const message = error.isApiError ? error.message : "Không thể gọi máy chủ. Vui lòng thử lại.";
+    setStatus(elements.serverHistoryStatus, message, "error");
+  } finally {
+    if (version === state.server.version) {
+      state.server.loading = false;
+      renderServerRows();
+    }
+  }
+}
+
+function selectHistoryTab(tab) {
+  if (tab === "server" && !state.server.available) return;
+  state.historyTab = tab;
+  const server = tab === "server";
+  elements.historyTabLocal.setAttribute("aria-selected", String(!server));
+  elements.historyTabServer.setAttribute("aria-selected", String(server));
+  elements.localHistoryPanel.hidden = server;
+  elements.serverHistoryPanel.hidden = !server;
+  if (server) loadServerHistory({ reset: true });
+}
+
+async function detectServerHistory() {
+  try {
+    const response = await fetchWithTimeout("/api/health", {});
+    const body = await response.json();
+    state.server.available = body?.result?.history === "enabled" && body?.result?.database === "ok";
+  } catch (error) {
+    state.server.available = false;
+  }
+  elements.historyTabServer.hidden = !state.server.available;
+}
+
 function resetAll() {
   state.requestVersion += 1;
+  state.cipher = "caesar";
   state.mode = "encrypt";
   state.inputType = "text";
+  state.keys = emptyKeys();
   state.file = null;
   state.fileText = "";
   state.view = "result";
   state.loading = false;
   state.fileReadVersion += 1;
   elements.textInput.value = "";
-  elements.keyInput.value = "";
+  syncKeyControls();
   elements.fileInput.value = "";
   elements.filePreview.textContent = "";
   elements.dropZone.hidden = false;
@@ -600,13 +1003,25 @@ function resetAll() {
   render();
 }
 
+function onKeyEdited(field, value) {
+  currentKeys()[field] = value;
+  hideNotice();
+  clearResult();
+  render();
+}
+
+document.querySelectorAll("[data-cipher]").forEach((tab) => {
+  tab.addEventListener("click", () => selectCipher(tab.dataset.cipher));
+});
 elements.modeEncrypt.addEventListener("click", () => selectMode("encrypt"));
 elements.modeDecrypt.addEventListener("click", () => selectMode("decrypt"));
 elements.typeText.addEventListener("click", () => selectInputType("text"));
 elements.typeFile.addEventListener("click", () => selectInputType("file"));
 elements.textInput.addEventListener("input", () => { hideNotice(); clearResult(); render(); });
 elements.textInput.addEventListener("scroll", () => { elements.inputHighlight.scrollTop = elements.textInput.scrollTop; });
-elements.keyInput.addEventListener("input", () => { hideNotice(); clearResult(); render(); });
+elements.keyInput.addEventListener("input", () => onKeyEdited("key", elements.keyInput.value));
+elements.affineA.addEventListener("input", () => onKeyEdited("a", elements.affineA.value));
+elements.affineB.addEventListener("input", () => onKeyEdited("b", elements.affineB.value));
 byId("clearInput").addEventListener("click", () => {
   if (state.inputType === "file") removeFile();
   else {
@@ -617,13 +1032,14 @@ byId("clearInput").addEventListener("click", () => {
   }
 });
 byId("clearKey").addEventListener("click", () => {
-  elements.keyInput.value = "";
+  state.keys[state.cipher] = emptyKeys()[state.cipher];
+  syncKeyControls();
   clearResult();
   render();
-  elements.keyInput.focus();
+  (state.cipher === "affine" ? elements.affineA : elements.keyInput).focus();
 });
 elements.copyInput.addEventListener("click", () => copyText(currentInputText(), "Đã sao chép đầu vào"));
-elements.copyKey.addEventListener("click", () => copyText(elements.keyInput.value, "Đã sao chép khóa"));
+elements.copyKey.addEventListener("click", () => copyText(cipherConfig().describeKey(currentKeys()), "Đã sao chép khóa"));
 elements.copyOutput.addEventListener("click", () => copyText(state.result, "Đã sao chép kết quả"));
 elements.clearOutput.addEventListener("click", () => { clearResult(); render(); });
 elements.downloadOutput.addEventListener("click", downloadResult);
@@ -666,9 +1082,12 @@ elements.dropZone.addEventListener("drop", (event) => {
   if (file) setFile(file);
 });
 byId("example").addEventListener("click", () => {
+  const { example } = cipherConfig();
+  state.mode = "encrypt";
   state.inputType = "text";
-  elements.textInput.value = "Hello World";
-  elements.keyInput.value = "3";
+  state.keys[state.cipher] = { ...example.keys };
+  elements.textInput.value = example.text;
+  syncKeyControls();
   clearResult();
   render();
   elements.actionButton.focus();
@@ -679,5 +1098,31 @@ document.querySelectorAll("#outputPanel [data-view]").forEach((tab) => {
     render();
   });
 });
+elements.historyTabLocal.addEventListener("click", () => selectHistoryTab("local"));
+elements.historyTabServer.addEventListener("click", () => selectHistoryTab("server"));
+elements.localHistoryEnabled.addEventListener("change", () => {
+  const enabled = elements.localHistoryEnabled.checked;
+  try {
+    localStorage.setItem(LOCAL_HISTORY_ENABLED_KEY, String(enabled));
+  } catch (error) {
+    showNotice("warning", "Không thể lưu lựa chọn", "Trình duyệt đang chặn bộ nhớ cục bộ.");
+  }
+  if (!enabled && readLocalHistory().length > 0) {
+    showNotice("success", "Đã tắt lưu lịch sử", "Các mục đã lưu vẫn còn; bấm “Xóa lịch sử trên máy này” để xóa.");
+  }
+  renderLocalHistory();
+});
+byId("clearLocalHistory").addEventListener("click", () => {
+  writeLocalHistory([]);
+  renderLocalHistory();
+  showNotice("success", "Đã xóa lịch sử trên máy này");
+});
+elements.serverHistoryCipher.addEventListener("change", () => loadServerHistory({ reset: true }));
+elements.serverHistoryOperation.addEventListener("change", () => loadServerHistory({ reset: true }));
+byId("refreshServerHistory").addEventListener("click", () => loadServerHistory({ reset: true }));
+elements.loadMoreServerHistory.addEventListener("click", () => loadServerHistory({ reset: false }));
 
+syncKeyControls();
 render();
+renderLocalHistory();
+detectServerHistory();

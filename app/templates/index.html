@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Công cụ Caesar Cipher</title>
+  <title>Công cụ mã hóa cổ điển</title>
   <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}">
 </head>
 <body
@@ -15,15 +15,26 @@
   data-message-key-invalid="{{ ui_messages.key_invalid }}"
   data-message-system="{{ ui_messages.system }}"
 >
+  <script type="application/json" id="cipherMessages">{{ cipher_messages | tojson }}</script>
   <main class="page">
     <header class="hero">
       <div>
         <p class="kicker">Minh họa thuật toán</p>
-        <h1>Caesar Cipher</h1>
-        <p class="subtitle">Mã hóa hoặc giải mã văn bản và file .txt. Chỉ các chữ cái ASCII A–Z, a–z được dịch chuyển.</p>
+        <h1 id="cipherTitle">Caesar Cipher</h1>
+        <p class="subtitle" id="cipherSubtitle">Mã hóa hoặc giải mã văn bản và file .txt.</p>
       </div>
       <button class="button secondary" id="resetAll" type="button" data-lockable>Làm mới</button>
     </header>
+
+    <section class="cipher-row" aria-label="Chọn hệ mã">
+      <div class="cipher-tabs" role="tablist" aria-label="Hệ mã">
+        <button class="cipher-tab" type="button" role="tab" data-cipher="caesar" data-lockable>Caesar</button>
+        <button class="cipher-tab" type="button" role="tab" data-cipher="vigenere" data-lockable>Vigenère</button>
+        <button class="cipher-tab" type="button" role="tab" data-cipher="playfair" data-lockable>Playfair</button>
+        <button class="cipher-tab" type="button" role="tab" data-cipher="affine" data-lockable>Affine</button>
+        <button class="cipher-tab" type="button" role="tab" data-cipher="columnar" data-lockable>Columnar</button>
+      </div>
+    </section>
 
     <section class="mode-row" aria-label="Chế độ xử lý">
       <div class="mode-tabs" role="tablist" aria-label="Chế độ">
@@ -36,7 +47,11 @@
       </div>
       <button class="button secondary" id="example" type="button" data-lockable>Tạo ví dụ</button>
     </section>
-    <p class="helper" id="helperText">Nhập bản rõ bên dưới để mã hóa bằng hệ mật Caesar.</p>
+    <p class="helper" id="helperText"></p>
+    <div class="callout warning" id="playfairWarning" role="note" hidden>
+      <strong>Playfair không khôi phục nguyên văn.</strong>
+      <span>Playfair chuẩn hóa thành chữ hoa ASCII, gộp J/I, loại định dạng; khi giải mã giữ filler X/Q giữa chuỗi và bỏ filler cuối; kết quả không khôi phục nguyên văn đầu vào.</span>
+    </div>
 
     <section class="workspace" aria-label="Không gian xử lý">
       <div>
@@ -110,37 +125,45 @@
           <div class="status-bar" id="outputStatus" aria-live="polite"><span class="status-icon">·</span><span>Chưa xử lý</span></div>
         </article>
 
-        <div class="section-heading"><span>Bảng dịch chuyển</span></div>
-        <article class="panel alphabet-panel">
-          <header class="panel-head">
-            <h2 id="shiftTitle">Khóa 0 · A → A</h2>
-            <span class="legend">Ô nổi bật là chữ có trong đầu vào</span>
-          </header>
-          <div class="alphabet-scroll">
-            <div class="alphabet-row" id="sourceAlphabet"><b id="sourceLabel">Bản rõ</b></div>
-            <div class="alphabet-row shifted" id="shiftedAlphabet"><b id="shiftedLabel">Bản mã</b></div>
-          </div>
-        </article>
+        <div id="shiftSection">
+          <div class="section-heading"><span>Bảng dịch chuyển</span></div>
+          <article class="panel alphabet-panel">
+            <header class="panel-head">
+              <h2 id="shiftTitle">Khóa 0 · A → A</h2>
+              <span class="legend">Ô nổi bật là chữ có trong đầu vào</span>
+            </header>
+            <div class="alphabet-scroll">
+              <div class="alphabet-row" id="sourceAlphabet"><b id="sourceLabel">Bản rõ</b></div>
+              <div class="alphabet-row shifted" id="shiftedAlphabet"><b id="shiftedLabel">Bản mã</b></div>
+            </div>
+          </article>
+        </div>
       </div>
     </section>
 
     <section class="key-section" aria-labelledby="keyHeading">
       <h2 id="keyHeading">Khóa Caesar</h2>
-      <p>Nhập số nguyên có dấu. Khóa được chuẩn hóa về 0–25 trước khi xử lý.</p>
+      <p id="keyDescription"></p>
       <div class="key-grid">
         <article class="panel key-panel">
           <header class="panel-head">
-            <h3>Khóa dịch chuyển</h3>
+            <h3 id="keyPanelTitle">Khóa dịch chuyển</h3>
             <div class="panel-actions">
               <button class="mini-button" id="copyKey" type="button" data-lockable disabled>Sao chép</button>
               <button class="mini-button" id="clearKey" type="button" data-lockable>Xóa</button>
             </div>
           </header>
-          <div class="key-input-row">
-            <input id="keyInput" type="text" inputmode="numeric" autocomplete="off" placeholder="ví dụ: +3 hoặc -3" aria-describedby="keyNote" data-lockable>
+          <div class="key-input-row" id="singleKeyRow">
+            <input id="keyInput" type="text" autocomplete="off" aria-labelledby="keyPanelTitle" aria-describedby="keyNote" data-lockable>
             <span id="normalizedKey"></span>
           </div>
-          <p class="key-note" id="keyNote">Ví dụ: 29 → 3, −3 → 23, 26 → 0.</p>
+          <div class="key-input-row affine-row" id="affineKeyRow" hidden>
+            <label for="affineA">a</label>
+            <input id="affineA" type="text" inputmode="numeric" autocomplete="off" placeholder="ví dụ: 5" aria-describedby="keyNote" data-lockable>
+            <label for="affineB">b</label>
+            <input id="affineB" type="text" inputmode="numeric" autocomplete="off" placeholder="ví dụ: 8" aria-describedby="keyNote" data-lockable>
+          </div>
+          <p class="key-note" id="keyNote"></p>
           <div class="status-bar" id="keyStatus" aria-live="polite"><span class="status-icon">·</span><span>Chưa nhập khóa</span></div>
         </article>
 
@@ -149,6 +172,64 @@
           <p>Nút chỉ bật khi đầu vào và khóa hợp lệ. Toàn bộ điều khiển được khóa trong lúc xử lý.</p>
         </div>
       </div>
+    </section>
+
+    <section class="history-section" aria-labelledby="historyHeading">
+      <div class="history-head">
+        <h2 id="historyHeading">Lịch sử</h2>
+        <div class="segmented" role="tablist" aria-label="Loại lịch sử">
+          <button id="historyTabLocal" type="button" role="tab" aria-selected="true" data-history-tab="local">Trên máy này</button>
+          <button id="historyTabServer" type="button" role="tab" aria-selected="false" data-history-tab="server" hidden>Máy chủ</button>
+        </div>
+      </div>
+
+      <article class="panel" id="localHistoryPanel">
+        <header class="panel-head history-toolbar">
+          <label class="toggle"><input id="localHistoryEnabled" type="checkbox" checked> Lưu lịch sử trên máy này</label>
+          <div class="panel-actions">
+            <button class="mini-button" id="clearLocalHistory" type="button">Xóa lịch sử trên máy này</button>
+          </div>
+        </header>
+        <p class="history-note">Lịch sử chỉ nằm trong trình duyệt này, không gửi lên máy chủ, và có chứa cả khóa. Chỉ nên bật trên máy cá nhân. Lưu tối đa 50 thao tác gần nhất.</p>
+        <ol class="history-list" id="localHistoryList"></ol>
+        <p class="history-empty" id="localHistoryEmpty">Chưa có thao tác nào được lưu.</p>
+      </article>
+
+      <article class="panel" id="serverHistoryPanel" hidden>
+        <header class="panel-head history-toolbar">
+          <label>Hệ mã
+            <select id="serverHistoryCipher">
+              <option value="">Tất cả</option>
+              <option value="caesar">Caesar</option>
+              <option value="vigenere">Vigenère</option>
+              <option value="playfair">Playfair</option>
+              <option value="affine">Affine</option>
+              <option value="columnar">Columnar</option>
+            </select>
+          </label>
+          <label>Chế độ
+            <select id="serverHistoryOperation">
+              <option value="">Tất cả</option>
+              <option value="encrypt">Mã hóa</option>
+              <option value="decrypt">Giải mã</option>
+            </select>
+          </label>
+          <div class="panel-actions">
+            <button class="mini-button" id="refreshServerHistory" type="button">Làm mới</button>
+          </div>
+        </header>
+        <p class="history-note">Lịch sử chung của máy chủ, chỉ gồm thông tin thao tác (không có văn bản, khóa hay kết quả), giữ 30 ngày.</p>
+        <div class="table-scroll">
+          <table class="history-table">
+            <thead>
+              <tr><th>Thời gian</th><th>Hệ mã</th><th>Chế độ</th><th>Nguồn</th><th>Độ dài vào → ra</th><th>Kết quả</th><th>Thời gian xử lý</th></tr>
+            </thead>
+            <tbody id="serverHistoryRows"></tbody>
+          </table>
+        </div>
+        <div class="status-bar" id="serverHistoryStatus" aria-live="polite"><span class="status-icon">·</span><span>Chưa tải</span></div>
+        <div class="history-more"><button class="button secondary" id="loadMoreServerHistory" type="button" hidden>Tải thêm</button></div>
+      </article>
     </section>
 
     <div class="notice" id="notice" role="status" aria-live="assertive" hidden>
