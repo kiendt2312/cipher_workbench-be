@@ -27,10 +27,15 @@ Hệ thống SHALL cung cấp `POST /api/playfair/encrypt` và `POST /api/playfa
 - **THEN** hệ thống trả HTTP 200
 - **AND** body là `{"success":true,"result":"BMODZBXDNABEKUDMUIXMMOUVIF"}`
 
-#### Scenario: Decrypt Playfair qua API giữ filler
+#### Scenario: Decrypt Playfair qua API giữ filler giữa chuỗi
 - **WHEN** client gửi `POST /api/playfair/decrypt` với body `{"text":"BMODZBXDNABEKUDMUIXMMOUVIF","key":"PLAYFAIR EXAMPLE"}`
 - **THEN** hệ thống trả HTTP 200
 - **AND** body là `{"success":true,"result":"HIDETHEGOLDINTHETREXESTUMP"}`
+
+#### Scenario: Decrypt Playfair qua API bỏ filler cuối
+- **WHEN** client gửi `POST /api/playfair/decrypt` với body `{"text":"PDGW","key":"PLAYFAIR EXAMPLE"}`
+- **THEN** hệ thống trả HTTP 200
+- **AND** body là `{"success":true,"result":"ABX"}`
 
 ### Requirement: Success response JSON đúng hai trường
 

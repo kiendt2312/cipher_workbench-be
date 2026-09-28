@@ -46,9 +46,9 @@ Phương án không chọn: `text.upper()` rồi `isalpha()`, loại dấu bằn
 
 Encrypt sẽ normalize plaintext rồi duyệt bằng index: cặp khác nhau tiêu thụ hai ký tự; cặp lặp tiêu thụ một và chèn `X`, riêng ký tự `X` dùng `Q`; ký tự cuối dùng cùng lựa chọn filler. Decrypt chỉ normalize ciphertext, kiểm non-empty/even/no identical digraph rồi transform từng cặp; không chèn filler, chỉ bỏ đúng một filler cuối (`XQ → X`, `X → ""`) theo quyết định chủ sở hữu 2026-09-28.
 
-Lý do: tách pipeline ngăn decrypt vô tình “sửa” ciphertext và làm rõ round-trip chỉ về prepared plaintext. Các vector `XX → XQXQ → GWGW` và `ABX → ABXQ → PDGW` là regression anchors.
+Lý do: tách pipeline ngăn decrypt vô tình “sửa” ciphertext và làm rõ round-trip chỉ về prepared plaintext đã bỏ filler cuối. Các vector `XX → XQXQ → GWGW` và `ABX → ABXQ → PDGW` là regression anchors.
 
-Phương án không chọn: heuristic xóa `X/Q`, luôn dùng `X` kể cả va chạm, hoặc pad ciphertext lẻ khi decrypt.
+Phương án không chọn: heuristic xóa mọi `X/Q` (kể cả giữa chuỗi), luôn dùng `X` kể cả va chạm, hoặc pad ciphertext lẻ khi decrypt.
 
 ### 4. HTTP adapter chịu trách nhiệm validation và ánh xạ lỗi
 
@@ -98,7 +98,7 @@ Lý do: lỗi có rủi ro cao nằm ở policy edge và adapter boundary hơn l
 
 ## Risks / Trade-offs
 
-- **[Playfair cố ý mất thông tin]** Người dùng có thể kỳ vọng decrypt phục hồi nguyên văn → API/spec giữ filler và trả uppercase prepared plaintext; UI mới, nếu được làm sau, phải giải thích rõ.
+- **[Playfair cố ý mất thông tin]** Người dùng có thể kỳ vọng decrypt phục hồi nguyên văn → API/spec giữ filler giữa chuỗi, bỏ một filler cuối và trả uppercase plaintext; plaintext chẵn kết thúc bằng `X` mất `X` cuối (`AX → A`); UI mới, nếu được làm sau, phải giải thích rõ.
 - **[Unicode case mapping ngoài ý muốn]** Hàm built-in có thể biến non-ASCII thành ASCII → dùng range/mapping ASCII tường minh và test `ß`, chữ có dấu, emoji.
 - **[Regression Caesar khi chia sẻ adapter]** Refactor để giảm lặp có thể đổi precedence hoặc OpenAPI → không bắt buộc refactor Caesar; thêm characterization/regression tests trước mọi extraction.
 - **[Guard bỏ sót hoặc nhận nhầm route]** Hard-code phân tán dễ lệch → một route set duy nhất, test cả ba file route, bốn text route và route không tồn tại.

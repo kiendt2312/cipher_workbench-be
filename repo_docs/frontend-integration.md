@@ -8,6 +8,8 @@ API và trạng thái quan sát được phải giữ đúng contract dưới đ
 - Backend áp dụng: Columnar được publish trên branch
   `feature/add-columnar-transposition-cipher` tại commit đã xác minh
   `c813b55719ed65b650c49d1c8353fcb7281ed084`; change OpenSpec vẫn active và chưa archive.
+- Backend áp dụng: Playfair bỏ filler cuối khi decrypt đã merge vào `main` qua PR #1
+  (commit `fb459dd`).
 - Ngày cập nhật guide: `2026-09-28` (Playfair decrypt bỏ filler cuối, xem mục 0).
 - Backend hiện có 15 endpoint cipher; UI static đang đi kèm backend vẫn là UI
   Caesar-only. Change backend này không triển khai FE; consumer có thể bổ sung control riêng.
@@ -1021,7 +1023,7 @@ view       = result | analysis
 Playfair phải có cảnh báo luôn nhìn thấy trước submit hoặc cạnh result:
 
 > Playfair chuẩn hóa thành chữ hoa ASCII, gộp J/I, loại định dạng; khi giải mã giữ
-> filler X giữa chuỗi và bỏ filler cuối; kết quả không khôi phục nguyên văn đầu vào.
+> filler X/Q giữa chuỗi và bỏ filler cuối; kết quả không khôi phục nguyên văn đầu vào.
 
 Trong loading, khóa mọi đường thay đổi/gửi lặp: click, keyboard shortcut,
 Enter/Space trên drop zone và file drop. Status/error/result thay đổi phải được công
@@ -1065,7 +1067,7 @@ phần tóm tắt này không làm yếu bất kỳ requirement nào của spec 
   phải giải thích numeric permutation/keyword, ASCII-only trim và bounds 2..256.
 - [ ] Columnar text gửi exact JSON `text,key`; Columnar multipart gửi exact
   `file,key,action,response_mode`; không gửi key kiểu number hoặc upload part.
-- [ ] Thêm cảnh báo Playfair lossy, uppercase, `J→I` và filler `X` giữa chuỗi.
+- [ ] Thêm cảnh báo Playfair lossy, uppercase, `J→I` và filler `X`/`Q` giữa chuỗi.
 - [ ] Xóa stale result khi cipher/mode/source/input/key/a/b thay đổi hoặc request thất bại.
 - [ ] Preview file dùng `response_mode=content`; download dùng request thứ hai mode `file`.
 - [ ] Dùng server attachment và filename; không tạo official file từ preview.

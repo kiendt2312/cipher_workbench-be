@@ -136,7 +136,7 @@ Ciphertext Playfair SHALL được chuẩn hóa bằng uppercase, giữ lại AS
 
 ### Requirement: Decrypt bỏ filler cuối và không hứa round-trip lossless
 
-Kết quả decrypt SHALL là chuỗi uppercase đã được biến đổi từ các digraph ciphertext, sau đó bỏ đúng một filler cuối chuỗi: nếu kết quả kết thúc bằng `XQ` thì bỏ `Q`, ngược lại nếu kết thúc bằng `X` thì bỏ `X`. Hệ thống MUST giữ nguyên mọi `X`/`Q` khác, không phục hồi whitespace/case/dấu câu/Unicode đã bị loại và không đổi `I` trở lại `J`. Vì ciphertext không phân biệt filler với chữ thật, plaintext có số chữ chẵn kết thúc bằng `X` SHALL mất `X` cuối. (Truy vết: quyết định chủ sở hữu 2026-09-28, thay thế quy tắc giữ mọi filler) Response thành công MUST chỉ chứa `result`; MUST NOT thêm `normalizedInput`. (Truy vết: scope mới BE-PLAY-02, BE-PLAY-06; quyết định chủ sở hữu cho change này)
+Kết quả decrypt SHALL là chuỗi uppercase đã được biến đổi từ các digraph ciphertext, sau đó bỏ đúng một filler cuối chuỗi: nếu kết quả kết thúc bằng `XQ` thì bỏ `Q`, ngược lại nếu kết thúc bằng `X` thì bỏ `X`. Hệ thống MUST giữ nguyên mọi `X`/`Q` khác, không phục hồi whitespace/case/dấu câu/Unicode đã bị loại và không đổi `I` trở lại `J`. Vì ciphertext không phân biệt filler với chữ thật, plaintext có số chữ chẵn kết thúc bằng `X` SHALL mất `X` cuối. Response thành công MUST chỉ chứa `result`; MUST NOT thêm `normalizedInput`. (Truy vết: scope mới BE-PLAY-02, BE-PLAY-06; quy tắc bỏ filler cuối theo quyết định chủ sở hữu 2026-09-28, thay thế quy tắc giữ mọi filler)
 
 #### Scenario: Filler giữa chữ lặp được giữ lại
 - **WHEN** encrypt rồi decrypt plaintext `BALLOON` với cùng keyword hợp lệ
@@ -153,7 +153,7 @@ Kết quả decrypt SHALL là chuỗi uppercase đã được biến đổi từ
 
 #### Scenario: Chuỗi gốc không thể được phục hồi lossless
 - **WHEN** encrypt rồi decrypt plaintext `Jig saw!` với cùng keyword hợp lệ
-- **THEN** kết quả chỉ phản ánh chuỗi normalized/prepared dùng bởi Playfair
+- **THEN** kết quả là `IXIGSAW`, tức prepared plaintext `IXIGSAWX` đã bỏ filler cuối
 - **AND** hệ thống không khôi phục chữ `J`, lowercase, khoảng trắng hoặc dấu `!`
 
 ### Requirement: Cùng core cho text và nội dung file
