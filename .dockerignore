@@ -26,3 +26,5 @@ paseo.json
 Caesar_Cipher_Tool_Demo.html
 
 # Keep: app/ recursively (templates, static and Python modules are copied into the image)
+# Local secrets
+.env

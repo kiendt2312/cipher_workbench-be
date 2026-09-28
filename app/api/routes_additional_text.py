@@ -4,6 +4,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Request
 
+from app.api.history_recorder import note_history
 from app.api.schemas import (
     StringKeyCipherRequest,
     TextCipherResponse,
@@ -62,14 +63,20 @@ async def _process_vigenere(
     request: Request, operation: Literal["encrypt", "decrypt"]
 ) -> TextCipherResponse:
     text, key = await _request_fields(request, "vigenere", operation)
-    return TextCipherResponse(success=True, result=transform_vigenere(text, key, operation))
+    note_history(request, input_length=len(text))
+    result = transform_vigenere(text, key, operation)
+    note_history(request, output_length=len(result))
+    return TextCipherResponse(success=True, result=result)
 
 
 async def _process_playfair(
     request: Request, operation: Literal["encrypt", "decrypt"]
 ) -> TextCipherResponse:
     text, key = await _request_fields(request, "playfair", operation)
-    return TextCipherResponse(success=True, result=transform_playfair(text, key, operation))
+    note_history(request, input_length=len(text))
+    result = transform_playfair(text, key, operation)
+    note_history(request, output_length=len(result))
+    return TextCipherResponse(success=True, result=result)
 
 
 @vigenere_router.post(

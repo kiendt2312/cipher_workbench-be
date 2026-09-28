@@ -8,6 +8,7 @@ from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import JSONResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.api.history_recorder import note_history
 from app.api.request_size_guard import MultipartCompletionGuard
 from app.api.schemas import MISSING, FileCipherResponse, validate_file_form_fields
 from app.core.caesar import transform_text
@@ -89,17 +90,20 @@ async def process_file(
         action,
         raw_response_mode,
     )
+    note_history(request, operation=parsed_action, response_mode=parsed_response_mode)
 
     if not has_allowed_extension(file.filename):
         raise UnsupportedFileTypeError()
 
     raw = await read_limited_bytes(file)
+    note_history(request, input_length=len(raw))
     if raw == b"":
         raise EmptyFileError()
 
     text, had_bom = decode_file_bytes(raw)
     del raw  # Release the upload buffer before transforming or constructing the response.
     result = transform_text(text, parsed_key, parsed_action)
+    note_history(request, output_length=len(result.encode("utf-8")))
 
     if parsed_response_mode == "content":
         return JSONResponse(

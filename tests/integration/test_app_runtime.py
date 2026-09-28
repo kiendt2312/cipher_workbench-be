@@ -132,12 +132,18 @@ def test_no_session_cookie_or_stored_state_is_created() -> None:
         assert "set-cookie" not in headers
 
 
-def test_no_route_exposes_history_or_previous_results() -> None:
+def test_only_metadata_history_route_exists_and_no_previous_results() -> None:
     with TestClient(app) as client:
-        schema = client.get("/openapi.json")
+        schema = client.get("/openapi.json").json()
         missing = client.get("/api/caesar/encrypt")
-    for path in schema.json()["paths"]:
-        assert not any(token in path.lower() for token in ("history", "record", "log", "session"))
+    stateful = {
+        path
+        for path in schema["paths"]
+        if any(token in path.lower() for token in ("history", "record", "log", "session"))
+    }
+    assert stateful == {"/api/history"}
+    item_fields = set(schema["components"]["schemas"]["HistoryItem"]["properties"])
+    assert not item_fields & {"text", "result", "key", "a", "b", "filename", "content"}
     assert missing.status_code == 405
 
 

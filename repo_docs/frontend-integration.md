@@ -16,6 +16,8 @@ API và trạng thái quan sát được phải giữ đúng contract dưới đ
   [OpenSpec Playfair/Vigenère đã hoàn thành](../openspec/changes/add-playfair-vigenere-ciphers/),
   [OpenSpec Caesar Week 1](../openspec/changes/caesar-cipher-week1-mvp/) và runtime/OpenAPI
   của working tree này là nguồn có thẩm quyền. Guide chỉ phản chiếu contract đó.
+- Health và lịch sử thao tác (PostgreSQL, metadata-only): xem mục 16. Hai endpoint
+  GET này không đổi contract của 15 route cipher.
 
 ## 0. Thay đổi mới nhất — Playfair decrypt bỏ filler cuối (`2026-09-28`)
 
@@ -1176,3 +1178,124 @@ trong guide được đối chiếu với commit publish đã xác minh
 Guide không lặp toàn bộ ma trận scenario hoặc decision history của OpenSpec. Khi
 API/behavior thay đổi, cập nhật OpenSpec trước, rồi cập nhật guide này trong cùng
 change. Không thêm `/v1`, endpoint, field hoặc behavior mới chỉ bằng cách sửa tài liệu.
+
+## 16. Health và lịch sử thao tác
+
+Backend có thể chạy kèm PostgreSQL. Khi bật, mỗi request tới 15 route cipher được
+ghi lại dưới dạng **metadata**. Backend không lưu text, key, tên file, nội dung file
+hay kết quả. Contract của 15 route cipher không đổi: FE không phải sửa gì ở luồng
+encrypt/decrypt.
+
+### 16.1 `GET /api/health`
+
+```json
+{"success": true, "result": {"app": "ok", "database": "ok"}}
+```
+
+| `database` | HTTP | Ý nghĩa |
+|---|---|---|
+| `ok` | 200 | DB trả lời `SELECT 1` trong 1 giây |
+| `disabled` | 200 | Backend chạy không có DB; lịch sử tắt |
+| `unavailable` | 503 | Đã cấu hình DB nhưng không kết nối được |
+
+FE có thể dùng `database` để ẩn hoặc hiện màn hình lịch sử. Cipher vẫn hoạt động
+trong cả ba trạng thái.
+
+### 16.2 `GET /api/history`
+
+Query (tất cả tùy chọn):
+
+| Tham số | Giá trị | Mặc định |
+|---|---|---|
+| `limit` | số nguyên `1`–`100` | `20` |
+| `cursor` | chuỗi opaque lấy từ `nextCursor` của trang trước | trang đầu |
+| `cipher` | `caesar`, `vigenere`, `playfair`, `affine`, `columnar` | tất cả |
+| `operation` | `encrypt`, `decrypt` | tất cả |
+
+Kết quả sắp mới nhất trước. `nextCursor` là `null` ở trang cuối. FE phải coi cursor
+là chuỗi opaque, gửi lại nguyên văn và không tự dựng.
+
+```json
+{
+  "success": true,
+  "result": {
+    "items": [
+      {
+        "id": 2,
+        "createdAt": "2026-09-28T03:20:02.741246Z",
+        "cipher": "playfair",
+        "operation": "decrypt",
+        "source": "text",
+        "responseMode": null,
+        "inputLength": 4,
+        "outputLength": 3,
+        "httpStatus": 200,
+        "succeeded": true,
+        "durationMs": 4
+      }
+    ],
+    "nextCursor": null
+  }
+}
+```
+
+Ý nghĩa các trường:
+
+- `source`: `text` cho route JSON, `file` cho route multipart.
+- `operation`: `null` khi request lỗi trước lúc backend đọc được `action` của file.
+- `responseMode`: `content` hoặc `file` cho route file; luôn `null` cho route text.
+- `inputLength`/`outputLength`: số Unicode code point với text, số byte UTF-8 với
+  file; `null` khi request lỗi trước lúc đo được.
+- `httpStatus`/`succeeded`: status backend đã trả; `succeeded` đúng khi status 2xx.
+  Request lỗi (413/415/422/500) cũng có trong lịch sử.
+
+```ts
+type HistoryItem = {
+  id: number;
+  createdAt: string; // ISO 8601
+  cipher: "caesar" | "vigenere" | "playfair" | "affine" | "columnar";
+  operation: "encrypt" | "decrypt" | null;
+  source: "text" | "file";
+  responseMode: "content" | "file" | null;
+  inputLength: number | null;
+  outputLength: number | null;
+  httpStatus: number;
+  succeeded: boolean;
+  durationMs: number;
+};
+
+async function fetchHistory(params: {
+  limit?: number;
+  cursor?: string;
+  cipher?: HistoryItem["cipher"];
+  operation?: "encrypt" | "decrypt";
+}) {
+  const query = new URLSearchParams();
+  for (const [name, value] of Object.entries(params)) {
+    if (value !== undefined) query.set(name, String(value));
+  }
+  const response = await fetch(`/api/history?${query}`);
+  const body = await response.json();
+  if (!body.success) throw new Error(body.message);
+  return body.result as { items: HistoryItem[]; nextCursor: string | null };
+}
+```
+
+```bash
+curl -s 'http://localhost:8000/api/history?limit=5&cipher=playfair'
+```
+
+Lỗi dùng envelope chung `{"success": false, "message": …}`:
+
+| HTTP | `message` | Khi nào |
+|---|---|---|
+| 422 | `Giới hạn phải là số nguyên từ 1 đến 100.` | `limit` sai |
+| 422 | `Con trỏ phân trang không hợp lệ.` | `cursor` hỏng hoặc bị sửa |
+| 422 | `Bộ lọc lịch sử không hợp lệ.` | `cipher`/`operation` ngoài tập cho phép |
+| 503 | `Lịch sử tạm thời không khả dụng.` | Backend không có DB hoặc DB lỗi |
+
+Lưu ý cho FE:
+
+- Lịch sử là best-effort: nếu DB lỗi đúng lúc, request đó có thể không xuất hiện.
+- Endpoint chưa có xác thực và trả lịch sử chung của cả instance, không theo user.
+- Không có API xóa lịch sử.

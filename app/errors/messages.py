@@ -29,6 +29,10 @@ INVALID_RESPONSE_MODE = "Response mode phải là content hoặc file."
 FILE_READ_FAILURE = "Không thể đọc file."
 UNEXPECTED_FAILURE = "Đã xảy ra lỗi hệ thống."
 INVALID_REQUEST_BODY = "Dữ liệu gửi lên không hợp lệ."
+INVALID_HISTORY_LIMIT = "Giới hạn phải là số nguyên từ 1 đến 100."
+INVALID_HISTORY_CURSOR = "Con trỏ phân trang không hợp lệ."
+INVALID_HISTORY_FILTER = "Bộ lọc lịch sử không hợp lệ."
+HISTORY_UNAVAILABLE = "Lịch sử tạm thời không khả dụng."
 
 # Owner-approved infrastructure exception; not a canonical DOCX §5 business message.
 REQUEST_TOO_LARGE = "Yêu cầu vượt quá dung lượng cho phép."
@@ -65,4 +69,8 @@ CANONICAL_MESSAGES = (
     FILE_READ_FAILURE,
     UNEXPECTED_FAILURE,
     INVALID_REQUEST_BODY,
+    INVALID_HISTORY_LIMIT,
+    INVALID_HISTORY_CURSOR,
+    INVALID_HISTORY_FILTER,
+    HISTORY_UNAVAILABLE,
 )

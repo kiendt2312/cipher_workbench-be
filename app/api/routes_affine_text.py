@@ -4,6 +4,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Request
 
+from app.api.history_recorder import note_history
 from app.api.schemas import (
     AffineTextCipherRequest,
     TextCipherResponse,
@@ -57,7 +58,9 @@ async def _process_text(
         request.headers.get("content-type"),
     )
     text, multiplier, shift = validate_affine_text_request(payload)
+    note_history(request, input_length=len(text))
     result = transform_text(text, multiplier, shift, operation)
+    note_history(request, output_length=len(result))
     return TextCipherResponse(success=True, result=result)
 
 
