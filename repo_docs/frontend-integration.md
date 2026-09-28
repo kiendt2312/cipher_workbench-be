@@ -1341,14 +1341,10 @@ hiện tại luôn thắng demo.
 
 Thứ tự áp dụng:
 
-1. Primary authority, theo thứ tự nội bộ: accepted requirements trong
-   [OpenSpec UI năm cipher](../openspec/changes/archive/2026-09-28-update-static-ui-all-ciphers/),
-   [OpenSpec khóa lịch sử và retention](../openspec/changes/archive/2026-09-28-add-history-access-retention/),
-   [OpenSpec PostgreSQL và lịch sử](../openspec/changes/archive/2026-09-28-add-postgres-persistence/),
-   [OpenSpec Columnar](../openspec/changes/archive/2026-09-28-add-columnar-transposition-cipher/),
-   [OpenSpec Affine](../openspec/changes/archive/2026-09-28-add-affine-cipher/),
-   [completed OpenSpec Playfair/Vigenère](../openspec/changes/archive/2026-09-28-add-playfair-vigenere-ciphers/)
-   và [completed OpenSpec Caesar Week 1](../openspec/changes/archive/2026-09-28-caesar-cipher-week1-mvp/);
+1. Primary authority: spec hiện hành trong [`openspec/specs/`](../openspec/specs/)
+   (mỗi capability một file, ví dụ `text-cipher-api`, `history-api`, `app-runtime`);
+   lịch sử quyết định nằm trong [`openspec/changes/archive/`](../openspec/changes/archive/).
+   UI không có spec ở backend: giao diện thuộc project FE.
    sau đó current implementation/tests cho observed behavior; cuối cùng runtime
    `/openapi.json` là machine-readable projection. Known OpenAPI under-description
    ở §2 không được dùng để thu hẹp behavior đã được spec/runtime test chấp nhận.
