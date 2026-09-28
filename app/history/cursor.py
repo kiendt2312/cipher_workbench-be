@@ -10,6 +10,9 @@ from datetime import datetime
 
 from app.errors.exceptions import InvalidHistoryCursorError
 
+# ``cipher_operations.id`` is a PostgreSQL bigint.
+MAX_ROW_ID = 2**63 - 1
+
 
 @dataclass(frozen=True)
 class Cursor:
@@ -37,6 +40,6 @@ def decode_cursor(value: str) -> Cursor:
     except (UnicodeEncodeError, binascii.Error, ValueError, TypeError, KeyError) as exc:
         raise InvalidHistoryCursorError() from exc
 
-    if created_at.tzinfo is None or type(row_id) is not int or row_id < 1:
+    if created_at.tzinfo is None or type(row_id) is not int or not 1 <= row_id <= MAX_ROW_ID:
         raise InvalidHistoryCursorError()
     return Cursor(created_at=created_at, id=row_id)

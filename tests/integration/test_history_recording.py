@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Iterator
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api import history_recorder
+from app.api import history_recorder, routes_text
 from app.errors import messages
 from app.history.store import OperationEntry
 from app.main import app
@@ -82,6 +84,75 @@ def test_file_lengths_count_utf8_bytes(client: TestClient, recorded) -> None:
     )
     entry = recorded[0]
     assert (entry.input_length, entry.output_length, entry.response_mode) == (2, 2, "content")
+
+
+@pytest.mark.parametrize("response_mode", ["content", "file"])
+def test_file_lengths_count_the_bom_on_both_sides(
+    client: TestClient, recorded, response_mode: str
+) -> None:
+    client.post(
+        "/api/caesar/file",
+        data={"key": "1", "action": "encrypt", "response_mode": response_mode},
+        files={"file": ("a.txt", b"\xef\xbb\xbf" + "é".encode(), "text/plain")},
+    )
+    entry = recorded[0]
+    assert (entry.input_length, entry.output_length) == (5, 5)
+
+
+def test_unexpected_error_is_recorded_as_500(
+    client: TestClient, recorded, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def broken_transform(*args: object) -> str:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(routes_text, "transform_text", broken_transform)
+    response = client.post("/api/caesar/encrypt", json={"text": "Hi", "key": 1})
+
+    assert response.status_code == 500
+    for _ in range(100):
+        if recorded:
+            break
+        time.sleep(0.01)
+    assert [(entry.http_status, entry.succeeded) for entry in recorded] == [(500, False)]
+
+
+def test_unexpected_error_response_does_not_wait_for_recording(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def slow_record(database: object, entry: OperationEntry) -> None:
+        await asyncio.sleep(1)
+
+    def broken_transform(*args: object) -> str:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(history_recorder, "RECORD_TIMEOUT_SECONDS", 2)
+    monkeypatch.setattr(history_recorder, "record_operation", slow_record)
+    monkeypatch.setattr(routes_text, "transform_text", broken_transform)
+    started = time.perf_counter()
+    response = client.post("/api/caesar/encrypt", json={"text": "Hi", "key": 1})
+
+    assert response.status_code == 500
+    assert time.perf_counter() - started < 0.5
+
+
+def test_note_history_keeps_earlier_values_and_rejects_unknown_fields() -> None:
+    request = SimpleNamespace(state=SimpleNamespace(history_notes={}))
+    history_recorder.note_history(request, operation="encrypt", response_mode="file")
+    history_recorder.note_history(request, input_length=3)
+
+    assert request.state.history_notes == {
+        "operation": "encrypt",
+        "response_mode": "file",
+        "input_length": 3,
+    }
+    with pytest.raises(TypeError):
+        history_recorder.note_history(request, input_lenght=3)
+
+
+def test_health_503_is_documented_in_vietnamese(client_without_db: TestClient) -> None:
+    schema = client_without_db.get("/openapi.json").json()
+    response = schema["paths"]["/api/health"]["get"]["responses"]["503"]
+    assert response["description"] == messages.DATABASE_UNAVAILABLE
 
 
 def test_rejected_request_is_recorded_as_failure(client: TestClient, recorded) -> None:

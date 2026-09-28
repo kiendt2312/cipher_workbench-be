@@ -1467,7 +1467,7 @@ là chuỗi opaque, gửi lại nguyên văn và không tự dựng.
 - `operation`: `null` khi request lỗi trước lúc backend đọc được `action` của file.
 - `responseMode`: `content` hoặc `file` cho route file; luôn `null` cho route text.
 - `inputLength`/`outputLength`: số Unicode code point với text, số byte UTF-8 với
-  file; `null` khi request lỗi trước lúc đo được.
+  file (tính cả BOM nếu file gửi lên có BOM); `null` khi request lỗi trước lúc đo được.
 - `httpStatus`/`succeeded`: status backend đã trả; `succeeded` đúng khi status 2xx.
   Request lỗi (413/415/422/500) cũng có trong lịch sử.
 

@@ -52,6 +52,10 @@ async def _main() -> int:
     database = create_database(url)
     try:
         deleted = await purge_expired(database, days)
+    except Exception:
+        # The exception text can contain connection details, so it is not printed.
+        print("Could not purge history rows", file=sys.stderr)
+        return 1
     finally:
         await database.engine.dispose()
     print(f"Deleted {deleted} history rows older than {days} days")

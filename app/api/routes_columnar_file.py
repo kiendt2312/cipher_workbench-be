@@ -17,6 +17,7 @@ from app.services.file_processing import (
     decode_file_bytes,
     has_allowed_extension,
     read_limited_bytes,
+    result_byte_length,
 )
 
 router = APIRouter(prefix="/api/columnar", tags=["Columnar Transposition"])
@@ -126,7 +127,7 @@ async def process_columnar_file(request: Request) -> Response:
     text, had_bom = decode_file_bytes(raw)
     del raw
     result = transform_text(text, ranks, action)
-    note_history(request, output_length=len(result.encode("utf-8")))
+    note_history(request, output_length=result_byte_length(result, had_bom))
 
     if response_mode == "content":
         return JSONResponse(

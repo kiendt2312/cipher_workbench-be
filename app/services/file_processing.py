@@ -67,6 +67,12 @@ def build_attachment_body(result: str, had_bom: bool) -> bytes:
     return UTF8_BOM + encoded if had_bom else encoded
 
 
+def result_byte_length(result: str, had_bom: bool) -> int:
+    """Byte size of the result file, including the BOM restored for the attachment."""
+
+    return len(result.encode("utf-8")) + (len(UTF8_BOM) if had_bom else 0)
+
+
 def has_allowed_extension(filename: str | None) -> bool:
     """Return whether ``filename`` ends in the allowed extension, ignoring case."""
 
