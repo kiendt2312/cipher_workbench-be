@@ -32,6 +32,7 @@ def recorded(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[OperationEntry]]:
 @pytest.fixture
 def client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     monkeypatch.setenv("DATABASE_URL", FAKE_URL)
+    monkeypatch.setenv("HISTORY_API_ENABLED", "true")
     with TestClient(app, raise_server_exceptions=False) as test_client:
         yield test_client
 
@@ -39,6 +40,7 @@ def client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
 @pytest.fixture
 def client_without_db(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("HISTORY_API_ENABLED", "true")
     with TestClient(app, raise_server_exceptions=False) as test_client:
         yield test_client
 
@@ -163,7 +165,10 @@ def test_slow_recording_is_abandoned(
 def test_health_reports_disabled_database(client_without_db: TestClient) -> None:
     response = client_without_db.get("/api/health")
     assert response.status_code == 200
-    assert response.json() == {"success": True, "result": {"app": "ok", "database": "disabled"}}
+    assert response.json() == {
+        "success": True,
+        "result": {"app": "ok", "database": "disabled", "history": "enabled"},
+    }
 
 
 def test_health_reports_unreachable_database_without_leaking_url(client: TestClient) -> None:
@@ -171,7 +176,7 @@ def test_health_reports_unreachable_database_without_leaking_url(client: TestCli
     assert response.status_code == 503
     assert response.json() == {
         "success": True,
-        "result": {"app": "ok", "database": "unavailable"},
+        "result": {"app": "ok", "database": "unavailable", "history": "enabled"},
     }
     assert "topsecret" not in response.text
     assert "127.0.0.1" not in response.text

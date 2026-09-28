@@ -88,5 +88,7 @@ Rollback: bỏ `DATABASE_URL` là tắt hoàn toàn DB mà không cần deploy l
 
 ## Open Questions
 
-- Có cần giới hạn truy cập `GET /api/history` (ví dụ chỉ bật ở môi trường dev) trước khi có auth không? Mặc định hiện tại: luôn bật khi có DB.
-- Thời gian giữ dữ liệu mong muốn cho change retention sau (ví dụ 30 hay 90 ngày)?
+Đã giải quyết trong change [`add-history-access-retention`](../add-history-access-retention/) (quyết định chủ sở hữu 2026-09-28):
+
+- Truy cập `GET /api/history`: khóa bằng cờ `HISTORY_API_ENABLED`, mặc định tắt.
+- Thời gian giữ dữ liệu: 30 ngày, cấu hình qua `HISTORY_RETENTION_DAYS`.

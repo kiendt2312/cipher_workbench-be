@@ -515,8 +515,26 @@ response mode, độ dài input/output (code point cho text, byte UTF-8 cho file
 HTTP status, thành công hay lỗi và thời gian xử lý. Không lưu plaintext,
 ciphertext, key, tên file, nội dung file, IP hay user agent. Ghi lịch sử là
 best-effort: DB lỗi hoặc chậm quá 500 ms thì bản ghi bị bỏ qua, response cipher
-không đổi. `GET /api/history` chưa có xác thực, nên ai truy cập được app đều đọc
-được lịch sử chung.
+không đổi.
+
+Project không có authentication, nên việc đọc lịch sử được khóa bằng cấu hình:
+
+| Biến | Mặc định | Ý nghĩa |
+|---|---|---|
+| `HISTORY_API_ENABLED` | tắt | `true`/`1`/`yes`/`on` mới bật `GET /api/history`; khi tắt endpoint trả 404, việc ghi lịch sử vẫn chạy |
+| `HISTORY_RETENTION_DAYS` | `30` | Bản ghi cũ hơn số ngày này bị xóa (1 đến 3650; giá trị sai làm app không khởi động) |
+
+`.env.example` bật `HISTORY_API_ENABLED=true` cho môi trường dev. **Trên mọi môi
+trường dùng chung hoặc public, để biến này tắt** (không đặt hoặc `false`).
+`/api/health` trả thêm `history: "enabled" | "disabled"`.
+
+App tự xóa bản ghi quá hạn lúc khởi động và mỗi 6 giờ, nên một bản ghi có thể tồn
+tại tối đa 30 ngày + 6 giờ. Chạy xóa ngay bằng tay:
+
+```bash
+docker compose exec app python -m app.history.retention
+# Deleted 0 history rows older than 30 days
+```
 
 Container chạy trực tiếp Uvicorn; repository không cấu hình production reverse
 proxy, TLS, rate limiting, cloud deployment hoặc orchestration.

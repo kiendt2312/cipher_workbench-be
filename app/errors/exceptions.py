@@ -155,3 +155,8 @@ class InvalidHistoryFilterError(CaesarError):
 class HistoryUnavailableError(CaesarError):
     def __init__(self) -> None:
         super().__init__(503, messages.HISTORY_UNAVAILABLE)
+
+
+class HistoryDisabledError(CaesarError):
+    def __init__(self) -> None:
+        super().__init__(404, messages.HISTORY_DISABLED)
