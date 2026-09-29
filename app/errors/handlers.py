@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import messages
-from .exceptions import CaesarError
+from .exceptions import AppError
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ def _log_server_error(request: Request, exc: Exception) -> None:
     )
 
 
-async def caesar_error_handler(request: Request, exc: CaesarError) -> JSONResponse:
+async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
     if exc.status_code >= 500:
         _log_server_error(request, exc)
     return _error_response(exc.status_code, exc.message)
@@ -78,7 +78,7 @@ async def unexpected_exception_handler(request: Request, exc: Exception) -> JSON
 def register_exception_handlers(app: FastAPI) -> None:
     """Register the complete application error contract on a FastAPI app."""
 
-    app.add_exception_handler(CaesarError, caesar_error_handler)
+    app.add_exception_handler(AppError, app_error_handler)
     app.add_exception_handler(RequestValidationError, request_validation_error_handler)
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     app.add_exception_handler(Exception, unexpected_exception_handler)

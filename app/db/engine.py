@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
@@ -22,6 +23,12 @@ class Database:
 
     engine: AsyncEngine
     sessions: async_sessionmaker[AsyncSession]
+
+
+def app_database(app: Any) -> Database | None:
+    """Return the database the lifespan attached to ``app``, or ``None`` when disabled."""
+
+    return getattr(app.state, "db", None)
 
 
 def create_database(url: str) -> Database:

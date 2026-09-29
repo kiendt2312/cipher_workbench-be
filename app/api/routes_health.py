@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app import config
-from app.db.engine import Database, ping
+from app.db.engine import Database, app_database, ping
 from app.errors import messages
 
 router = APIRouter(prefix="/api", tags=["Health"])
@@ -38,7 +38,7 @@ async def _database_status(database: Database | None) -> DatabaseStatus:
     responses={503: {"model": HealthResponse, "description": messages.DATABASE_UNAVAILABLE}},
 )
 async def health(request: Request) -> JSONResponse:
-    status = await _database_status(getattr(request.app.state, "db", None))
+    status = await _database_status(app_database(request.app))
     history = "enabled" if config.history_api_enabled() else "disabled"
     body = HealthResponse(
         success=True, result=HealthResult(app="ok", database=status, history=history)

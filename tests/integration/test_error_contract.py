@@ -10,7 +10,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.errors import messages
 from app.errors.exceptions import (
-    CaesarError,
+    AppError,
     DuplicatePlayfairDigraphError,
     EmptyFileError,
     EmptyPlayfairTextError,
@@ -341,7 +341,7 @@ def test_production_app_registers_all_four_handlers() -> None:
     from fastapi.exceptions import RequestValidationError
     from starlette.exceptions import HTTPException as StarletteHTTPException
 
-    assert CaesarError in production_app.exception_handlers
+    assert AppError in production_app.exception_handlers
     assert RequestValidationError in production_app.exception_handlers
     assert StarletteHTTPException in production_app.exception_handlers
     assert Exception in production_app.exception_handlers

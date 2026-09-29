@@ -9,6 +9,15 @@ CHUNK_SIZE = 64 * 1024
 PORT = 8000
 
 
+def parse_bounded_int(raw: str, low: int, high: int) -> int | None:
+    """Return ``raw`` as an int when it is ASCII digits within ``low..high``, else ``None``."""
+
+    if not (raw.isascii() and raw.isdigit()):
+        return None
+    value = int(raw)
+    return value if low <= value <= high else None
+
+
 def database_url() -> str | None:
     """Return the PostgreSQL URL from ``DATABASE_URL``; ``None`` disables the database."""
 
@@ -32,8 +41,9 @@ def history_retention_days() -> int:
     raw = os.environ.get("HISTORY_RETENTION_DAYS", "").strip()
     if not raw:
         return DEFAULT_HISTORY_RETENTION_DAYS
-    if not (raw.isascii() and raw.isdigit()) or not 1 <= int(raw) <= MAX_HISTORY_RETENTION_DAYS:
+    days = parse_bounded_int(raw, 1, MAX_HISTORY_RETENTION_DAYS)
+    if days is None:
         raise ValueError(
             f"HISTORY_RETENTION_DAYS must be an integer from 1 to {MAX_HISTORY_RETENTION_DAYS}"
         )
-    return int(raw)
+    return days

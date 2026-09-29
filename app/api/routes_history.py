@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
 from app import config
-from app.db.engine import Database
+from app.db.engine import app_database
 from app.db.models import CIPHERS, OPERATIONS, CipherOperation
 from app.errors import messages
 from app.errors.exceptions import (
@@ -72,9 +72,10 @@ _ERROR_CONTENT = {
 def _parse_limit(raw: str | None) -> int:
     if raw is None:
         return DEFAULT_LIMIT
-    if not raw.isascii() or not raw.isdigit() or not 1 <= int(raw) <= MAX_LIMIT:
+    limit = config.parse_bounded_int(raw, 1, MAX_LIMIT)
+    if limit is None:
         raise InvalidHistoryLimitError()
-    return int(raw)
+    return limit
 
 
 def _parse_choice(raw: str | None, allowed: tuple[str, ...]) -> str | None:
@@ -84,19 +85,8 @@ def _parse_choice(raw: str | None, allowed: tuple[str, ...]) -> str | None:
 
 
 def _item(row: CipherOperation) -> HistoryItem:
-    return HistoryItem(
-        id=row.id,
-        created_at=row.created_at.astimezone(UTC),
-        cipher=row.cipher,
-        operation=row.operation,
-        source=row.source,
-        response_mode=row.response_mode,
-        input_length=row.input_length,
-        output_length=row.output_length,
-        http_status=row.http_status,
-        succeeded=row.succeeded,
-        duration_ms=row.duration_ms,
-    )
+    item = HistoryItem.model_validate(row, from_attributes=True)
+    return item.model_copy(update={"created_at": item.created_at.astimezone(UTC)})
 
 
 @router.get(
@@ -128,7 +118,7 @@ async def list_history(request: Request) -> HistoryResponse:
     cipher = _parse_choice(query.get("cipher"), CIPHERS)
     operation = _parse_choice(query.get("operation"), OPERATIONS)
 
-    database: Database | None = getattr(request.app.state, "db", None)
+    database = app_database(request.app)
     if database is None:
         raise HistoryUnavailableError()
     try:
