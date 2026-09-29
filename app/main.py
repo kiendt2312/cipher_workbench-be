@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -25,10 +26,17 @@ from app.db.engine import create_database
 from app.errors.handlers import register_exception_handlers
 from app.history.retention import purge_periodically
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     retention_days = config.history_retention_days()  # Fail fast on a bad value.
+    if config.history_api_enabled():
+        logger.warning(
+            "HISTORY_API_ENABLED is on: GET /api/history is readable by anyone without "
+            "authentication. Turn it off on any shared or public deployment."
+        )
     url = config.database_url()
     app.state.db = create_database(url) if url else None
     purge_task = (

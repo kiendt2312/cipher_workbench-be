@@ -520,7 +520,7 @@ Project không có authentication, nên việc đọc lịch sử được khóa
 
 | Biến | Mặc định | Ý nghĩa |
 |---|---|---|
-| `HISTORY_API_ENABLED` | tắt | `true`/`1`/`yes`/`on` mới bật `GET /api/history`; khi tắt endpoint trả 404, việc ghi lịch sử vẫn chạy |
+| `HISTORY_API_ENABLED` | tắt | `true`/`1`/`yes`/`on` mới bật `GET /api/history`; khi tắt endpoint trả 404, việc ghi lịch sử vẫn chạy. Khi bật, app log một cảnh báo lúc khởi động vì endpoint không có xác thực |
 | `HISTORY_RETENTION_DAYS` | `30` | Bản ghi cũ hơn số ngày này bị xóa (1 đến 3650; giá trị sai làm app không khởi động) |
 | `CORS_ALLOW_ORIGINS` | rỗng | Danh sách origin FE chính xác, cách nhau bằng dấu phẩy, ví dụ `https://app.example.com,http://localhost:5173`. Rỗng thì không gửi header CORS. Không nhận `*`, wildcard hay dấu `/` cuối; giá trị sai làm app không khởi động |
 
