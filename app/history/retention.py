@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
+from datetime import timedelta
 
 from sqlalchemy import delete, func
 
@@ -20,7 +21,7 @@ PURGE_INTERVAL_SECONDS = 6 * 60 * 60
 async def purge_expired(database: Database, days: int) -> int:
     """Delete rows older than ``days`` days and return how many were removed."""
 
-    cutoff = func.now() - func.make_interval(0, 0, 0, days)
+    cutoff = func.now() - timedelta(days=days)
     async with database.sessions() as session:
         result = await session.execute(
             delete(CipherOperation).where(CipherOperation.created_at < cutoff)

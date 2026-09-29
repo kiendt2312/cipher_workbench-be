@@ -10,7 +10,7 @@ from typing import Any
 from fastapi import Request
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from app.db.engine import Database
+from app.db.engine import Database, app_database
 from app.history.routes import match_cipher_route
 from app.history.store import OperationEntry, record_operation
 
@@ -55,7 +55,7 @@ class OperationHistoryRecorder:
         route = (
             match_cipher_route(scope["method"], scope["path"]) if scope["type"] == "http" else None
         )
-        database: Database | None = getattr(scope["app"].state, "db", None)
+        database = app_database(scope["app"])
         if route is None or database is None:
             await self.app(scope, receive, send)
             return
