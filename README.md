@@ -367,8 +367,9 @@ preview thành file thay thế.
 ## 6. Runtime boundary
 
 - Cổng ứng dụng: `8000` cho cả local và container.
-- App không phục vụ UI và không bật CORS. FE dev server nên proxy `/api` tới
-  `http://localhost:8000` và giữ URL API tương đối.
+- App không phục vụ UI. Mặc định không bật CORS: FE dev server nên proxy `/api` tới
+  `http://localhost:8000` và giữ URL API tương đối. Khi FE chạy ở origin khác mà
+  không có proxy, đặt `CORS_ALLOW_ORIGINS` (xem mục 9.1).
 - Swagger UI: <http://localhost:8000/docs>
 - OpenAPI JSON: <http://localhost:8000/openapi.json>
 - Health: `GET /api/health` trả `{"success":true,"result":{"app":"ok","database":…}}`
@@ -521,6 +522,7 @@ Project không có authentication, nên việc đọc lịch sử được khóa
 |---|---|---|
 | `HISTORY_API_ENABLED` | tắt | `true`/`1`/`yes`/`on` mới bật `GET /api/history`; khi tắt endpoint trả 404, việc ghi lịch sử vẫn chạy |
 | `HISTORY_RETENTION_DAYS` | `30` | Bản ghi cũ hơn số ngày này bị xóa (1 đến 3650; giá trị sai làm app không khởi động) |
+| `CORS_ALLOW_ORIGINS` | rỗng | Danh sách origin FE chính xác, cách nhau bằng dấu phẩy, ví dụ `https://app.example.com,http://localhost:5173`. Rỗng thì không gửi header CORS. Không nhận `*`, wildcard hay dấu `/` cuối; giá trị sai làm app không khởi động |
 
 `.env.example` bật `HISTORY_API_ENABLED=true` cho môi trường dev. **Trên mọi môi
 trường dùng chung hoặc public, để biến này tắt** (không đặt hoặc `false`).
@@ -602,11 +604,11 @@ UI thuộc project FE riêng, là consumer tách biệt tích hợp theo
 
 Ngoài phạm vi hiện tại:
 
-- authentication, authorization, session, lịch sử theo từng user và retention/xóa lịch sử tự động;
+- authentication, authorization, session và lịch sử theo từng user trên server;
 - lưu nội dung người dùng (input, key, file, kết quả) vào database;
 - cipher khác ngoài năm cipher này, autokey Vigenère, Playfair 6×6 hoặc Playfair Unicode/lossless;
 - phục hồi format, `J` hoặc filler giữa chuỗi khi decrypt Playfair;
-- CORS cho frontend khác origin;
+- CORS có credentials (cookie) hoặc mở cho mọi origin;
 - production reverse proxy, TLS, rate limiting, cloud deployment và CI/CD;
 - streaming file lớn hơn giới hạn nghiệp vụ.
 

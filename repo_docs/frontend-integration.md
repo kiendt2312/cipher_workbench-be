@@ -26,7 +26,8 @@ curl -s http://localhost:8080/api/health
 
 Cấu hình dev server của FE proxy `/api` tới `http://localhost:8080` (hoặc
 `http://localhost:8000` nếu chạy backend bằng `uv run uvicorn`). Code FE luôn gọi URL
-tương đối `/api/...`; không ghi cứng host/port, backend không bật CORS.
+tương đối `/api/...`; không ghi cứng host/port. Backend mặc định không bật CORS
+(xem mục 0.0a nếu FE buộc phải gọi khác origin).
 
 ```ts
 // vite.config.ts
@@ -125,6 +126,26 @@ status và message đầy đủ ở mục 9 và 16.3.
 Checklist nghiệm thu đầy đủ ở mục 14.
 
 ## 0. Thay đổi gần đây
+
+### 0.0a CORS tùy chọn cho FE khác origin (`2026-09-29`)
+
+Mặc định backend vẫn **không** gửi header CORS; FE dùng proxy `/api` như cũ thì không
+phải đổi gì. Khi FE deploy ở origin khác mà không có reverse proxy, phía BE đặt
+biến môi trường:
+
+```bash
+CORS_ALLOW_ORIGINS=https://app.example.com,http://localhost:5173
+```
+
+- Chỉ đúng các origin trong danh sách được phép; không có `*`.
+- Chỉ `GET`, `POST` và header `Content-Type`; không gửi cookie/credentials.
+- Header `Content-Disposition` được expose, nên FE đọc được tên file từ response
+  `response_mode=file`.
+- Response lỗi từ guard (ví dụ 413) vẫn có header CORS. Riêng lỗi 500 ngoài dự
+  kiến không có header CORS, nên trình duyệt báo lỗi mạng thay vì đọc được body;
+  FE xử lý như lỗi hệ thống.
+- Khi đó FE gọi URL đầy đủ của backend (đọc từ biến môi trường build, không ghi
+  cứng trong code).
 
 ### 0.0 Backend bỏ UI static tại `/` (`2026-09-28`)
 
@@ -280,9 +301,9 @@ export default defineConfig({
 });
 ```
 
-Backend không hứa hẹn CORS cho origin tách riêng. FE dev server khác origin phải
-proxy `/api`; không khôi phục `API_BASE` ghi cứng trong code, mock toggle hoặc local
-cipher service từ demo cũ.
+Cách khuyến nghị vẫn là proxy `/api`, kể cả khi deploy (reverse proxy). Chỉ khi FE
+buộc phải gọi backend ở origin khác mới dùng CORS theo mục 0.0a. Không khôi phục
+`API_BASE` ghi cứng trong code, mock toggle hoặc local cipher service từ demo cũ.
 
 Machine-readable surfaces của backend đang chạy (thay `8080` bằng `8000` nếu chạy
 bằng uv):
