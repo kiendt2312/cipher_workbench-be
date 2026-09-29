@@ -195,3 +195,20 @@ def test_purge_command_failure_prints_no_connection_details() -> None:
     assert result.returncode == 1
     assert result.stderr.strip() == "Could not purge history rows"
     assert "topsecret" not in result.stdout + result.stderr
+
+
+@pytest.mark.parametrize(("flag", "warned"), [("true", True), ("false", False), (None, False)])
+def test_startup_warns_when_history_api_is_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    flag: str | None,
+    warned: bool,
+) -> None:
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    if flag is None:
+        monkeypatch.delenv("HISTORY_API_ENABLED", raising=False)
+    else:
+        monkeypatch.setenv("HISTORY_API_ENABLED", flag)
+    with caplog.at_level(logging.WARNING, logger="app.main"), TestClient(app):
+        pass
+    assert ("HISTORY_API_ENABLED is on" in caplog.text) is warned
