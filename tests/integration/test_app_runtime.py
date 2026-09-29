@@ -45,6 +45,30 @@ def test_openapi_schema_lists_all_caesar_endpoints() -> None:
     } <= paths
 
 
+def test_cipher_route_inventory_includes_hill_without_a_file_route() -> None:
+    with TestClient(app) as client:
+        schema = client.get("/openapi.json").json()
+
+    cipher_paths = {
+        path: operations
+        for path, operations in schema["paths"].items()
+        if path.startswith("/api/")
+        and path.split("/")[2] != "history"
+        and path not in {"/api/health"}
+    }
+    post_count = sum("post" in operations for operations in cipher_paths.values())
+    get_count = sum("get" in operations for operations in cipher_paths.values())
+    assert post_count == 18
+    assert get_count == 1
+    assert "/api/hill/file" not in cipher_paths
+    assert {
+        "/api/hill/encrypt",
+        "/api/hill/decrypt",
+        "/api/hill/key/analyze",
+        "/api/hill/key/random",
+    } <= cipher_paths.keys()
+
+
 def test_api_responses_need_no_cors_headers() -> None:
     with TestClient(app) as client:
         response = client.post("/api/caesar/encrypt", json={"text": "Hi", "key": 1})

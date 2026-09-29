@@ -24,7 +24,10 @@ def _routes_for(cipher: str) -> dict[str, CipherRoute]:
 
 
 CIPHER_ROUTES: dict[str, CipherRoute] = {
-    path: route for cipher in CIPHERS for path, route in _routes_for(cipher).items()
+    path: route
+    for cipher in CIPHERS
+    for path, route in _routes_for(cipher).items()
+    if cipher != "hill" or route.source == "text"
 }
 
 

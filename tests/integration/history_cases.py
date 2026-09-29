@@ -1,4 +1,4 @@
-"""One valid request for each of the 15 recorded cipher routes."""
+"""One valid request for each of the 17 recorded cipher transform routes."""
 
 from __future__ import annotations
 
@@ -22,7 +22,15 @@ FILE_KEYS: dict[str, dict[str, str]] = {
     "affine": {"a": "5", "b": "8"},
     "columnar": {"key": "ZEBRAKEY"},
 }
-SENSITIVE_VALUES = (MARKER_TEXT, "ZEBRA", "marker-name")
+SENSITIVE_VALUES = (
+    MARKER_TEXT,
+    "HILLSENSITIVE",
+    "DPLE",
+    "HELP",
+    "[[3,3],[2,5]]",
+    "ZEBRA",
+    "marker-name",
+)
 
 
 @dataclass(frozen=True)
@@ -62,6 +70,16 @@ def cipher_requests() -> list[CipherRequest]:
                     "data": {**FILE_KEYS[cipher], "action": "encrypt", "response_mode": "file"},
                     "files": {"file": ("marker-name.txt", MARKER_TEXT.encode(), "text/plain")},
                 },
+            )
+        )
+    for operation, text in (("encrypt", "HILLSENSITIVE"), ("decrypt", "DPLE")):
+        requests.append(
+            CipherRequest(
+                "hill",
+                "text",
+                operation,
+                f"/api/hill/{operation}",
+                {"json": {"text": text, "key": [[3, 3], [2, 5]]}},
             )
         )
     return requests

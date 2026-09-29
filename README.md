@@ -167,7 +167,7 @@ MEET ME AT NOON + BALLOON → EAM NETT EO NMO → MEET ME AT NOON
 😀A𝄞é + 2 1 3 → A😀é𝄞 → 😀A𝄞é
 ```
 
-## 3. API: 15 endpoint
+## 3. API: 19 endpoint (18 POST, 1 GET)
 
 | Cipher | Method và path | Request | Vai trò |
 |---|---|---|---|
@@ -186,11 +186,20 @@ MEET ME AT NOON + BALLOON → EAM NETT EO NMO → MEET ME AT NOON
 | Columnar | `POST /api/columnar/encrypt` | JSON | Mã hóa text |
 | Columnar | `POST /api/columnar/decrypt` | JSON | Giải mã text |
 | Columnar | `POST /api/columnar/file` | Multipart | Mã hóa/giải mã file |
+| Hill | `POST /api/hill/encrypt` | JSON | Mã hóa text và trả dữ liệu từng khối |
+| Hill | `POST /api/hill/decrypt` | JSON | Giải mã text và trả dữ liệu từng khối |
+| Hill | `POST /api/hill/key/analyze` | JSON | Phân tích khóa |
+| Hill | `GET /api/hill/key/random?m=3` | Query | Sinh khóa hợp lệ cấp 2–4 |
 
 Consumer đang dùng allowlist 12 route phải mở lên đúng ba path Columnar trên để
 thành 15 route; không có route generalized hoặc versioned mới. OpenAPI gắn cả ba
 operation vào tag `Columnar Transposition` và là projection machine-readable của
 contract request/response đã test.
+
+Hill là ngoại lệ có chủ đích: không có `/api/hill/file`. FE đọc `.txt` UTF-8,
+kiểm tối đa 1 MiB theo byte, rồi gửi nội dung qua endpoint JSON. Hai route biến đổi
+trả `{success,result,blocks,key,warnings}`; hai route khóa trả
+`{success,result,warnings}`. Lỗi nghiệp vụ Hill trả thêm `code` và `details`.
 
 ### 3.1 Text JSON
 
@@ -289,20 +298,23 @@ curl -sS -X POST http://localhost:8000/api/columnar/file \
 
 ## 4. Response và lỗi
 
-Text thành công và file `response_mode=content` trả HTTP `200` với đúng hai field:
+Với năm cipher cũ, text thành công và file `response_mode=content` trả HTTP `200`
+với đúng hai field:
 
 ```json
 {"success":true,"result":"Khoor Zruog"}
 ```
 
-Mọi lỗi trả JSON đúng hai field, kể cả request dùng `response_mode=file`:
+Lỗi của năm cipher cũ trả JSON đúng hai field, kể cả request dùng `response_mode=file`:
 
 ```json
 {"success":false,"message":"Khóa phải là số nguyên."}
 ```
 
-Contract không có machine error `code`, `detail`, field errors,
-`normalizedInput`, matrix, prepared text hoặc metadata bổ sung. Client nên dùng
+Hill là ngoại lệ đã duyệt: transform trả `blocks,key,warnings`, key API trả
+`result,warnings`, và lỗi nghiệp vụ trả thêm `code,details`. Contract năm cipher cũ
+không có machine error `code`, `detail`, field errors, `normalizedInput`, matrix,
+prepared text hoặc metadata bổ sung. Client nên dùng
 HTTP status và request context cho logic, còn `message` tiếng Việt để hiển thị.
 
 File `response_mode=file` thành công là ngoại lệ không dùng JSON: server trả body
@@ -423,7 +435,7 @@ uv sync --frozen
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-Không đặt `DATABASE_URL` thì app chạy không có database: 15 route cipher hoạt
+Không đặt `DATABASE_URL` thì app chạy không có database: 18 POST route cipher hoạt
 động bình thường, `/api/health` báo `database: "disabled"` và `/api/history` trả
 503. Muốn chạy app bằng uv (có `--reload`) nhưng dùng PostgreSQL của
 docker-compose, chỉ bật service `db`; nó mở cổng `127.0.0.1:${DB_HOST_PORT}`
@@ -554,7 +566,8 @@ app/
 │   ├── vigenere.py                 # Vigenère repeating-key thuần
 │   ├── playfair.py                 # Playfair 5×5 thuần
 │   ├── affine.py                   # Affine modulo 26 thuần
-│   └── columnar.py                 # Columnar Transposition thuần
+│   ├── columnar.py                 # Columnar Transposition thuần
+│   └── hill.py                     # Hill vector hàng, ma trận cấp 2–4
 ├── api/
 │   ├── routes_text.py              # Caesar JSON
 │   ├── routes_file.py              # Caesar multipart
@@ -564,6 +577,8 @@ app/
 │   ├── routes_affine_file.py       # Affine multipart strict
 │   ├── routes_columnar_text.py     # Columnar JSON strict
 │   ├── routes_columnar_file.py     # Columnar multipart strict
+│   ├── routes_hill.py              # bốn API Hill
+│   ├── hill_schemas.py             # decoder/validator Hill strict
 │   ├── routes_health.py            # GET /api/health
 │   ├── routes_history.py           # GET /api/history
 │   ├── history_recorder.py         # middleware ghi metadata sau response
@@ -575,7 +590,7 @@ app/
 │   ├── engine.py                   # async engine, session factory, ping
 │   └── models.py                   # bảng cipher_operations
 ├── history/
-│   ├── routes.py                   # 15 route cipher được ghi lịch sử
+│   ├── routes.py                   # 17 route biến đổi được ghi lịch sử
 │   ├── cursor.py                   # cursor phân trang opaque
 │   └── store.py                    # ghi/đọc cipher_operations
 └── errors/
@@ -606,7 +621,7 @@ Ngoài phạm vi hiện tại:
 
 - authentication, authorization, session và lịch sử theo từng user trên server;
 - lưu nội dung người dùng (input, key, file, kết quả) vào database;
-- cipher khác ngoài năm cipher này, autokey Vigenère, Playfair 6×6 hoặc Playfair Unicode/lossless;
+- cipher khác ngoài sáu cipher này, autokey Vigenère, Playfair 6×6 hoặc Playfair Unicode/lossless;
 - phục hồi format, `J` hoặc filler giữa chuỗi khi decrypt Playfair;
 - CORS có credentials (cookie) hoặc mở cho mọi origin;
 - production reverse proxy, TLS, rate limiting, cloud deployment và CI/CD;

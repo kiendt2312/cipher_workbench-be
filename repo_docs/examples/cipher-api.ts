@@ -6,7 +6,7 @@
  * and follows repo_docs/frontend-integration.md. Results always come from the server.
  */
 
-export type Cipher = "caesar" | "vigenere" | "playfair" | "affine" | "columnar";
+export type Cipher = "caesar" | "vigenere" | "playfair" | "affine" | "columnar" | "hill";
 export type Operation = "encrypt" | "decrypt";
 export type ResponseMode = "content" | "file";
 
@@ -18,6 +18,37 @@ export type KeyInput =
 
 export type TextRequest = KeyInput & { operation: Operation; text: string };
 export type FileRequest = KeyInput & { operation: Operation; file: File };
+
+export type HillKeyInput =
+  | { key: number[][]; keyword?: never; m?: never }
+  | { keyword: string; m: 2 | 3 | 4; key?: never };
+export type HillOptions = { stripDiacritics?: boolean; padChar?: string };
+export type HillTransformRequest = HillKeyInput & {
+  operation: Operation;
+  text: string;
+  options?: HillOptions;
+};
+export interface HillWarning {
+  code: "W01" | "W02" | "W03";
+  message: string;
+  details: Record<string, unknown>;
+}
+export interface HillKeyAnalysis {
+  matrix: number[][];
+  m: 2 | 3 | 4;
+  det: number;
+  gcd: number;
+  detInverse: number;
+  adjugate: number[][];
+  inverse: number[][];
+}
+export interface HillTransformResponse {
+  success: true;
+  result: string;
+  blocks: Array<{ input: number[]; output: number[] }>;
+  key: HillKeyAnalysis;
+  warnings: HillWarning[];
+}
 
 export interface AttachmentResult {
   blob: Blob;
@@ -60,16 +91,36 @@ const SYSTEM_ERROR = "Đã xảy ra lỗi hệ thống.";
 
 /** A failure the server explained; show `message` to the user as-is. */
 export class ApiError extends Error {
-  constructor(message: string, public readonly status: number) {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly code?: string,
+    public readonly details?: Record<string, unknown>,
+  ) {
     super(message);
     this.name = "ApiError";
   }
 }
 
-function isErrorBody(value: unknown): value is { success: false; message: string } {
+interface ErrorBody {
+  success: false;
+  message: string;
+  code?: string;
+  details?: Record<string, unknown>;
+}
+
+function isErrorBody(value: unknown): value is ErrorBody {
   if (typeof value !== "object" || value === null) return false;
   const body = value as Record<string, unknown>;
-  return body.success === false && typeof body.message === "string";
+  return (
+    body.success === false
+    && typeof body.message === "string"
+    && (body.code === undefined || typeof body.code === "string")
+    && (
+      body.details === undefined
+      || (typeof body.details === "object" && body.details !== null && !Array.isArray(body.details))
+    )
+  );
 }
 
 /** Read `{"success": true, "result": ...}` or throw `ApiError` with the server message. */
@@ -82,7 +133,9 @@ async function readResult<T>(response: Response): Promise<T> {
   } catch {
     throw new ApiError(SYSTEM_ERROR, response.status);
   }
-  if (isErrorBody(body)) throw new ApiError(body.message, response.status);
+  if (isErrorBody(body)) {
+    throw new ApiError(body.message, response.status, body.code, body.details);
+  }
   const success = body as { success?: unknown; result?: unknown };
   if (response.status !== 200 || success.success !== true || success.result === undefined) {
     throw new ApiError(SYSTEM_ERROR, response.status);
@@ -123,6 +176,77 @@ export async function transformText(request: TextRequest): Promise<string> {
     body: textBody(request),
   });
   return readResult<string>(response);
+}
+
+/** Hill uses a richer response and intentionally has no backend file endpoint. */
+export async function transformHill(request: HillTransformRequest): Promise<HillTransformResponse> {
+  const { operation, ...body } = request;
+  const response = await fetch(`/api/hill/${operation}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+  const payload: unknown = contentType.includes("application/json")
+    ? await response.json()
+    : null;
+  if (isErrorBody(payload)) {
+    throw new ApiError(payload.message, response.status, payload.code, payload.details);
+  }
+  if (response.status !== 200 || typeof payload !== "object" || payload === null) {
+    throw new ApiError(SYSTEM_ERROR, response.status);
+  }
+  return payload as HillTransformResponse;
+}
+
+export async function analyzeHillKey(
+  request: HillKeyInput,
+): Promise<{ result: HillKeyAnalysis; warnings: HillWarning[] }> {
+  const response = await fetch("/api/hill/key/analyze", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+  const body = contentType.includes("application/json") ? await response.json() : null;
+  if (isErrorBody(body)) {
+    throw new ApiError(body.message, response.status, body.code, body.details);
+  }
+  if (response.status !== 200 || typeof body !== "object" || body === null) {
+    throw new ApiError(SYSTEM_ERROR, response.status);
+  }
+  const success = body as {
+    success?: unknown;
+    result?: HillKeyAnalysis;
+    warnings?: HillWarning[];
+  };
+  if (success.success !== true || success.result === undefined) {
+    throw new ApiError(SYSTEM_ERROR, response.status);
+  }
+  return { result: success.result, warnings: success.warnings ?? [] };
+}
+
+export async function randomHillKey(
+  m: 2 | 3 | 4,
+): Promise<{ result: HillKeyAnalysis; warnings: HillWarning[] }> {
+  const response = await fetch(`/api/hill/key/random?m=${m}`);
+  const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+  const body = contentType.includes("application/json") ? await response.json() : null;
+  if (isErrorBody(body)) {
+    throw new ApiError(body.message, response.status, body.code, body.details);
+  }
+  if (response.status !== 200 || typeof body !== "object" || body === null) {
+    throw new ApiError(SYSTEM_ERROR, response.status);
+  }
+  const success = body as {
+    success?: unknown;
+    result?: HillKeyAnalysis;
+    warnings?: HillWarning[];
+  };
+  if (success.success !== true || success.result === undefined) {
+    throw new ApiError(SYSTEM_ERROR, response.status);
+  }
+  return { result: success.result, warnings: success.warnings ?? [] };
 }
 
 function fileForm(request: FileRequest, responseMode: ResponseMode): FormData {

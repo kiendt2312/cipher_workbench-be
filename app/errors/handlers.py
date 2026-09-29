@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import messages
-from .exceptions import AppError
+from .exceptions import AppError, HillError
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +42,16 @@ def _log_server_error(request: Request, exc: Exception) -> None:
 async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
     if exc.status_code >= 500:
         _log_server_error(request, exc)
+    if isinstance(exc, HillError):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "success": False,
+                "message": exc.message,
+                "code": exc.code,
+                "details": exc.details,
+            },
+        )
     return _error_response(exc.status_code, exc.message)
 
 

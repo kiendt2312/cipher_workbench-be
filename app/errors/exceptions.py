@@ -12,6 +12,17 @@ class AppError(Exception):
         super().__init__(message)
 
 
+class HillError(AppError):
+    """A Hill-specific business error with the extended public envelope."""
+
+    def __init__(
+        self, status_code: int, code: str, message: str, details: dict[str, object] | None = None
+    ) -> None:
+        self.code = code
+        self.details = details or {}
+        super().__init__(status_code, message)
+
+
 class EmptyTextError(AppError):
     def __init__(self) -> None:
         super().__init__(422, messages.TEXT_EMPTY)

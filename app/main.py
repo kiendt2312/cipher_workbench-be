@@ -20,6 +20,7 @@ from app.api.routes_columnar_file import router as columnar_file_router
 from app.api.routes_columnar_text import router as columnar_text_router
 from app.api.routes_file import router as file_router
 from app.api.routes_health import router as health_router
+from app.api.routes_hill import router as hill_router
 from app.api.routes_history import router as history_router
 from app.api.routes_text import router as text_router
 from app.db.engine import create_database
@@ -73,6 +74,7 @@ if cors_origins:
 register_exception_handlers(app)
 app.include_router(health_router)
 app.include_router(history_router)
+app.include_router(hill_router)
 app.include_router(text_router)
 app.include_router(file_router)
 app.include_router(vigenere_router)

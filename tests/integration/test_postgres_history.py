@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from app.main import app
 from tests.conftest import _run_alembic, run_sql
@@ -66,6 +67,46 @@ def test_schema_matches_spec(db_url: str) -> None:
         indexes
     )
     assert len(checks) == 7
+
+
+def test_hill_migration_preserves_rows_and_allows_hill(db_url: str) -> None:
+    _run_alembic(db_url, "downgrade", "0001")
+    _insert_rows(db_url, 1, cipher="caesar")
+    _run_alembic(db_url, "upgrade", "head")
+    run_sql(
+        db_url,
+        "INSERT INTO cipher_operations "
+        "(cipher, operation, source, http_status, succeeded, duration_ms) "
+        "VALUES ('hill', 'encrypt', 'text', 200, true, 1)",
+    )
+
+    assert run_sql(db_url, "SELECT cipher FROM cipher_operations ORDER BY id") == [
+        ("caesar",),
+        ("hill",),
+    ]
+    with pytest.raises(IntegrityError):
+        run_sql(
+            db_url,
+            "INSERT INTO cipher_operations "
+            "(cipher, operation, source, http_status, succeeded, duration_ms) "
+            "VALUES ('unknown', 'encrypt', 'text', 200, true, 1)",
+        )
+
+
+def test_hill_rows_must_be_removed_before_migration_downgrade(db_url: str) -> None:
+    run_sql(
+        db_url,
+        "INSERT INTO cipher_operations "
+        "(cipher, operation, source, http_status, succeeded, duration_ms) "
+        "VALUES ('hill', 'encrypt', 'text', 200, true, 1)",
+    )
+    try:
+        with pytest.raises(DBAPIError):
+            _run_alembic(db_url, "downgrade", "0001")
+        run_sql(db_url, "DELETE FROM cipher_operations WHERE cipher = 'hill'")
+        _run_alembic(db_url, "downgrade", "0001")
+    finally:
+        _run_alembic(db_url, "upgrade", "head")
 
 
 def test_downgrade_removes_table_and_upgrade_restores_it(db_url: str) -> None:
@@ -147,6 +188,16 @@ def test_history_limit_and_filters(db_url: str) -> None:
     )
     assert len(limited["items"]) == 2
     assert limited["nextCursor"] is not None
+
+
+def test_history_filter_returns_only_hill_text_rows(db_url: str) -> None:
+    with TestClient(app) as client:
+        client.post("/api/caesar/encrypt", json={"text": "Hi", "key": 1})
+        client.post("/api/hill/encrypt", json={"text": "HELP", "key": [[3, 3], [2, 5]]})
+        page = client.get("/api/history?cipher=hill").json()["result"]
+
+    assert len(page["items"]) == 1
+    assert (page["items"][0]["cipher"], page["items"][0]["source"]) == ("hill", "text")
 
 
 def test_health_reports_ok(db_url: str) -> None:

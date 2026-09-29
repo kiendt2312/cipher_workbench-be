@@ -76,6 +76,60 @@ def test_text_lengths_count_code_points(client: TestClient, recorded) -> None:
     assert (recorded[0].input_length, recorded[0].output_length) == (15, 15)
 
 
+def test_hill_records_only_transforms_with_code_point_lengths(client: TestClient, recorded) -> None:
+    response = client.post("/api/hill/encrypt", json={"text": "Aế", "key": [[3, 3], [2, 5]]})
+    client.post("/api/hill/key/analyze", json={"key": [[3, 3], [2, 5]]})
+    client.get("/api/hill/key/random?m=2")
+
+    assert response.status_code == 200
+    assert len(recorded) == 1
+    entry = recorded[0]
+    assert (entry.cipher, entry.source, entry.operation) == ("hill", "text", "encrypt")
+    assert (entry.input_length, entry.output_length) == (2, 3)
+    assert entry.response_mode is None
+
+
+def test_failed_hill_transform_is_recorded_without_sensitive_content(
+    client: TestClient, recorded
+) -> None:
+    response = client.post(
+        "/api/hill/encrypt",
+        json={"text": "sensitive", "key": [[2, 4], [1, 3]]},
+    )
+
+    assert response.status_code == 422
+    assert len(recorded) == 1
+    entry = recorded[0]
+    assert (entry.cipher, entry.operation, entry.http_status, entry.succeeded) == (
+        "hill",
+        "encrypt",
+        422,
+        False,
+    )
+    assert entry.input_length == len("sensitive")
+    assert entry.output_length is None
+    assert not hasattr(entry, "text")
+    assert not hasattr(entry, "key")
+
+
+def test_hill_text_limit_rejection_is_recorded_as_413(client: TestClient, recorded) -> None:
+    response = client.post(
+        "/api/hill/encrypt",
+        json={"text": "A" * (1024 * 1024 + 1), "key": [[3, 3], [2, 5]]},
+    )
+
+    assert response.status_code == 413
+    assert len(recorded) == 1
+    entry = recorded[0]
+    assert (entry.cipher, entry.source, entry.operation) == ("hill", "text", "encrypt")
+    assert (entry.http_status, entry.succeeded, entry.input_length, entry.output_length) == (
+        413,
+        False,
+        None,
+        None,
+    )
+
+
 def test_file_lengths_count_utf8_bytes(client: TestClient, recorded) -> None:
     client.post(
         "/api/caesar/file",
@@ -216,6 +270,23 @@ def test_recording_failure_leaves_response_untouched(
     assert "Could not record cipher operation history" in caplog.text
     assert "topsecret" not in caplog.text
     assert "Hi" not in caplog.text
+
+
+def test_hill_response_is_unchanged_when_recording_fails(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    async def failing_record(database: object, entry: OperationEntry) -> None:
+        raise ConnectionError(f"cannot reach {FAKE_URL}")
+
+    monkeypatch.setattr(history_recorder, "record_operation", failing_record)
+    with caplog.at_level(logging.WARNING):
+        response = client.post("/api/hill/encrypt", json={"text": "HELP", "key": [[3, 3], [2, 5]]})
+
+    assert response.status_code == 200
+    assert response.json()["result"] == "DPLE"
+    assert "Could not record cipher operation history" in caplog.text
+    assert "HELP" not in caplog.text
+    assert "DPLE" not in caplog.text
 
 
 def test_slow_recording_is_abandoned(

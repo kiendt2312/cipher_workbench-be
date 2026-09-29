@@ -1,10 +1,11 @@
-# Handoff tích hợp Frontend — Caesar, Vigenère, Playfair, Affine và Columnar
+# Handoff tích hợp Frontend — sáu hệ mã
 
 Tài liệu này là **consumer contract duy nhất cho Frontend** khi tích hợp với backend
 cipher. Nội dung độc lập framework: FE có thể dùng React, Vue, Svelte hoặc JavaScript
 thuần, nhưng hành vi API và trạng thái quan sát được phải giữ đúng contract dưới đây.
 
-- Cập nhật: `2026-09-28`. Backend có 15 route cipher, `GET /api/health`,
+- Cập nhật: `2026-09-29`. Backend có 18 POST route cipher, một GET sinh khóa Hill,
+  `GET /api/health`,
   `GET /api/history` (tùy chọn, cần PostgreSQL).
 - **Người mới:** đọc mục **A. Bắt đầu nhanh** (khoảng 10 phút) rồi dùng file
   [`examples/cipher-api.ts`](examples/cipher-api.ts). Các mục 1–17 là tra cứu chi tiết.
@@ -47,10 +48,13 @@ Swagger để thử API: <http://localhost:8080/docs>.
 | POST | `/api/{cipher}/file` | multipart: `file`, khóa (A.3), `action`, `response_mode` | `content`: JSON như trên; `file`: file `text/plain` đính kèm |
 | GET | `/api/health` | — | `{"success":true,"result":{"app","database","history"}}` (503 khi DB lỗi) |
 | GET | `/api/history` | query `limit`, `cursor`, `cipher`, `operation` | `{"success":true,"result":{"items":[...],"nextCursor":...}}` |
+| POST | `/api/hill/key/analyze` | JSON `key` hoặc `keyword,m` | Phân tích ma trận khóa |
+| GET | `/api/hill/key/random?m=3` | query `m=2|3|4` | Khóa Hill hợp lệ ngẫu nhiên |
 
-`{cipher}` là một trong `caesar`, `vigenere`, `playfair`, `affine`, `columnar` (15 route
-POST). `action` là `encrypt`/`decrypt`; `response_mode` là `content` (mặc định) hoặc
-`file`.
+`{cipher}` là một trong `caesar`, `vigenere`, `playfair`, `affine`, `columnar`, `hill`.
+Năm cipher cũ có đủ text/file (15 POST route); Hill chỉ có hai POST transform và một
+POST analyze, không có `/api/hill/file`. `action` là `encrypt`/`decrypt`;
+`response_mode` là `content` (mặc định) hoặc `file` và chỉ dùng cho năm cipher cũ.
 
 ### A.3 Khóa theo cipher
 
@@ -61,6 +65,7 @@ POST). `action` là `encrypt`/`decrypt`; `response_mode` là `content` (mặc đ
 | Playfair | `"key": "PLAYFAIR EXAMPLE"` | `key` | Có ít nhất một chữ cái; kết quả là văn bản chuẩn hóa (xem 4.3) | `HIDE THE GOLD` → `BMODZBXDNAGE` |
 | Affine | `"a": 5, "b": 8` (**số**) | `a`, `b` | Số nguyên có dấu; `a` mod 26 nguyên tố cùng nhau với 26 | `HELLO` → `RCLLA` |
 | Columnar | `"key": "3 1 4 2"` hoặc `"BALLOON"` | `key` | Hoán vị `1..m` (2–256 cột) hoặc từ khóa 2–256 chữ cái | `MEET ME AT NOON` + `BALLOON` → `EAM NETT EO NMO` |
+| Hill | `"key":[[3,3],[2,5]]` hoặc `"keyword":"HILL","m":2` | Không có file route | Ma trận vuông cấp 2–4 khả nghịch mod 26 | `HELP` → `DPLE` |
 
 Ba điều hay sai nhất:
 
@@ -107,10 +112,10 @@ try {
 
 ### A.5 Lỗi
 
-Mọi lỗi có dạng `{"success": false, "message": "<tiếng Việt>"}` với status 4xx/5xx
-(kể cả khi yêu cầu file). FE hiển thị nguyên `message`; không rẽ nhánh logic theo nội
-dung message. Lỗi mạng (không có response) thì tự hiện thông báo kết nối. Danh sách
-status và message đầy đủ ở mục 9 và 16.3.
+Lỗi của năm cipher cũ có dạng `{"success": false, "message": "<tiếng Việt>"}`.
+Lỗi nghiệp vụ Hill thêm `code` và `details`; FE vẫn hiển thị nguyên `message`, chỉ dùng
+`code/details` để gắn lỗi vào control phù hợp. E07 do FE phát sinh khi đọc file UTF-8,
+không phải response backend. Lỗi mạng thì FE tự hiện thông báo kết nối.
 
 ### A.6 UI tối thiểu phải có
 
@@ -119,11 +124,30 @@ status và message đầy đủ ở mục 9 và 16.3.
 - Xóa kết quả cũ mỗi khi cipher, chế độ, nguồn, input hoặc khóa thay đổi.
 - Khóa mọi control và chặn gửi lặp khi request đang chạy.
 - Cảnh báo Playfair luôn hiện khi chọn Playfair (câu chuẩn ở mục 11).
-- File: kiểm tra sơ bộ `.txt`, tối đa 5 MiB, không rỗng; xem trước rồi mới tải.
+- File của năm cipher cũ: kiểm tra sơ bộ `.txt`, tối đa 5 MiB, không rỗng; xem trước
+  rồi mới tải. Hill: FE tự đọc `.txt` bằng UTF-8 fatal decode, kiểm tối đa 1 MiB theo
+  byte gốc và gọi JSON; không gọi `/api/hill/file`.
 - Lịch sử (tùy chọn): lịch sử trên máy theo mục 17; lịch sử máy chủ chỉ khi
   `canShowServerHistory` trả `true` (mục 16).
 
 Checklist nghiệm thu đầy đủ ở mục 14.
+
+### A.7 Hill nhanh
+
+```ts
+const response = await transformHill({
+  operation: "encrypt",
+  text: "HELP",
+  key: [[3, 3], [2, 5]],
+});
+// response.result === "DPLE"; giữ response.blocks/key/warnings để hiển thị giải thích
+```
+
+Request Hill dùng đúng một trong `key` hoặc `keyword` cùng `m`. `m` từ 2 đến 4;
+`options` tùy chọn gồm `stripDiacritics:boolean` và `padChar` là một chữ hoa A-Z.
+Success transform có đúng `success,result,blocks,key,warnings`. Analyze/random có
+`success,result,warnings`. FE đọc file bằng `TextDecoder("utf-8", {fatal:true})`;
+decode lỗi thì hiển thị E07 và không gửi request.
 
 ## 0. Thay đổi gần đây
 
@@ -329,7 +353,7 @@ Không copy OpenAPI thành một YAML tĩnh khác trong FE vì bản sao sẽ d�
 Backend không lưu input, key, file, result hay session. Khi có PostgreSQL, backend
 chỉ lưu metadata thao tác, đọc qua `GET /api/history` (mục 16).
 
-## 3. Danh mục 15 endpoint
+## 3. Danh mục cipher endpoint hiện tại
 
 | Cipher | Text encrypt | Text decrypt | File |
 |---|---|---|---|
@@ -338,12 +362,14 @@ chỉ lưu metadata thao tác, đọc qua `GET /api/history` (mục 16).
 | Playfair | `POST /api/playfair/encrypt` | `POST /api/playfair/decrypt` | `POST /api/playfair/file` |
 | Affine | `POST /api/affine/encrypt` | `POST /api/affine/decrypt` | `POST /api/affine/file` |
 | Columnar | `POST /api/columnar/encrypt` | `POST /api/columnar/decrypt` | `POST /api/columnar/file` |
+| Hill | `POST /api/hill/encrypt` | `POST /api/hill/decrypt` | Không có |
 
 Text endpoints nhận `application/json` hoặc `application/*+json`. File endpoints
 nhận `multipart/form-data` và có cùng hai response mode: `content` hoặc `file`.
 
-Ngoài 15 route cipher, backend có hai route đọc: `GET /api/health` và
-`GET /api/history` (mục 16).
+Ngoài 17 route biến đổi trên, Hill có `POST /api/hill/key/analyze` và
+`GET /api/hill/key/random?m=2|3|4`. Backend còn có hai route đọc dùng chung:
+`GET /api/health` và `GET /api/history` (mục 16).
 
 Contract wire riêng của ba route Columnar:
 
@@ -500,14 +526,34 @@ thành number. Nếu dựng visualization, lưu ý JavaScript indexing/`.length`
 UTF-16 code unit; backend hoán vị Unicode code point, không phải code unit hay
 grapheme cluster. Result chính thức vẫn luôn là response server.
 
+### 4.6 Hill vector hàng
+
+Hill dùng `y = x·K mod 26`, với A=0…Z=25 và ma trận cấp 2–4. Không dùng quy ước
+vector cột `K·x`. Key là ma trận JSON integer vuông hoặc keyword đúng `m²` chữ
+ASCII đọc theo hàng; phần tử ma trận được chuẩn hóa mod 26. Key chỉ hợp lệ khi
+`gcd(det K mod 26, 26) = 1`.
+
+Chỉ ASCII letter tham gia khối, giữ case/vị trí của chữ gốc; dấu câu và Unicode
+khác giữ nguyên. Mặc định chữ Việt có dấu NFC/NFD không tham gia khối và sinh W02;
+`stripDiacritics=true` chuyển chúng (kể cả `đ/Đ`) thành ASCII trước khi mã hóa.
+Encrypt đệm `padChar` (mặc định `X`) và nối vị trí padding sau toàn bộ text; decrypt
+không tự xóa padding. Response trả toàn bộ `blocks`, phân tích `key` và warnings
+W01/W02/W03. Vector kiểm nhanh: `HELP → DPLE`; vector cấp bốn `TEST → FNMP` với
+K `[[3,1,2,0],[0,5,1,4],[0,0,7,2],[0,0,0,9]]`.
+
+Hill không có file route. FE kiểm `.txt`, byte length tối đa 1.048.576, giải mã
+UTF-8 nghiêm ngặt (E07 nếu thất bại), rồi gửi chuỗi qua JSON. Backend kiểm giới hạn
+trên UTF-8 của trường `text` trước khi bỏ dấu.
+
 ## 5. TypeScript contract dùng trực tiếp
 
-Các type dưới đây mô tả consumer model. Caesar text dùng một integer token,
+Các type legacy dưới đây mô tả năm cipher cũ; Hill dùng các type/helper riêng trong
+[`examples/cipher-api.ts`](examples/cipher-api.ts). Caesar text dùng một integer token,
 Affine dùng hai integer token; Vigenère, Playfair và Columnar dùng string key. Multipart
 truyền mọi scalar dưới dạng string nhưng Affine dùng field `a`/`b`, không dùng `key`.
 
 ```ts
-export type Cipher = "caesar" | "vigenere" | "playfair" | "affine" | "columnar";
+export type Cipher = "caesar" | "vigenere" | "playfair" | "affine" | "columnar" | "hill";
 export type StringKeyCipher = "vigenere" | "playfair" | "columnar";
 export type Operation = "encrypt" | "decrypt";
 export type ResponseMode = "content" | "file";
@@ -564,7 +610,7 @@ export interface AffineTextInput {
 export type TextInput = CaesarTextInput | StringKeyTextInput | AffineTextInput;
 
 export interface KeyFileInput {
-  cipher: Exclude<Cipher, "affine">;
+  cipher: Exclude<Cipher, "affine" | "hill">;
   file: File;
   key: string;
   action: Operation;
@@ -601,20 +647,22 @@ whitespace/dấu `+`. Helper bên dưới trim rồi canonicalize riêng token w
 
 ## 6. JSON response và xử lý lỗi
 
-Mọi success dùng đúng HTTP `200`. Success JSON luôn đúng hai trường:
+Mọi success dùng đúng HTTP `200`. Với năm cipher cũ, success JSON luôn đúng hai trường:
 
 ```json
 {"success":true,"result":"Khoor Zruog"}
 ```
 
-JSON error luôn đúng hai trường, kể cả request `response_mode=file`:
+Với năm cipher cũ, JSON error luôn đúng hai trường, kể cả request `response_mode=file`:
 
 ```json
 {"success":false,"message":"Khóa phải là số nguyên."}
 ```
 
-Không có machine `code`, `detail`, field errors, `normalizedInput`, matrix hoặc
-metadata bổ sung. FE phải hiển thị `message` tiếng Việt hợp lệ do server trả về,
+Hill là ngoại lệ: success transform có `blocks,key,warnings`, success key API có
+`result,warnings`, và lỗi nghiệp vụ có `code,details`. `ApiError` trong client mẫu
+giữ hai field này. Năm cipher cũ không có machine `code`, `detail`, field errors,
+`normalizedInput`, matrix hoặc metadata bổ sung. FE phải hiển thị `message` tiếng Việt hợp lệ do server trả về,
 nhưng **không dùng nội dung message làm stable identifier hoặc nhánh business**.
 Để quản lý UI, dùng request context (cipher/field/action) và HTTP status; message
 chỉ dành cho người dùng.
@@ -1286,8 +1334,8 @@ khuyến nghị để FE bám theo contract API.
 - [ ] Xóa stale result khi cipher/mode/source/input/key/a/b thay đổi hoặc request thất bại.
 - [ ] Preview file dùng `response_mode=content`; download dùng request thứ hai mode `file`.
 - [ ] Dùng server attachment và filename; không tạo official file từ preview.
-- [ ] Error parser chỉ nhận `{success:false,message}`; không chờ `code`, `details`
-  hoặc metadata và không branch theo nội dung message.
+- [ ] Với năm cipher cũ, error parser nhận `{success:false,message}`; với Hill giữ thêm
+  `code,details`. Không branch theo nội dung message.
 - [ ] Cập nhật OpenAPI snapshot/generated types nếu FE thực sự dùng chúng; thêm
   contract test đếm đúng 15 route và test Columnar text/preview/download/error.
 - [ ] Gỡ mock, `USE_MOCK`, local cipher result và `API_BASE` ghi cứng trong code.
@@ -1306,7 +1354,7 @@ Không sao chép:
 - `API_BASE=http://localhost:8080` hay backend URL hard-coded;
 - CORS như một yêu cầu mặc định cho dev;
 - bỏ `response_mode` hoặc tải file từ preview Blob;
-- message/label tiếng Anh hoặc error shape có `code`;
+- message/label tiếng Anh; không thêm `code` cho năm cipher cũ (Hill có contract riêng);
 - bất kỳ client-generated production result nào.
 
 `affine-cipher.html` là reference ngoài repository chỉ xác nhận công thức, residue hợp lệ
@@ -1317,7 +1365,7 @@ hiện tại luôn thắng demo.
 
 ## 14. Acceptance checklist
 
-- [ ] Cả 15 endpoint được chọn đúng theo cipher/source/operation.
+- [ ] Cả 18 POST endpoint và GET random Hill được chọn đúng theo cipher/source/operation.
 - [ ] Caesar vector `Hello World`, key `3` cho `Khoor Zruog` và decrypt đúng chiều ngược lại.
 - [ ] Vigenère vector `Attack at dawn!`/`LEMON` cho `Lxfopv ef rnhr!` và decrypt đúng.
 - [ ] Playfair canonical vector cho `BMODZBXDNABEKUDMUIXMMOUVIF` và decrypt trả prepared text đã bỏ filler cuối.
@@ -1336,7 +1384,8 @@ hiện tại luôn thắng demo.
 - [ ] Vigenère giữ Unicode/CRLF và không làm key tiến; Caesar giữ non-ASCII/CRLF.
 - [ ] Playfair loại Unicode/CRLF/format và trả uppercase ASCII.
 - [ ] Validation hiển thị server message nhưng không dùng message làm identifier.
-- [ ] Error envelope chỉ có `success,message`; success JSON chỉ có `success,result`.
+- [ ] Năm cipher cũ giữ envelope hai field; Hill giữ exact envelope mở rộng và
+  `code/details` cho lỗi nghiệp vụ.
 - [ ] Preview và download file là hai request; lỗi file mode vẫn được đọc như JSON.
 - [ ] File đúng `5.242.880` byte qua size; thêm một byte trả 413.
 - [ ] Invalid UTF-8 trả 415; `.TXT` hợp lệ; `.txt.exe` bị từ chối.
@@ -1398,10 +1447,10 @@ change. Không thêm `/v1`, endpoint, field hoặc behavior mới chỉ bằng c
 
 ## 16. Health và lịch sử thao tác
 
-Backend có thể chạy kèm PostgreSQL. Khi bật, mỗi request tới 15 route cipher được
+Backend có thể chạy kèm PostgreSQL. Khi bật, mỗi request tới 17 route biến đổi được
 ghi lại dưới dạng **metadata**. Backend không lưu text, key, tên file, nội dung file
-hay kết quả. Contract của 15 route cipher không đổi: FE không phải sửa gì ở luồng
-encrypt/decrypt.
+hay kết quả. Hai route khóa Hill không được ghi lịch sử; contract của năm cipher cũ
+không đổi.
 
 ### 16.1 Chạy backend có PostgreSQL khi dev FE
 
@@ -1452,7 +1501,7 @@ Query (tất cả tùy chọn):
 |---|---|---|
 | `limit` | số nguyên `1`–`100` | `20` |
 | `cursor` | chuỗi opaque lấy từ `nextCursor` của trang trước | trang đầu |
-| `cipher` | `caesar`, `vigenere`, `playfair`, `affine`, `columnar` | tất cả |
+| `cipher` | `caesar`, `vigenere`, `playfair`, `affine`, `columnar`, `hill` | tất cả |
 | `operation` | `encrypt`, `decrypt` | tất cả |
 
 Kết quả sắp mới nhất trước. `nextCursor` là `null` ở trang cuối. FE phải coi cursor
@@ -1496,7 +1545,7 @@ là chuỗi opaque, gửi lại nguyên văn và không tự dựng.
 type HistoryItem = {
   id: number;
   createdAt: string; // ISO 8601
-  cipher: "caesar" | "vigenere" | "playfair" | "affine" | "columnar";
+  cipher: "caesar" | "vigenere" | "playfair" | "affine" | "columnar" | "hill";
   operation: "encrypt" | "decrypt" | null;
   source: "text" | "file";
   responseMode: "content" | "file" | null;
@@ -1587,7 +1636,7 @@ const MAX_ENTRIES = 50;
 
 type LocalHistoryEntry = {
   at: string; // new Date().toISOString()
-  cipher: "caesar" | "vigenere" | "playfair" | "affine" | "columnar";
+  cipher: "caesar" | "vigenere" | "playfair" | "affine" | "columnar" | "hill";
   operation: "encrypt" | "decrypt";
   source: "text" | "file";
   input: string;          // text nhập, hoặc tên file với source "file"
