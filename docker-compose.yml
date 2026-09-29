@@ -33,6 +33,7 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       HISTORY_API_ENABLED: ${HISTORY_API_ENABLED:-false}
       HISTORY_RETENTION_DAYS: ${HISTORY_RETENTION_DAYS:-30}
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-}
     depends_on:
       migrate:
         condition: service_completed_successfully

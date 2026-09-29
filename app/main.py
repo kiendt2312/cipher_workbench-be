@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app import config
 from app.api.history_recorder import OperationHistoryRecorder
@@ -49,8 +50,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(lifespan=lifespan)
 app.add_middleware(RequestSizeGuard, max_bytes=config.MAX_REQUEST_BYTES)
 app.add_middleware(MultipartCompletionGuard)
-# Outermost, so requests rejected by the guards above are recorded too.
+# Outside the guards, so requests rejected by them are recorded too.
 app.add_middleware(OperationHistoryRecorder)
+cors_origins = config.cors_allow_origins()
+if cors_origins:
+    # Outermost, so guard rejections such as 413 still carry CORS headers.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=list(cors_origins),
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type"],
+        expose_headers=["Content-Disposition"],
+    )
 register_exception_handlers(app)
 app.include_router(health_router)
 app.include_router(history_router)

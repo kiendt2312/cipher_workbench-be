@@ -7,7 +7,7 @@ context: |
   cho giới hạn/thông báo lỗi - khi mâu thuẫn thì theo docx).
 
   Tech stack (đã chốt):
-  - Python 3.12, FastAPI + uvicorn, chỉ phục vụ API; UI thuộc project FE riêng (không CORS, FE proxy `/api`)
+  - Python 3.12, FastAPI + uvicorn, chỉ phục vụ API; UI thuộc project FE riêng (FE proxy `/api`; CORS chỉ bật khi đặt `CORS_ALLOW_ORIGINS`)
   - Quản lý dependency bằng uv (pyproject.toml)
   - Test: pytest + pytest-cov, coverage backend tối thiểu 90%
   - Lint/format: Ruff (check + format)
