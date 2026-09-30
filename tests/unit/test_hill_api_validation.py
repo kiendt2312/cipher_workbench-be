@@ -50,17 +50,18 @@ def test_E01_precedes_bad_key(text: object) -> None:
 
 
 def test_E06_precedes_key_validation_and_reports_utf8_bytes() -> None:
-    text = "é" * (MAX_TEXT_BYTES // 2 + 1)
+    text = "é" * (MAX_TEXT_BYTES // 2) + "A"
     with pytest.raises(HillError) as caught:
         validate_transform(parsed({"text": text, "key": "bad"}))
     assert caught.value.code == "E06"
     assert caught.value.status_code == 413
-    assert caught.value.details == {"actualBytes": MAX_TEXT_BYTES + 2, "maxBytes": MAX_TEXT_BYTES}
+    assert caught.value.details == {"actualBytes": MAX_TEXT_BYTES + 1, "maxBytes": MAX_TEXT_BYTES}
 
 
 def test_exact_text_limit_is_accepted() -> None:
-    request = validate_transform(parsed({"text": "A" * MAX_TEXT_BYTES, "key": [[3, 3], [2, 5]]}))
-    assert len(request.text or "") == MAX_TEXT_BYTES
+    text = "é" * (MAX_TEXT_BYTES // 2 - 1) + "AA"
+    request = validate_transform(parsed({"text": text, "key": [[3, 3], [2, 5]]}))
+    assert len((request.text or "").encode("utf-8")) == MAX_TEXT_BYTES
 
 
 @pytest.mark.parametrize("value", [False, 1.5, [], {}])

@@ -115,7 +115,7 @@ def test_failed_hill_transform_is_recorded_without_sensitive_content(
 def test_hill_text_limit_rejection_is_recorded_as_413(client: TestClient, recorded) -> None:
     response = client.post(
         "/api/hill/encrypt",
-        json={"text": "A" * (1024 * 1024 + 1), "key": [[3, 3], [2, 5]]},
+        json={"text": "A" * (5 * 1024 * 1024 + 1), "key": [[3, 3], [2, 5]]},
     )
 
     assert response.status_code == 413

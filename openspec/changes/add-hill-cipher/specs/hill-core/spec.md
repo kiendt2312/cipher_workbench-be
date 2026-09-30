@@ -77,7 +77,7 @@ Core SHALL sinh W03 khi K là ma trận đơn vị hoặc K tự nghịch đảo
 
 ### Requirement: Vector nghiệm thu và hiệu năng lõi
 
-Core SHALL khớp T01–T12 trong HTML Hill, cộng vector cấp bốn ở trên; với khóa hợp lệ, `K·K⁻¹ ≡ I` và decrypt(encrypt(x)) SHALL bằng văn bản đã chuẩn bị cộng padding theo quy tắc giữ vị trí/case. Kiểm thử ngẫu nhiên SHALL bao gồm 1000 khóa hợp lệ và văn bản ngẫu nhiên. Xử lý lõi một `text` ASCII dài đúng 1 MiB SHALL hoàn tất dưới 1 giây trên môi trường benchmark được ghi rõ; phép đo không gồm parse HTTP, JSON serialization, truyền tải mạng hoặc render FE. (Truy vết: HTML Hill §§9, 11; quyết định chủ sở hữu Q7)
+Core SHALL khớp T01–T12 trong HTML Hill, cộng vector cấp bốn ở trên; với khóa hợp lệ, `K·K⁻¹ ≡ I` và decrypt(encrypt(x)) SHALL bằng văn bản đã chuẩn bị cộng padding theo quy tắc giữ vị trí/case. Kiểm thử ngẫu nhiên SHALL bao gồm 1000 khóa hợp lệ và văn bản ngẫu nhiên. Kết quả `<1 giây` cho fixture ASCII 1 MiB được giữ làm bằng chứng lịch sử. Implementation SHALL đo và báo cáo thời gian lõi cùng rủi ro kích thước response cho fixture đúng 5 MiB trên môi trường ghi rõ; không suy diễn mốc `<1 giây` thành gate cho 5 MiB. Phép đo lõi không gồm parse HTTP, JSON serialization, truyền tải mạng hoặc render FE. (Truy vết: HTML Hill §§9, 11; quyết định chủ sở hữu Q7 và override giới hạn ngày 2026-09-30)
 
 #### Scenario: Bộ vector
 - **WHEN** chạy T01–T12 bằng core ở operation tương ứng

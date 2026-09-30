@@ -266,15 +266,16 @@ def test_random_key_result_and_string_only_adapters() -> None:
 
 
 def test_utf8_size_boundary_and_lone_surrogate() -> None:
-    assert validate_text_size("A" * 1_048_576) == 1_048_576
-    assert validate_text_size("ế" * 349_525 + "A") == 1_048_576
+    max_bytes = 5 * 1024 * 1024
+    assert validate_text_size("A" * max_bytes) == max_bytes
+    assert validate_text_size("ế" * 1_747_626 + "AA") == max_bytes
 
     with pytest.raises(HillError) as too_large:
-        validate_text_size("A" * (1_048_576 + 1))
+        validate_text_size("ế" * 1_747_626 + "AAA")
     assert too_large.value.code == "E06"
     assert too_large.value.details == {
-        "actualBytes": 1_048_577,
-        "maxBytes": 1_048_576,
+        "actualBytes": max_bytes + 1,
+        "maxBytes": max_bytes,
     }
 
     with pytest.raises(HillError) as surrogate:

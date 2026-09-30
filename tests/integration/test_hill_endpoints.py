@@ -120,17 +120,23 @@ def test_transform_error_codes(client: TestClient, body: dict[str, object], code
 def test_E06_byte_limit_and_exact_boundary(client: TestClient) -> None:
     over = client.post(
         "/api/hill/encrypt",
-        json={"text": "é" * (MAX_TEXT_BYTES // 2 + 1), "key": T01},
+        json={
+            "text": "é" * (MAX_TEXT_BYTES // 2) + "A",
+            "key": "bad",
+            "options": {"stripDiacritics": True},
+        },
     )
     body = assert_hill_error(over, 413, "E06")
-    assert body["details"] == {"actualBytes": MAX_TEXT_BYTES + 2, "maxBytes": MAX_TEXT_BYTES}
+    assert body["message"] == "Văn bản vượt quá giới hạn 5 MiB."
+    assert body["details"] == {"actualBytes": MAX_TEXT_BYTES + 1, "maxBytes": MAX_TEXT_BYTES}
 
     exact = client.post(
         "/api/hill/encrypt",
-        json={"text": "A" * MAX_TEXT_BYTES, "key": [[1, 0], [0, 1]]},
+        json={"text": "é" * (MAX_TEXT_BYTES // 2 - 1) + "AA", "key": [[1, 0], [0, 1]]},
     )
     assert exact.status_code == 200
-    assert len(exact.json()["result"]) == MAX_TEXT_BYTES
+    assert exact.json()["result"].endswith("AA")
+    assert len(exact.json()["blocks"]) == 1
 
 
 @pytest.mark.parametrize(
@@ -186,7 +192,14 @@ def test_openapi_documents_hill_contract(client: TestClient) -> None:
         operation = schema["paths"][path]["post"]
         assert {tag.lower() for tag in operation["tags"]} == {"hill"}
         assert {"200", "413", "422", "500"} <= operation["responses"].keys()
-        assert "oneOf" in operation["requestBody"]["content"]["application/json"]["schema"]
+        request_schema = operation["requestBody"]["content"]["application/json"]["schema"]
+        assert "oneOf" in request_schema
+        assert all(
+            variant["properties"]["text"]["description"]
+            == "Tối đa 5 MiB (5.242.880 byte) khi mã hóa UTF-8."
+            for variant in request_schema["oneOf"]
+        )
+        assert operation["responses"]["413"]["description"] == ("Text Hill vượt giới hạn 5 MiB.")
     assert "/api/hill/file" not in schema["paths"]
     random_operation = schema["paths"]["/api/hill/key/random"]["get"]
     assert random_operation["parameters"] == [

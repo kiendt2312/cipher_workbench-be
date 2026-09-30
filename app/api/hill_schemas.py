@@ -12,13 +12,13 @@ from app.api.schemas import JsonIntegerToken
 from app.errors.exceptions import HillError
 
 MISSING: Final = object()
-MAX_TEXT_BYTES = 1024 * 1024
+MAX_TEXT_BYTES = 5 * 1024 * 1024
 _ASCII_KEYWORD = re.compile(r"^[A-Za-z]+$")
 
 MESSAGES = {
     "E01": "Nhập văn bản hoặc tải file .txt để bắt đầu.",
     "E02": "Văn bản không có chữ cái nào để mã hóa. Hill chỉ xử lý A\u2013Z.",
-    "E06": "Văn bản vượt quá giới hạn 1 MiB.",
+    "E06": "Văn bản vượt quá giới hạn 5 MiB.",
     "E08": "Cấp ma trận khóa phải từ 2 đến 4.",
     "E10": "Tùy chọn Hill không hợp lệ.",
     "E11": "Dữ liệu gửi lên không hợp lệ.",

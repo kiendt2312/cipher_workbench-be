@@ -5,12 +5,12 @@ Backend hiện hỗ trợ Caesar, Vigenère, Playfair, Affine và Columnar, như
 ## What Changes
 
 - Thêm lõi Hill cho ma trận cấp 2–4: chuẩn hóa khóa modulo 26, phân tích định thức/nghịch đảo/phụ hợp, mã hóa `y = x·K mod 26`, giải mã `x = y·K⁻¹ mod 26`, chia khối và dựng lại văn bản.
-- Thêm đúng bốn endpoint `/api/hill/encrypt`, `/api/hill/decrypt`, `/api/hill/key/analyze`, `/api/hill/key/random`; không thêm `/api/hill/file`. FE đọc file `.txt` UTF-8 tối đa 1 MiB và gửi chuỗi `text` qua endpoint JSON.
+- Thêm đúng bốn endpoint `/api/hill/encrypt`, `/api/hill/decrypt`, `/api/hill/key/analyze`, `/api/hill/key/random`; không thêm `/api/hill/file`. FE đọc file `.txt` UTF-8 tối đa 5 MiB và gửi chuỗi `text` qua endpoint JSON.
 - Hill dùng success envelope mở rộng có `success`, `result`, `blocks`, `key`, `warnings`; key endpoints dùng `success` và `result` object. Lỗi nghiệp vụ Hill dùng `success`, `message`, `code`, `details`. Năm cipher cũ giữ nguyên response hai trường.
 - Hỗ trợ khóa ma trận hoặc `keyword` cùng `m`, tùy chọn `stripDiacritics` và `padChar` mặc định `X`; W01/W02/W03 là object có mã, thông báo và chi tiết.
-- Giới hạn `text` theo UTF-8 tối đa 1.048.576 byte, trả E06/413 khi vượt. E07 thuộc FE; thêm E10 cho options sai và E11 cho request JSON sai cấu trúc. Giữ request guard hạ tầng 64 MiB và response lỗi chung của các route khác.
+- Giới hạn `text` theo UTF-8 tối đa đúng 5 MiB (5.242.880 byte), trả E06/413 khi vượt. Đúng 5 MiB được nhận; 5 MiB + 1 byte bị từ chối với `actualBytes` và `maxBytes` chính xác. E07 thuộc FE; thêm E10 cho options sai và E11 cho request JSON sai cấu trúc. Giữ request guard hạ tầng 64 MiB và response lỗi chung của các route khác.
 - Ghi metadata của hai request biến đổi Hill vào lịch sử server, cho phép lọc `cipher=hill`, và tạo migration nới CHECK constraint của `cipher_operations`. Hai key endpoints không sinh lịch sử.
-- Bổ sung unit/integration/contract tests, benchmark lõi 1 MiB, OpenAPI, README, hướng dẫn FE và client mẫu sau khi implementation đã được kiểm chứng.
+- Bổ sung unit/integration/contract tests, đo lõi và kích thước response ở biên 5 MiB, OpenAPI, README, hướng dẫn FE và client mẫu sau khi implementation đã được kiểm chứng.
 
 ## Capabilities
 
@@ -40,6 +40,7 @@ Backend hiện hỗ trợ Caesar, Vigenère, Playfair, Affine và Columnar, như
 
 ## Nguồn và quyết định ưu tiên
 
-1. Các quyết định Q1–Q19 được chủ sở hữu xác nhận ngày 2026-09-29 quyết định phần tích hợp và các chỗ `Scope Backend_ Hệ mã hóa Hill.html` chưa rõ hoặc tự mâu thuẫn.
-2. HTML Hill là nguồn cho toán học, quy ước vector hàng, test vector và quy tắc văn bản, trừ các điểm được quyết định ở mục 1: Unicode chữ Việt NFC/NFD tương đương; warning W02 chỉ đếm chữ Việt có dấu; `keyword` cần `m`; E07 ở FE; E10/E11 bổ sung; benchmark 1 giây chỉ tính lõi.
-3. Các main spec OpenSpec và runtime đã nghiệm thu là nguồn cho contract dùng chung của năm cipher cũ, lịch sử metadata, request guard 64 MiB và cách tổ chức backend. Ngoại lệ Hill 1 MiB và envelope mở rộng là quyết định của chủ sở hữu, chỉ áp dụng Hill.
+1. Quyết định chủ sở hữu ngày 2026-09-30 nâng riêng giới hạn `text` Hill từ 1 MiB lên đúng 5 MiB, ghi đè giới hạn cũ trong HTML nguồn và phiên bản trước của change này; HTML lịch sử không bị sửa. Mọi hành vi Hill khác và contract của năm cipher cũ giữ nguyên.
+2. Các quyết định Q1–Q19 được chủ sở hữu xác nhận ngày 2026-09-29 quyết định phần tích hợp và các chỗ `Scope Backend_ Hệ mã hóa Hill.html` chưa rõ hoặc tự mâu thuẫn.
+3. HTML Hill là nguồn cho toán học, quy ước vector hàng, test vector và quy tắc văn bản, trừ các điểm được quyết định ở trên: Unicode chữ Việt NFC/NFD tương đương; warning W02 chỉ đếm chữ Việt có dấu; `keyword` cần `m`; E07 ở FE; E10/E11 bổ sung; benchmark 1 giây lịch sử chỉ tính lõi ở fixture 1 MiB.
+4. Các main spec OpenSpec và runtime đã nghiệm thu là nguồn cho contract dùng chung của năm cipher cũ, lịch sử metadata, request guard 64 MiB và cách tổ chức backend. Ngoại lệ Hill 5 MiB và envelope mở rộng chỉ áp dụng Hill.

@@ -197,7 +197,7 @@ operation vào tag `Columnar Transposition` và là projection machine-readable 
 contract request/response đã test.
 
 Hill là ngoại lệ có chủ đích: không có `/api/hill/file`. FE đọc `.txt` UTF-8,
-kiểm tối đa 1 MiB theo byte, rồi gửi nội dung qua endpoint JSON. Hai route biến đổi
+kiểm tối đa 5 MiB (5.242.880 byte), rồi gửi nội dung qua endpoint JSON. Hai route biến đổi
 trả `{success,result,blocks,key,warnings}`; hai route khóa trả
 `{success,result,warnings}`. Lỗi nghiệp vụ Hill trả thêm `code` và `details`.
 

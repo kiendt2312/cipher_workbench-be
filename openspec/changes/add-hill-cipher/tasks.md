@@ -15,7 +15,7 @@
 ## 3. Schema, Exception Handling và HTTP Adapter
 
 - [x] 3.1 Thêm decoder JSON Hill strict với media hiện hành, duplicate/unknown field, surrogate và hai request variant khóa. **Xong khi:** malformed/non-object/lone surrogate/field lạ-trùng trả E11; các route cũ không đổi.
-- [x] 3.2 Thêm validator Hill cho text, 1 MiB UTF-8, matrix/keyword/m, options và precedence E01–E11 trừ E07. **Xong khi:** mỗi mã có test API riêng; nhiều lỗi đồng thời theo đúng thứ tự spec.
+- [x] 3.2 Thêm validator Hill cho text, giới hạn UTF-8 ban đầu 1 MiB, matrix/keyword/m, options và precedence E01–E11 trừ E07. **Xong khi:** mỗi mã có test API riêng; nhiều lỗi đồng thời theo đúng thứ tự spec. (Bằng chứng implementation trước override 2026-09-30; task 7 cập nhật giới hạn.)
 - [x] 3.3 Thêm Hill-specific exception/response mapping và warning serialization. **Xong khi:** lỗi nghiệp vụ Hill có đúng `success,message,code,details`, lỗi 500/guard chung và các cipher cũ giữ format hiện hành.
 - [x] 3.4 Thêm `POST /api/hill/encrypt` và `/decrypt` cùng response models, history notes và OpenAPI. **Xong khi:** T01/T05/T06/T07 chạy qua API có result, toàn bộ blocks/key/warnings, tag và status đúng; không có file route Hill.
 - [x] 3.5 Thêm `POST /api/hill/key/analyze` và `GET /api/hill/key/random?m=` cùng OpenAPI. **Xong khi:** analyze T01 trả đủ ma trận/det/inverse, random m=2–4 hợp lệ, thiếu/trùng/sai m trả E08.
@@ -29,13 +29,23 @@
 ## 5. Integration, contract và hiệu năng
 
 - [x] 5.1 Phủ API E01–E06, E08–E11 với HTTP status, code và details; xác nhận E07 chỉ là FE handoff. **Xong khi:** mọi case lỗi khả dĩ của bốn Hill API có test, gồm precedence, option sai, keyword sai và E04 det/gcd.
-- [x] 5.2 Phủ exact response/OpenAPI, 18 POST cipher route và một GET Hill random, JSON media, 1 MiB boundary, 64 MiB guard exception và regression 15 route cũ. **Xong khi:** schema/body/status đúng, test cũ giữ nguyên.
+- [x] 5.2 Phủ exact response/OpenAPI, 18 POST cipher route và một GET Hill random, JSON media, boundary 1 MiB ban đầu, 64 MiB guard exception và regression 15 route cũ. **Xong khi:** schema/body/status đúng, test cũ giữ nguyên. (Bằng chứng trước override; task 7 thay boundary.)
 - [x] 5.3 Chạy round-trip ngẫu nhiên với 1000 khóa hợp lệ và text ngẫu nhiên; benchmark core trên ASCII 1 MiB với m=2 và m=4, ghi máy và kết quả. **Xong khi:** inverse/round-trip đúng; mỗi phép xử lý core dưới 1 giây trên môi trường benchmark đã ghi, không tính JSON/network.
   - Evidence 2026-09-29: Python 3.12.3, Linux 7.0.0-34-generic x86_64; năm mẫu m=2 `0.969248–0.979766s`, m=4 `0.704462–0.713211s`, gồm đầy đủ 524.288/262.144 blocks.
 
 ## 6. Tài liệu FE và quality gates
 
-- [x] 6.1 Sau khi test implementation xanh, cập nhật README và `repo_docs/frontend-integration.md` cho 6 cipher, 18 POST route, 4 Hill API, FE `.txt` 1 MiB/E07 và response Hill riêng. **Xong khi:** hướng dẫn không gợi ý `/api/hill/file` hoặc áp limit 5 MiB cho Hill.
+- [x] 6.1 Sau khi test implementation xanh, cập nhật README và `repo_docs/frontend-integration.md` cho 6 cipher, 18 POST route, 4 Hill API, FE `.txt` 1 MiB/E07 và response Hill riêng. **Xong khi:** hướng dẫn không gợi ý `/api/hill/file`. (Bằng chứng trước override; task 7 nâng FE lên 5 MiB.)
 - [x] 6.2 Cập nhật `repo_docs/examples/cipher-api.ts` với helper/type Hill riêng và history union, giữ helpers năm cipher cũ. **Xong khi:** TypeScript strict compile và helper Hill bảo toàn blocks/key/warnings.
 - [x] 6.3 Chạy full `uv run --frozen pytest`, `uv run --frozen ruff check .`, `uv run --frozen ruff format --check .`, coverage ≥90% và OpenSpec strict validate trên môi trường có CLI tương thích. **Xong khi:** mọi gate xanh trên state cuối, không thêm dependency runtime và không sửa HTML nguồn.
 - [x] 6.4 Rà diff và nghiệm thu theo sáu delta spec cùng quyết định Q1–Q19. **Xong khi:** không có thay đổi thuật toán/contract năm cipher cũ, không lưu dữ liệu nhạy cảm, migration và tài liệu FE khớp runtime.
+
+## 7. Owner override giới hạn Hill ngày 2026-09-30
+
+- [x] 7.1 Nâng constant/validator và message E06 riêng của Hill lên đúng 5 MiB (5.242.880 UTF-8 byte), vẫn đo chuỗi JSON gốc trước normalization. **Xong khi:** đúng 5 MiB hợp lệ không bị E06; 5 MiB + 1 byte trả 413/E06 với `actualBytes=5242881`, `maxBytes=5242880`; precedence cũ giữ nguyên.
+- [x] 7.2 Cập nhật boundary/unit/API/history/OpenAPI tests cho ASCII và UTF-8 đa byte, đồng thời chạy regression route/envelope/file limit của năm cipher cũ. **Xong khi:** không thêm `/api/hill/file`, không đổi guard 64 MiB hoặc contract legacy.
+- [x] 7.3 Cập nhật README, hướng dẫn FE và TypeScript helper để đọc `.txt` strict UTF-8 và kiểm tối đa 5 MiB trước khi gửi JSON `text`; xóa claim 1 MiB đang hoạt động nhưng giữ bằng chứng benchmark lịch sử có nhãn rõ.
+- [x] 7.4 Đo thời gian lõi và kích thước response/`blocks` cho fixture 5 MiB, báo cáo rủi ro mà không đổi response contract; chạy full quality gates và strict OpenSpec validation trên môi trường CLI tương thích.
+  - Evidence 2026-09-30: Python 3.12.3, Linux x86_64; ASCII 5 MiB/m=2 tạo 2.621.440 blocks và JSON compact 86.507.844 byte; core `5,491107s`, serialize `1,154063s`, peak RSS `1.324.936 KiB`.
+  - Gates 2026-09-30: `1065 passed, 12 skipped`, coverage `93,87%`; Ruff check/format, TypeScript `tsc --strict --noEmit`, `git diff --check` và OpenSpec 1.13.2 `validate add-hill-cipher --strict` đều xanh trên final pre-commit state.
+- [x] 7.5 Rà toàn bộ tracked repo và diff cuối, phân loại mọi tham chiếu 1 MiB còn lại là lịch sử/fixture hợp lệ; commit scoped change trên `feature/hill-5mib-limit` và xác minh branch sạch, ahead of main.

@@ -30,17 +30,21 @@ Request encrypt/decrypt SHALL là một JSON object có đúng một trong hai d
 - **WHEN** request encrypt `HELLO` với K T01 và `options.padChar="Q"`
 - **THEN** phần văn bản chuẩn bị được đệm một Q và W01 nêu `char="Q"`
 
-### Requirement: Giới hạn text đúng 1 MiB UTF-8
+### Requirement: Giới hạn text đúng 5 MiB UTF-8
 
-Sau khi JSON đã giải mã thành chuỗi, hệ thống SHALL đo `len(text.encode("utf-8"))` trước bỏ dấu, chuẩn bị khối và nhân ma trận. Đúng 1.048.576 byte SHALL được nhận; lớn hơn SHALL trả HTTP 413/E06. Giới hạn này chỉ áp dụng Hill; file FE SHALL được kiểm theo byte gốc cùng ngưỡng, còn năm file endpoint backend hiện có giữ 5 MiB. Request bị tầng guard chung 64 MiB chặn trước khi parse tiếp tục dùng response hạ tầng hiện hành. (Truy vết: HTML Hill §§1, 6, 11; quyết định chủ sở hữu Q1, Q6, Q11; `app/config.py` và `app/api/request_size_guard.py` cho baseline)
+Sau khi JSON đã giải mã thành chuỗi, hệ thống SHALL đo `len(text.encode("utf-8"))` trên chuỗi gốc trước normalization, bỏ dấu, chuẩn bị khối và nhân ma trận. Đúng 5 MiB = `5 * 1024 * 1024` = 5.242.880 byte SHALL được nhận; 5.242.881 byte hoặc lớn hơn SHALL trả HTTP 413/E06 với `details.actualBytes` và `details.maxBytes=5242880` chính xác. Giới hạn này chỉ áp dụng Hill; file FE SHALL được kiểm theo byte gốc cùng ngưỡng, còn giới hạn và hành vi của năm file endpoint backend hiện có giữ nguyên. Request bị tầng guard chung 64 MiB chặn trước khi parse tiếp tục dùng response hạ tầng hiện hành. (Truy vết: quyết định chủ sở hữu ngày 2026-09-30 ghi đè giới hạn 1 MiB trong HTML Hill §§1, 6, 11 và quyết định Q1/Q6/Q11; `app/config.py` và `app/api/request_size_guard.py` cho baseline)
 
 #### Scenario: Vượt một byte
-- **WHEN** `text` ASCII dài 1.048.577 byte được gửi tới encrypt
-- **THEN** HTTP 413/E06, không có kết quả cipher
+- **WHEN** `text` ASCII dài 5.242.881 byte được gửi tới encrypt
+- **THEN** HTTP 413/E06 với `details.actualBytes=5242881`, `details.maxBytes=5242880`, không có kết quả cipher
+
+#### Scenario: Đúng giới hạn
+- **WHEN** `text` hợp lệ có UTF-8 dài đúng 5.242.880 byte được gửi tới encrypt
+- **THEN** request không bị từ chối bởi E06
 
 #### Scenario: UTF-8 đa byte
-- **WHEN** `text` gồm ký tự UTF-8 đa byte có số code point dưới 1.048.576 nhưng tổng byte vượt giới hạn
-- **THEN** HTTP 413/E06
+- **WHEN** `text` gồm ký tự UTF-8 đa byte có số code point dưới 5.242.880 nhưng tổng byte là 5.242.881
+- **THEN** HTTP 413/E06 với số byte thực tế chính xác
 
 ### Requirement: Success response Hill có dữ liệu giải thích
 
@@ -56,7 +60,7 @@ Encrypt/decrypt SHALL trả HTTP 200 với đúng năm trường top-level `succ
 
 ### Requirement: OpenAPI và hợp đồng FE
 
-OpenAPI SHALL gắn hai operation vào tag `Hill`, mô tả hai request variant, options/default, giới hạn 1 MiB, quy ước vector hàng, success schema mở rộng và error 413/422/500. Hướng dẫn FE SHALL mô tả cách đọc `.txt` UTF-8 ở client, kiểm đuôi file và byte length, xử lý E07 tại FE khi decode UTF-8 thất bại, gọi endpoint JSON, và dùng helper client Hill riêng để giữ `blocks/key/warnings` thay vì chỉ lấy chuỗi `result`. Không đổi `transformText` của năm cipher cũ. (Truy vết: HTML Hill §§1, 6–7; quyết định chủ sở hữu Q1, Q2, Q6, Q9; `repo_docs/frontend-integration.md` và `repo_docs/examples/cipher-api.ts` baseline)
+OpenAPI SHALL gắn hai operation vào tag `Hill`, mô tả hai request variant, options/default, giới hạn 5 MiB, quy ước vector hàng, success schema mở rộng và error 413/422/500. Hướng dẫn FE SHALL mô tả cách đọc `.txt` UTF-8 ở client, kiểm đuôi file và byte length tối đa 5.242.880, xử lý E07 tại FE khi decode UTF-8 thất bại, gọi endpoint JSON, và dùng helper client Hill riêng để giữ `blocks/key/warnings` thay vì chỉ lấy chuỗi `result`. Không đổi `transformText` của năm cipher cũ. (Truy vết: quyết định chủ sở hữu ngày 2026-09-30; HTML Hill §§1, 6–7; quyết định Q1, Q2, Q6, Q9; `repo_docs/frontend-integration.md` và `repo_docs/examples/cipher-api.ts` baseline)
 
 #### Scenario: E07 thuộc FE
 - **WHEN** người dùng chọn `.txt` không đọc được UTF-8

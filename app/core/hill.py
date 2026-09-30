@@ -19,7 +19,7 @@ from typing import Any, Literal
 MODULUS = 26
 MIN_MATRIX_SIZE = 2
 MAX_MATRIX_SIZE = 4
-MAX_TEXT_BYTES = 1_048_576
+MAX_TEXT_BYTES = 5 * 1024 * 1024
 
 Operation = Literal["encrypt", "decrypt"]
 type Matrix = list[list[int]]
@@ -534,7 +534,7 @@ def _prepare_text(text: str, strip_diacritics: bool) -> _PreparedText:
 def _transform_blocks(
     values: list[int], matrix: Matrix
 ) -> tuple[list[dict[str, list[int]]], list[int] | None]:
-    """Transform blocks with small-order fast paths for the 1 MiB core case."""
+    """Transform blocks with small-order fast paths for large Hill text."""
 
     size = len(matrix)
     if size == 2:
@@ -616,7 +616,7 @@ def validate_text_size(text: str, max_bytes: int = MAX_TEXT_BYTES) -> int:
     if actual_bytes > max_bytes:
         raise HillError(
             "E06",
-            "Văn bản vượt quá giới hạn 1 MiB.",
+            "Văn bản vượt quá giới hạn 5 MiB.",
             {"actualBytes": actual_bytes, "maxBytes": max_bytes},
         )
     return actual_bytes

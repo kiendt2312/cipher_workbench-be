@@ -119,7 +119,7 @@ const analyzed = await analyzeHillKey({ keyword: "HILL", m: 2 });
 const generated = await randomHillKey(3);
 
 // Nếu nguồn là file Hill: không gọi /api/hill/file.
-const upload = await readHillTextFile(file); // kiểm .txt, 1 MiB raw bytes, UTF-8 fatal
+const upload = await readHillTextFile(file); // kiểm .txt, 5 MiB raw bytes, UTF-8 fatal
 const fromFile = await transformHill({
   operation: "encrypt", text: upload.text, key: generated.result.matrix,
 });
@@ -140,7 +140,7 @@ không phải response backend. Lỗi mạng thì FE tự hiện thông báo k�
 - Khóa mọi control và chặn gửi lặp khi request đang chạy.
 - Cảnh báo Playfair luôn hiện khi chọn Playfair (câu chuẩn ở mục 11).
 - File của năm cipher cũ: kiểm tra sơ bộ `.txt`, tối đa 5 MiB, không rỗng; xem trước
-  rồi mới tải. Hill: FE tự đọc `.txt` bằng UTF-8 fatal decode, kiểm tối đa 1 MiB theo
+  rồi mới tải. Hill: FE tự đọc `.txt` bằng UTF-8 fatal decode, kiểm tối đa 5 MiB theo
   byte gốc và gọi JSON; không gọi `/api/hill/file`.
 - Lịch sử (tùy chọn): lịch sử trên máy theo mục 17; lịch sử máy chủ chỉ khi
   `canShowServerHistory` trả `true` (mục 16).
@@ -558,7 +558,7 @@ không tự xóa padding. Response trả toàn bộ `blocks`, phân tích `key` 
 W01/W02/W03. Vector kiểm nhanh: `HELP → DPLE`; vector cấp bốn `TEST → FNMP` với
 K `[[3,1,2,0],[0,5,1,4],[0,0,7,2],[0,0,0,9]]`.
 
-Hill không có file route. FE kiểm `.txt`, byte length tối đa 1.048.576, giải mã
+Hill không có file route. FE kiểm `.txt`, byte length tối đa 5.242.880, giải mã
 UTF-8 nghiêm ngặt (E07 nếu thất bại), rồi gửi chuỗi qua JSON. Backend kiểm giới hạn
 trên UTF-8 của trường `text` trước khi bỏ dấu. `TextDecoder` mặc định bỏ UTF-8 BOM
 đầu file; BOM không phải dữ liệu Hill. Helper `readHillTextFile` trong file mẫu thực
@@ -1270,7 +1270,7 @@ nhưng branch/focus control theo `code` và `details`; không branch theo câu t
 | E03 | 422 | Dạng key/matrix sai; `reason` là `key_variant`, `invalid_shape` hoặc `invalid_cell`; cell sai có `row`/`column` 1-based |
 | E04 | 422 | Key không khả nghịch; `det`, `gcd`, `divisor` |
 | E05 | 422 | Ciphertext không đủ block khi decrypt; `n`, `m` |
-| E06 | 413 | `text` vượt 1 MiB UTF-8; `actualBytes`, `maxBytes` |
+| E06 | 413 | `text` vượt 5 MiB UTF-8; `actualBytes`, `maxBytes` |
 | E07 | — | Chỉ FE phát sinh khi file không phải UTF-8; không có response backend |
 | E08 | 422 | `m` ngoài 2–4, thiếu/trùng/sai token; `min`, `max`, có thể có `m` |
 | E09 | 422 | Keyword không đúng `m²` ASCII letter; `m`, `expected`, `actual` (số ASCII letter hợp lệ, hoặc `null` nếu sai kiểu) |
@@ -1464,7 +1464,7 @@ hiện tại luôn thắng demo.
   và random trả cùng shape phân tích key như transform.
 - [ ] Hill padding chỉ ở encrypt, decrypt không tự strip; warning luôn theo thứ tự
   W01, W02, W03 và UI giữ nguyên `blocks`, `key`, `warnings` từ server.
-- [ ] Hill file được FE kiểm `.txt`, tối đa 1 MiB raw bytes và UTF-8 fatal/E07 trước
+- [ ] Hill file được FE kiểm `.txt`, tối đa 5 MiB raw bytes và UTF-8 fatal/E07 trước
   khi gọi JSON; không gọi hoặc giả lập `/api/hill/file`.
 - [ ] FE không tự strip thêm filler và hiển thị cảnh báo Playfair không lossless.
 - [ ] Caesar text gửi một JSON integer; Affine gửi hai integer `a,b`;

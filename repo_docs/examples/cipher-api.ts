@@ -277,12 +277,12 @@ export async function readHillTextFile(file: File): Promise<HillTextFile> {
     throw new ApiError("Chỉ chấp nhận file .txt.", 415);
   }
   const bytes = new Uint8Array(await file.arrayBuffer());
-  if (bytes.byteLength > 1024 * 1024) {
+  if (bytes.byteLength > 5 * 1024 * 1024) {
     throw new ApiError(
-      "Văn bản vượt quá giới hạn 1 MiB.",
+      "Văn bản vượt quá giới hạn 5 MiB.",
       413,
       "E06",
-      { actualBytes: bytes.byteLength, maxBytes: 1024 * 1024 },
+      { actualBytes: bytes.byteLength, maxBytes: 5 * 1024 * 1024 },
     );
   }
   let text: string;

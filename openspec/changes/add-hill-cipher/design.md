@@ -32,7 +32,7 @@ Một hàm domain nhận ma trận chuẩn hóa và trả `matrix,m,det,gcd,detI
 
 ### 4. Hill JSON decoder và validator riêng
 
-Thêm schema/decoder riêng theo seam Affine/Columnar: parse raw JSON với duplicate detection, từ chối non-object/lone surrogate/top-level field lạ trước field validation, không coerce số thành string hoặc ngược lại. Decoder nhận `key` và `keyword` là các tên field đã biết để validator phân loại trường hợp cùng xuất hiện thành E03; `m` đi với matrix đơn thuần là field thừa E11. Với matrix, từng ô phải là JSON integer token thật (bool/float/string không hợp lệ); xử lý integer token lớn bằng tính residue từ chữ số thay vì chuyển thành `int` không giới hạn. `m` chỉ là số nguyên 2–4. Options có đúng hai field tùy chọn và được validate dù operation là decrypt. Thứ tự lỗi ở `hill-error-handling` được thực thi tại adapter, không thay decoder/schema cũ. Limit 1 MiB đo trên UTF-8 của string trước normalization; handler có thể bỏ qua tính byte khi decoder đã gặp lỗi E11.
+Thêm schema/decoder riêng theo seam Affine/Columnar: parse raw JSON với duplicate detection, từ chối non-object/lone surrogate/top-level field lạ trước field validation, không coerce số thành string hoặc ngược lại. Decoder nhận `key` và `keyword` là các tên field đã biết để validator phân loại trường hợp cùng xuất hiện thành E03; `m` đi với matrix đơn thuần là field thừa E11. Với matrix, từng ô phải là JSON integer token thật (bool/float/string không hợp lệ); xử lý integer token lớn bằng tính residue từ chữ số thay vì chuyển thành `int` không giới hạn. `m` chỉ là số nguyên 2–4. Options có đúng hai field tùy chọn và được validate dù operation là decrypt. Thứ tự lỗi ở `hill-error-handling` được thực thi tại adapter, không thay decoder/schema cũ. Limit 5 MiB (5.242.880 byte) đo trên UTF-8 của string gốc trước normalization; handler có thể bỏ qua tính byte khi decoder đã gặp lỗi E11.
 
 ### 5. Router Hill tường minh và response cục bộ
 
@@ -44,21 +44,21 @@ Thêm `hill` vào `CIPHERS` ở model và migration mới để thay CHECK `ck_c
 
 ### 7. Handoff FE khác đường file hiện tại
 
-`repo_docs/frontend-integration.md` mô tả Hill là ngoại lệ có bốn API và file được đọc tại FE; kiểm `.txt`, 1 MiB byte gốc, decode UTF-8 nghiêm ngặt, E07 ở FE, sau đó gửi JSON `text`. `repo_docs/examples/cipher-api.ts` thêm kiểu/helper Hill riêng để không bỏ `blocks`, `key`, `warnings`; union `Cipher` lịch sử có `hill`. Không đổi helper `previewFile`/`downloadFile` của năm cipher cũ để tránh gửi tới `/api/hill/file` không tồn tại. Docs chỉ cập nhật sau khi implementation tests xanh.
+`repo_docs/frontend-integration.md` mô tả Hill là ngoại lệ có bốn API và file được đọc tại FE; kiểm `.txt`, tối đa 5 MiB theo byte gốc, decode UTF-8 nghiêm ngặt, E07 ở FE, sau đó gửi JSON `text`. `repo_docs/examples/cipher-api.ts` thêm kiểu/helper Hill riêng để không bỏ `blocks`, `key`, `warnings`; union `Cipher` lịch sử có `hill`. Không đổi helper `previewFile`/`downloadFile` của năm cipher cũ để tránh gửi tới `/api/hill/file` không tồn tại. Docs chỉ cập nhật sau khi implementation tests xanh.
 
 ## Risks / Trade-offs
 
-- **Response lớn:** 1 MiB ASCII với m=2 có thể tạo khoảng 524.288 block JSON; giữ đủ blocks theo quyết định Q7, vì vậy đo core dưới 1 giây tách khỏi serialize/network, kiểm tra memory và kích thước response trong integration test. FE cần hiển thị phân trang/virtualized list, nhưng đó thuộc repo FE.
+- **Response lớn:** 5 MiB ASCII với m=2 có thể tạo khoảng 2.621.440 block JSON; giữ đủ blocks theo quyết định Q7. Đo thời gian core, serialize, memory và kích thước response để báo cáo rủi ro vận hành; mốc `<1 giây` trước đây chỉ là bằng chứng fixture 1 MiB, không phải performance gate cho contract 5 MiB. FE cần hiển thị phân trang/virtualized list, nhưng đó thuộc repo FE.
 - **Unicode tách dấu:** xử lý theo cụm thay vì từng code point phức tạp hơn JS mẫu. Test NFC/NFD parity, `đ/Đ`, chữ ngoại ngữ và các dấu kết hợp để không mất ký tự.
 - **Lỗi chung 64 MiB:** guard hiện tại chạy trước Hill decoder, có thể trả 413 hai trường khi request khổng lồ. Đây là ngoại lệ hạ tầng đã có; tài liệu Hill phải nêu rõ thay vì hứa mọi 413 đều E06.
 - **Migration CHECK:** sửa `CIPHERS` trong model mà không migrate DB sẽ làm ghi Hill thất bại âm thầm. Test migration trên DB có row cũ và thử ghi Hill trước khi công bố feature.
 - **Hình dạng lỗi riêng:** global handler hiện trả hai trường; route-scoped Hill error không được làm thay response của 15 route cũ. Test hồi quy exact body.
-- **Mốc 1 giây phụ thuộc máy:** benchmark dùng text ASCII 1 MiB, ghi cấu hình máy và đo core, không đặt một performance gate CI dễ nhiễu khi chưa có máy chuẩn.
+- **Mốc hiệu năng phụ thuộc máy:** giữ kết quả benchmark 1 MiB cũ làm bằng chứng lịch sử, đồng thời đo fixture 5 MiB và ghi cấu hình máy; không đặt performance gate CI mới khi chưa có máy chuẩn.
 
 ## Migration Plan
 
 1. Khi được yêu cầu apply: thêm unit tests và core Hill, kiểm T01–T12, vector 4×4, inverse/round-trip, Unicode và random.
-2. Thêm decoder/validators/route/error models và contract tests; giữ route cũ nguyên dạng. Kiểm giới hạn 1 MiB, 64 MiB guard và OpenAPI.
+2. Thêm decoder/validators/route/error models và contract tests; giữ route cũ nguyên dạng. Kiểm giới hạn đúng 5 MiB, 5 MiB + 1 byte, biên UTF-8 đa byte, 64 MiB guard và OpenAPI.
 3. Tạo Alembic revision nới CHECK, cập nhật history route mapping/filter, kiểm migration với row cũ và hành vi DB bật/tắt.
 4. Chạy full pytest với coverage ≥90%, Ruff check/format và benchmark có ghi môi trường; sau đó cập nhật README, FE guide/client và chạy lại gates.
 5. Triển khai migration trước khi backend mới ghi history Hill; FE bật lựa chọn Hill sau khi bốn API sẵn sàng. Rollback ứng dụng có thể ngừng expose Hill; downgrade CHECK chỉ an toàn khi không còn row Hill, nên phải có bước xử lý dữ liệu riêng trước downgrade.

@@ -29,13 +29,13 @@ Hệ thống SHALL dùng bảng sau; `message` bằng tiếng Việt và không 
 | E03 | Khóa ma trận thiếu/sai hình dạng/ô không phải integer, hoặc có cả `key` và `keyword` | 422 | `reason`; với ô sai có thêm `row`,`column` (1-based) |
 | E04 | `gcd(det mod 26,26) ≠ 1` | 422 | `det`,`gcd`,`divisor` (2 nếu det chẵn, ngược lại 13) |
 | E05 | Decrypt có số chữ tham gia không chia hết m | 422 | `n`,`m` |
-| E06 | UTF-8 của `text` vượt 1.048.576 byte | 413 | `actualBytes`,`maxBytes` |
+| E06 | UTF-8 của `text` vượt 5.242.880 byte | 413 | `actualBytes`,`maxBytes` |
 | E08 | `m` bắt buộc nhưng thiếu, sai kiểu hoặc ngoài 2–4; ma trận cấp ngoài 2–4 | 422 | `min=2`,`max=4`, `m` nếu có dạng số nguyên |
 | E09 | Keyword sai kiểu, chứa ký tự ngoài `[A-Za-z]` hoặc không đúng m² ký tự | 422 | `m`,`expected`,`actual` (số chữ ASCII hợp lệ nếu là string, `null` nếu sai kiểu) |
 | E10 | `options` sai kiểu, field lạ, `stripDiacritics` không boolean hoặc `padChar` không phải một chữ A–Z hoa | 422 | `field` |
 | E11 | Content-Type không phải JSON được hỗ trợ, JSON hỏng/không phải object, `text` sai kiểu khác null, top-level field lạ/trùng, hoặc JSON string có lone surrogate | 422 | `{}` |
 
-E01 hiển thị `Nhập văn bản hoặc tải file .txt để bắt đầu.`; E02 `Văn bản không có chữ cái nào để mã hóa. Hill chỉ xử lý A–Z.`; E04 chứa det và ước chung 2 hoặc 13; E05 chứa n và m; E06 `Văn bản vượt quá giới hạn 1 MiB.`; E08 `Cấp ma trận khóa phải từ 2 đến 4.`; E09 nêu số chữ cần và số chữ hợp lệ; E10 `Tùy chọn Hill không hợp lệ.`; E11 dùng message chung `Dữ liệu gửi lên không hợp lệ.`. E03 SHALL nêu vị trí ô nếu lỗi thuộc một ô. (Truy vết: HTML Hill §6; quyết định chủ sở hữu Q6, Q10, Q11, Q18)
+E01 hiển thị `Nhập văn bản hoặc tải file .txt để bắt đầu.`; E02 `Văn bản không có chữ cái nào để mã hóa. Hill chỉ xử lý A–Z.`; E04 chứa det và ước chung 2 hoặc 13; E05 chứa n và m; E06 `Văn bản vượt quá giới hạn 5 MiB.`; E08 `Cấp ma trận khóa phải từ 2 đến 4.`; E09 nêu số chữ cần và số chữ hợp lệ; E10 `Tùy chọn Hill không hợp lệ.`; E11 dùng message chung `Dữ liệu gửi lên không hợp lệ.`. E03 SHALL nêu vị trí ô nếu lỗi thuộc một ô. (Truy vết: quyết định chủ sở hữu ngày 2026-09-30 ghi đè giới hạn trong HTML Hill §6; quyết định Q6, Q10, Q11, Q18)
 
 #### Scenario: Whitespace-only
 - **WHEN** encrypt nhận `text="  \t\n"` và K hợp lệ
