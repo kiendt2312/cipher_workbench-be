@@ -50,6 +50,25 @@ export interface HillTransformResponse {
   warnings: HillWarning[];
 }
 
+function isHillTransformResponse(value: unknown): value is HillTransformResponse {
+  if (typeof value !== "object" || value === null) return false;
+  const body = value as Record<string, unknown>;
+  return (
+    body.success === true
+    && typeof body.result === "string"
+    && Array.isArray(body.blocks)
+    && typeof body.key === "object"
+    && body.key !== null
+    && Array.isArray(body.warnings)
+  );
+}
+
+export interface HillTextFile {
+  filename: string;
+  text: string;
+  bytes: number;
+}
+
 export interface AttachmentResult {
   blob: Blob;
   filename: string;
@@ -193,10 +212,10 @@ export async function transformHill(request: HillTransformRequest): Promise<Hill
   if (isErrorBody(payload)) {
     throw new ApiError(payload.message, response.status, payload.code, payload.details);
   }
-  if (response.status !== 200 || typeof payload !== "object" || payload === null) {
+  if (response.status !== 200 || !isHillTransformResponse(payload)) {
     throw new ApiError(SYSTEM_ERROR, response.status);
   }
-  return payload as HillTransformResponse;
+  return payload;
 }
 
 export async function analyzeHillKey(
@@ -247,6 +266,32 @@ export async function randomHillKey(
     throw new ApiError(SYSTEM_ERROR, response.status);
   }
   return { result: success.result, warnings: success.warnings ?? [] };
+}
+
+/**
+ * Read a Hill .txt upload in the browser. Hill intentionally has no backend file route.
+ * E07 is client-owned: invalid UTF-8 must not be sent to the backend.
+ */
+export async function readHillTextFile(file: File): Promise<HillTextFile> {
+  if (!file.name.toLowerCase().endsWith(".txt")) {
+    throw new ApiError("Chỉ chấp nhận file .txt.", 415);
+  }
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  if (bytes.byteLength > 1024 * 1024) {
+    throw new ApiError(
+      "Văn bản vượt quá giới hạn 1 MiB.",
+      413,
+      "E06",
+      { actualBytes: bytes.byteLength, maxBytes: 1024 * 1024 },
+    );
+  }
+  let text: string;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    throw new ApiError("File phải sử dụng UTF-8.", 415, "E07", {});
+  }
+  return { filename: file.name, text, bytes: bytes.byteLength };
 }
 
 function fileForm(request: FileRequest, responseMode: ResponseMode): FormData {
@@ -343,7 +388,10 @@ export interface LocalHistoryEntry {
   source: "text" | "file";
   /** Text input, or the file name for `source: "file"`. */
   input: string;
-  key: Record<string, string>;
+  key:
+    | { key: string }
+    | { a: string; b: string }
+    | HillKeyInput;
   /** `null` for files: file contents are never stored. */
   result: string | null;
 }

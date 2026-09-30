@@ -4,7 +4,7 @@ Tài liệu này là **consumer contract duy nhất cho Frontend** khi tích h�
 cipher. Nội dung độc lập framework: FE có thể dùng React, Vue, Svelte hoặc JavaScript
 thuần, nhưng hành vi API và trạng thái quan sát được phải giữ đúng contract dưới đây.
 
-- Cập nhật: `2026-09-29`. Backend có 18 POST route cipher, một GET sinh khóa Hill,
+- Cập nhật: `2026-09-30`. Backend có 18 POST route cipher, một GET sinh khóa Hill,
   `GET /api/health`,
   `GET /api/history` (tùy chọn, cần PostgreSQL).
 - **Người mới:** đọc mục **A. Bắt đầu nhanh** (khoảng 10 phút) rồi dùng file
@@ -43,16 +43,18 @@ Swagger để thử API: <http://localhost:8080/docs>.
 
 | Method | Path | Body | Thành công (HTTP 200) |
 |---|---|---|---|
-| POST | `/api/{cipher}/encrypt` | JSON, xem A.3 | `{"success":true,"result":"<bản mã>"}` |
-| POST | `/api/{cipher}/decrypt` | JSON, xem A.3 | `{"success":true,"result":"<bản rõ>"}` |
-| POST | `/api/{cipher}/file` | multipart: `file`, khóa (A.3), `action`, `response_mode` | `content`: JSON như trên; `file`: file `text/plain` đính kèm |
+| POST | `/api/{legacy}/encrypt` | JSON, xem A.3 | `{"success":true,"result":"<bản mã>"}` |
+| POST | `/api/{legacy}/decrypt` | JSON, xem A.3 | `{"success":true,"result":"<bản rõ>"}` |
+| POST | `/api/{legacy}/file` | multipart: `file`, khóa (A.3), `action`, `response_mode` | `content`: JSON như trên; `file`: file `text/plain` đính kèm |
+| POST | `/api/hill/encrypt` | JSON Hill, xem A.7 | `{success,result,blocks,key,warnings}` |
+| POST | `/api/hill/decrypt` | JSON Hill, xem A.7 | `{success,result,blocks,key,warnings}` |
 | GET | `/api/health` | — | `{"success":true,"result":{"app","database","history"}}` (503 khi DB lỗi) |
 | GET | `/api/history` | query `limit`, `cursor`, `cipher`, `operation` | `{"success":true,"result":{"items":[...],"nextCursor":...}}` |
 | POST | `/api/hill/key/analyze` | JSON `key` hoặc `keyword,m` | Phân tích ma trận khóa |
 | GET | `/api/hill/key/random?m=3` | query `m=2|3|4` | Khóa Hill hợp lệ ngẫu nhiên |
 
-`{cipher}` là một trong `caesar`, `vigenere`, `playfair`, `affine`, `columnar`, `hill`.
-Năm cipher cũ có đủ text/file (15 POST route); Hill chỉ có hai POST transform và một
+`{legacy}` là một trong `caesar`, `vigenere`, `playfair`, `affine`, `columnar`.
+Năm cipher này có đủ text/file (15 POST route); Hill chỉ có hai POST transform và một
 POST analyze, không có `/api/hill/file`. `action` là `encrypt`/`decrypt`;
 `response_mode` là `content` (mặc định) hoặc `file` và chỉ dùng cho năm cipher cũ.
 
@@ -86,6 +88,7 @@ compile với `tsc --strict` và chạy thử với backend thật.
 ```ts
 import {
   ApiError, transformText, previewFile, downloadFile, saveBlob,
+  transformHill, analyzeHillKey, randomHillKey, readHillTextFile,
   getHealth, canShowServerHistory, getHistory, addLocalHistory,
 } from "./cipher-api";
 
@@ -108,6 +111,18 @@ try {
   if (error instanceof ApiError) showError(error.message); // message tiếng Việt từ server
   else showError("Không thể gọi máy chủ. Vui lòng thử lại.");
 }
+
+const hill = await transformHill({
+  operation: "encrypt", text: "HELP", key: [[3, 3], [2, 5]],
+}); // hill.result === "DPLE"; blocks/key/warnings vẫn còn nguyên
+const analyzed = await analyzeHillKey({ keyword: "HILL", m: 2 });
+const generated = await randomHillKey(3);
+
+// Nếu nguồn là file Hill: không gọi /api/hill/file.
+const upload = await readHillTextFile(file); // kiểm .txt, 1 MiB raw bytes, UTF-8 fatal
+const fromFile = await transformHill({
+  operation: "encrypt", text: upload.text, key: generated.result.matrix,
+});
 ```
 
 ### A.5 Lỗi
@@ -143,7 +158,8 @@ const response = await transformHill({
 // response.result === "DPLE"; giữ response.blocks/key/warnings để hiển thị giải thích
 ```
 
-Request Hill dùng đúng một trong `key` hoặc `keyword` cùng `m`. `m` từ 2 đến 4;
+Request Hill dùng đúng một trong `key` hoặc cặp `keyword,m`. Không gửi `m` với
+matrix `key`; `m` của keyword từ 2 đến 4.
 `options` tùy chọn gồm `stripDiacritics:boolean` và `padChar` là một chữ hoa A-Z.
 Success transform có đúng `success,result,blocks,key,warnings`. Analyze/random có
 `success,result,warnings`. FE đọc file bằng `TextDecoder("utf-8", {fatal:true})`;
@@ -198,7 +214,8 @@ Project không có đăng nhập, nên:
   "Lịch sử không được bật trên máy chủ này.". Môi trường dev (`.env.example`) bật
   sẵn; môi trường dùng chung hoặc public sẽ tắt.
 - `GET /api/health` có thêm `result.history`: `"enabled"` hoặc `"disabled"`.
-- Lịch sử server chỉ giữ 30 ngày.
+- Lịch sử server mặc định giữ 30 ngày; cấu hình `HISTORY_RETENTION_DAYS` cho phép
+  1–3650 ngày.
 - Lịch sử **cá nhân** của người dùng (xem lại input/kết quả của chính họ) do FE lưu
   trên trình duyệt, không gửi lên server (mục 17).
 
@@ -543,7 +560,23 @@ K `[[3,1,2,0],[0,5,1,4],[0,0,7,2],[0,0,0,9]]`.
 
 Hill không có file route. FE kiểm `.txt`, byte length tối đa 1.048.576, giải mã
 UTF-8 nghiêm ngặt (E07 nếu thất bại), rồi gửi chuỗi qua JSON. Backend kiểm giới hạn
-trên UTF-8 của trường `text` trước khi bỏ dấu.
+trên UTF-8 của trường `text` trước khi bỏ dấu. `TextDecoder` mặc định bỏ UTF-8 BOM
+đầu file; BOM không phải dữ liệu Hill. Helper `readHillTextFile` trong file mẫu thực
+thi đầy đủ flow này và không gửi request nếu extension, size hoặc UTF-8 không hợp lệ.
+
+Bốn route Hill và shape chính xác:
+
+| Method/path | Input | HTTP 200 |
+|---|---|---|
+| `POST /api/hill/encrypt` | `{text, key, options?}` hoặc `{text, keyword, m, options?}` | `{success,result,blocks,key,warnings}` |
+| `POST /api/hill/decrypt` | Như encrypt | `{success,result,blocks,key,warnings}` |
+| `POST /api/hill/key/analyze` | `{key}` hoặc `{keyword,m}`; không nhận text/options | `{success,result,warnings}` |
+| `GET /api/hill/key/random?m=2|3|4` | `m` bắt buộc, đúng một lần | `{success,result,warnings}` |
+
+`key` trong transform và `result` trong hai key route cùng là
+`{matrix,m,det,gcd,detInverse,adjugate,inverse}`. `blocks` dùng A=0…Z=25, mỗi item
+là `{input:number[m],output:number[m]}` và bao gồm cả block padding; backend không
+cắt danh sách theo độ dài. Analyze/random không được ghi vào history.
 
 ## 5. TypeScript contract dùng trực tiếp
 
@@ -1224,6 +1257,56 @@ multipart framing / exact field set / duplicate
 Backend dừng ở lỗi đầu tiên. FE không nên tự suy diễn rằng lỗi file/encoding đã
 qua chỉ vì request bị từ chối sớm ở key.
 
+### 9.1 Lỗi và cảnh báo Hill
+
+Mọi lỗi nghiệp vụ từ bốn route Hill có đúng envelope
+`{success:false,message:string,code:string,details:object}`. FE hiển thị `message`,
+nhưng branch/focus control theo `code` và `details`; không branch theo câu tiếng Việt.
+
+| Code | HTTP | Ý nghĩa / `details` hữu ích |
+|---|---:|---|
+| E01 | 422 | `text` thiếu, null hoặc blank |
+| E02 | 422 | Sau chuẩn bị không có ASCII letter để xử lý |
+| E03 | 422 | Dạng key/matrix sai; `reason` là `key_variant`, `invalid_shape` hoặc `invalid_cell`; cell sai có `row`/`column` 1-based |
+| E04 | 422 | Key không khả nghịch; `det`, `gcd`, `divisor` |
+| E05 | 422 | Ciphertext không đủ block khi decrypt; `n`, `m` |
+| E06 | 413 | `text` vượt 1 MiB UTF-8; `actualBytes`, `maxBytes` |
+| E07 | — | Chỉ FE phát sinh khi file không phải UTF-8; không có response backend |
+| E08 | 422 | `m` ngoài 2–4, thiếu/trùng/sai token; `min`, `max`, có thể có `m` |
+| E09 | 422 | Keyword không đúng `m²` ASCII letter; `m`, `expected`, `actual` (số ASCII letter hợp lệ, hoặc `null` nếu sai kiểu) |
+| E10 | 422 | `options`/`stripDiacritics`/`padChar` sai; `field` |
+| E11 | 422 | Media type/JSON/object/member/kiểu dữ liệu không hợp lệ; `details={}` |
+
+Lỗi 500 bất ngờ và guard hạ tầng 64 MiB dùng envelope chung `{success,message}`,
+không giả thành E-code. Precedence transform ổn định:
+
+```text
+guard 64 MiB
+→ media type / JSON / object / duplicate / unknown / surrogate (E11)
+→ byte length của text string (E06)
+→ text thiếu/null/blank (E01) hoặc sai kiểu (E11)
+→ key shape/value/m/keyword (E03/E08/E09)
+→ options (E10)
+→ key invertibility (E04)
+→ không có ASCII letter sau chuẩn bị (E02)
+→ decrypt ciphertext không chia hết block (E05)
+```
+
+Analyze chỉ chạy các bước wire/key/invertibility liên quan; random chỉ validate query
+`m`. Backend trả lỗi đầu tiên, nên FE không suy ra các field phía sau đã hợp lệ.
+
+Warning không chặn HTTP 200 và luôn có `{code,message,details}` theo thứ tự W01,
+W02, W03:
+
+| Code | Khi nào | `details` |
+|---|---|---|
+| W01 | Encrypt thêm padding | `{count,char,m}` |
+| W02 | Có chữ Việt có dấu được giữ nguyên vì `stripDiacritics=false` | `{count}` |
+| W03 | Key là identity hoặc self-inverse | `{reason:"identity"|"self_inverse"}` |
+
+W01 chỉ có ở encrypt; W02 chỉ ở transform; W03 có thể có ở cả bốn route. Decrypt
+không tự bỏ padding: FE phải hiển thị nguyên `result` và warning server trả.
+
 Trần hạ tầng 64 MiB chỉ từ chối sớm khi request có **đúng một** header
 `Content-Length` decimal hợp lệ và giá trị vượt trần. Header thiếu, trùng hoặc sai
 định dạng được chuyển tiếp để tầng sau xử lý; điều này không thay đổi giới hạn file
@@ -1258,11 +1341,12 @@ FE không được:
 State tối thiểu:
 
 ```text
-cipher     = caesar | vigenere | playfair | affine | columnar
+cipher     = caesar | vigenere | playfair | affine | columnar | hill
 mode       = encrypt | decrypt
 source     = text | file
 text/file  = input hiện tại
-key/a/b    = raw input theo cipher
+key/a/b    = raw input theo cipher; Hill thêm keyVariant, matrix/keyword, m
+options    = Hill stripDiacritics, padChar
 result     = null | server result
 loading    = boolean
 error      = null | user-facing message
@@ -1272,14 +1356,14 @@ view       = result | analysis
 | Event | State bắt buộc | UX |
 |---|---|---|
 | Mở trang | `cipher=caesar`, `mode=encrypt`, `source=text`, `result=null`, `loading=false` | Action disabled tới khi hợp lệ |
-| Đổi cipher | Xóa result/analysis/error; validate lại key/input | Đổi key hint và Playfair warning |
+| Đổi cipher | Xóa result/analysis/error; validate lại key/input/options | Đổi key hint và warning phù hợp |
 | Đổi encrypt/decrypt | Giữ input/key/a/b nếu phù hợp; xóa stale result/error | Đổi label plaintext/ciphertext |
 | Đổi text/file | Bắt buộc giữ draft riêng của text và file; xóa result/error | Hiện panel nguồn mới |
-| Sửa text, file, key, `a` hoặc `b` | Xóa result/analysis/error | Validate lại ngay |
+| Sửa text, file, key, `a`, `b`, Hill key variant/`m`/option | Xóa result/analysis/error | Validate lại ngay |
 | Submit preview/text | Xóa result; `loading=true` | Khóa control và chặn submit lặp |
-| Success | Lưu đúng server result; xóa error | Mở copy/download |
+| Success | Lưu đúng server response; xóa error | Hill giữ cả blocks/key/warnings; mở copy/download phù hợp nguồn |
 | API/network failure | `result=null`, xóa analysis; lưu fallback/message | Mở khóa để retry |
-| Download click | Request file mode lần hai | Không dùng preview Blob |
+| Download click | Năm cipher cũ + nguồn file: request file mode lần hai | Không áp dụng `/file` cho Hill; Hill có thể tạo Blob từ `result` JSON đã nhận |
 | Download failure | Xóa trạng thái success cũ | Hiện lỗi, không kích hoạt download |
 | Clear output | Chỉ xóa result/analysis | Giữ input/key/a/b |
 | Reset | Xóa toàn bộ state/draft/result/error; đưa status về neutral và view về result | Quay lại `caesar` + `encrypt` + `text` |
@@ -1374,6 +1458,14 @@ hiện tại luôn thắng demo.
 - [ ] Affine có đúng 12 residue `a'`, 26 residue `b'` và 312 cặp normalized hợp lệ.
 - [ ] Columnar `ABCDE → BDAEC → ABCDE` với `3 1 4 2`, keyword `BALLOON` và
   Unicode/CRLF/uneven/`m>n` round-trip đúng contract, không padding/normalize.
+- [ ] Hill `HELP → DPLE → HELP` với T01; `blocks` xác nhận vector hàng `x·K`, không
+  dùng quy ước cột `K·x`.
+- [ ] Hill matrix variant không gửi `m`; keyword variant gửi đúng `keyword,m`; analyze
+  và random trả cùng shape phân tích key như transform.
+- [ ] Hill padding chỉ ở encrypt, decrypt không tự strip; warning luôn theo thứ tự
+  W01, W02, W03 và UI giữ nguyên `blocks`, `key`, `warnings` từ server.
+- [ ] Hill file được FE kiểm `.txt`, tối đa 1 MiB raw bytes và UTF-8 fatal/E07 trước
+  khi gọi JSON; không gọi hoặc giả lập `/api/hill/file`.
 - [ ] FE không tự strip thêm filler và hiển thị cảnh báo Playfair không lossless.
 - [ ] Caesar text gửi một JSON integer; Affine gửi hai integer `a,b`;
   Vigenère/Playfair/Columnar gửi string key.
@@ -1467,8 +1559,9 @@ curl -s http://localhost:8080/api/health
 - Dữ liệu lịch sử được giữ qua các lần khởi động lại. `docker compose down -v` xóa sạch
   dữ liệu khi cần làm lại từ đầu.
 - Muốn thử màn hình lịch sử khi không có DB: chạy backend bằng
-  `uv run uvicorn app.main:app --port 8000` mà không đặt `DATABASE_URL`; khi đó
-  `database` là `disabled` và `/api/history` trả 503.
+  `HISTORY_API_ENABLED=true uv run uvicorn app.main:app --port 8000` mà không đặt
+  `DATABASE_URL`; khi đó `database` là `disabled` và `/api/history` trả 503. Nếu
+  không bật flag (mặc định), `/api/history` trả 404 trước khi kiểm tra DB.
 - Tạo dữ liệu mẫu: gọi vài request encrypt/decrypt bất kỳ qua `/docs` hoặc `curl`, mỗi
   request sinh một dòng lịch sử.
 
@@ -1592,7 +1685,8 @@ Lưu ý cho FE:
 - Lịch sử là best-effort: nếu DB lỗi đúng lúc, request đó có thể không xuất hiện.
 - Endpoint không có xác thực và trả lịch sử chung của cả instance, không theo user.
   Vì vậy nó mặc định tắt; chỉ bật ở môi trường dev hoặc nội bộ.
-- Server chỉ giữ 30 ngày gần nhất (có thể lệch tối đa 6 giờ). Không có API xóa.
+- Server mặc định giữ 30 ngày gần nhất, có thể cấu hình 1–3650 ngày bằng
+  `HISTORY_RETENTION_DAYS` (purge có thể lệch tối đa 6 giờ). Không có API xóa.
 
 ### 16.4 Gợi ý UI cho màn hình lịch sử
 
@@ -1626,6 +1720,8 @@ trình duyệt. Dữ liệu này **không gửi lên server** và không liên q
   riêng tư, bị đầy) thì bỏ qua lịch sử, encrypt/decrypt vẫn chạy bình thường.
 - Có nút **"Xóa lịch sử trên máy này"** và công tắc **"Lưu lịch sử trên máy này"**.
 - Hiện cảnh báo ngắn: lịch sử chứa cả key, chỉ nên bật trên máy cá nhân.
+- Với Hill, lưu đúng key variant đã gửi (`{key:number[][]}` hoặc `{keyword,m}`),
+  không lưu `blocks`, phân tích inverse hoặc warnings nếu UI không cần xem lại chúng.
 
 ### 17.2 Mẫu code
 
@@ -1640,7 +1736,11 @@ type LocalHistoryEntry = {
   operation: "encrypt" | "decrypt";
   source: "text" | "file";
   input: string;          // text nhập, hoặc tên file với source "file"
-  key: Record<string, string | number>; // { key } hoặc { a, b } với Affine
+  key:
+    | { key: string }                    // Caesar/Vigenère/Playfair/Columnar
+    | { a: string; b: string }           // Affine
+    | { key: number[][] }                // Hill matrix
+    | { keyword: string; m: 2 | 3 | 4 }; // Hill keyword
   result: string | null;  // null với file tải về
 };
 
@@ -1692,5 +1792,5 @@ xóa lịch sử đã lưu không.
 | Nơi lưu | `localStorage` trên máy người dùng | PostgreSQL trên server |
 | Ai xem được | Người dùng trên đúng trình duyệt đó | Ai gọi được `/api/history` khi cờ bật |
 | Nội dung | Input, key, kết quả | Chỉ metadata, không có nội dung |
-| Thời hạn | Đến khi người dùng xóa (tối đa 50 mục) | 30 ngày |
+| Thời hạn | Đến khi người dùng xóa (tối đa 50 mục) | Mặc định 30 ngày; cấu hình 1–3650 ngày |
 | Mục đích | Xem lại thao tác của mình | Thống kê và theo dõi vận hành |
