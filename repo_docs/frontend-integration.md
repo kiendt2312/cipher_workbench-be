@@ -237,6 +237,8 @@ không đổi.
    bản mã hex bội 16 ký tự); server vẫn là nguồn validation có thẩm quyền.
 7. Hiển thị `warnings` (W01 khóa yếu, W02 khóa nửa yếu, W03 ECB lộ khối lặp) như cảnh
    báo không chặn kết quả. Với file, `warnings` chỉ có ở request preview `content`.
+8. Màn hình minh họa từng bước dùng `/api/des/trace` theo bảng ánh xạ ở mục 4.7
+   (sinh khóa, IP, 16 vòng, hàm f, IP⁻¹); FE chỉ định dạng, không tự tính DES.
 
 **Phía backend khi deploy:** chạy `alembic upgrade head` (migration `0003`) trước khi
 bật bản mới, nếu không lịch sử `cipher=des` sẽ không được ghi (response cipher không
@@ -766,6 +768,33 @@ Ví dụ trên chỉ in phần tử đầu; response thật luôn có 16 `subkey
 Li, Ri sau vòng; `preOutput` là R16L16. Với `operation=decrypt`, `input` là bản mã,
 `result` là bản rõ hex, `rounds[i].subkey` chạy 16 → 1, còn `subkeys` vẫn K1…K16.
 `warnings` của trace chỉ có thể là W01/W02.
+
+**Hiển thị từng bước từ trace.** Mọi giá trị trung gian đều do server tính; FE chỉ
+định dạng (hex → nhị phân nhóm 4/6/7 bit) và sắp xếp, không tự tính DES. Gợi ý ánh
+xạ field → bước của bài giảng:
+
+| Bước | Field trong `trace` | Hiển thị gợi ý |
+|---|---|---|
+| 1. Sinh khóa | `key` → `pc1` → `subkeys[n].shift/c/d/k` | Bảng 16 dòng `n, shift, Cn, Dn, Kn`; `pc1` = C0D0 (7 hex đầu là C0, 7 hex sau là D0); C16D16 bằng C0D0 |
+| 2. Hoán vị IP | `input` → `ip` → `l0`, `r0` | Hai dòng 64 bit trước/sau IP, rồi tách L0/R0 |
+| 3. 16 vòng | `rounds[i].l`, `rounds[i].r`, `rounds[i].f`, `rounds[i].subkey` | Bảng 16 dòng `vòng, Kn dùng, f, Li, Ri`; với decrypt, cột khóa con chạy 16 → 1 |
+| 4. Hàm f (vòng được chọn) | `expansion` (E), `xorKey` (E ⊕ K), `sbox[0..7]`, `sboxOutput`, `f` (= P(S)) | Chia `xorKey` thành 8 nhóm 6 bit B1…B8; mỗi nhóm hiện `row` (bit đầu + bit cuối), `col` (4 bit giữa), `value` (4 bit) |
+| 5. Đầu ra | `preOutput` (R16L16) → `result` (IP⁻¹) | Nhấn mạnh R16 đứng trước L16 |
+
+Server không trả nội dung các bảng PC-1, PC-2, IP, E, P, S1–S8. Nếu muốn tô sáng ô
+trong hộp S, FE nhúng bảng S-box tĩnh (lấy từ tài liệu thuật toán) chỉ để hiển thị;
+`row`/`col`/`value` từ server là giá trị đúng.
+
+**Trace một khối của văn bản.** `/trace` chỉ nhận đúng một khối hex. Muốn minh họa
+khối đầu khi người dùng đang ở `inputFormat=text`:
+
+- ECB: khối đầu là 8 byte đầu của UTF-8 + PKCS#7 dưới dạng hex. Ví dụ `Hello World`
+  → `48656C6C6F20576F`, trace ra `B1CA74BB35142687` = 16 hex đầu của bản mã.
+- CBC: trace khối `P1 ⊕ IV` (trace không nhận IV). Ví dụ `Hello World`, IV
+  `1234567890ABCDEF` → block `5A513A14FF8B9A80`, trace ra `FE6885B7E58524D4` = 16 hex
+  đầu của bản mã CBC.
+
+Helper `desPlaintextBlocksHex` và `xorHexBlocks` trong file mẫu làm đúng hai phép này.
 
 **File.** `/api/des/file` kế thừa toàn bộ contract file ở mục 8 (`.txt`, 5 MiB, UTF-8,
 BOM, hai request preview/download, filename từ `Content-Disposition`). `action=encrypt`
@@ -1803,6 +1832,11 @@ hiện tại luôn thắng demo.
   `.encrypted.txt`/`.decrypted.txt`.
 - [ ] DES có trạng thái đang xử lý cho input lớn (khoảng 6 giây với 5 MiB) và cảnh báo
   trước khi mã hóa văn bản lớn hơn 2.621.439 byte UTF-8.
+- [ ] DES CBC lưu/hiển thị IV cùng bản mã và không coi HTTP 200 khi giải mã là bằng
+  chứng IV đúng (IV sai chỉ làm lệch 8 byte đầu); ECB ẩn hoặc vô hiệu ô IV.
+- [ ] DES trace chỉ hiển thị giá trị server trả; muốn trace khối đầu của văn bản thì
+  dùng `desPlaintextBlocksHex` (và `xorHexBlocks` với IV khi CBC), kết quả trace phải
+  bằng 16 hex đầu của bản mã.
 - [ ] FE không tự strip thêm filler và hiển thị cảnh báo Playfair không lossless.
 - [ ] Caesar text gửi một JSON integer; Affine gửi hai integer `a,b`;
   Vigenère/Playfair/Columnar gửi string key.
@@ -1865,6 +1899,8 @@ Các implementation link chính để audit contract là
 [`routes_affine_file.py`](../app/api/routes_affine_file.py),
 [`routes_columnar_text.py`](../app/api/routes_columnar_text.py) và
 [`routes_columnar_file.py`](../app/api/routes_columnar_file.py),
+[`routes_hill.py`](../app/api/routes_hill.py) và
+[`hill_schemas.py`](../app/api/hill_schemas.py),
 [`routes_des.py`](../app/api/routes_des.py),
 [`routes_des_file.py`](../app/api/routes_des_file.py) và
 [`des_schemas.py`](../app/api/des_schemas.py),

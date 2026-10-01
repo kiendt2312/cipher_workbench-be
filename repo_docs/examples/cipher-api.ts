@@ -165,6 +165,26 @@ export function desCiphertextHexLength(plaintextBytes: number): number {
   return 2 * (Math.floor(plaintextBytes / 8) * 8 + 8);
 }
 
+/**
+ * Display-only: the 16-hex plaintext blocks the server encrypts for `inputFormat: "text"`
+ * (UTF-8 + PKCS#7), e.g. to pick a block for `desTrace`. Never use it to build ciphertext.
+ */
+export function desPlaintextBlocksHex(text: string): string[] {
+  const bytes = new TextEncoder().encode(text);
+  const padding = 8 - (bytes.length % 8);
+  const padded = new Uint8Array(bytes.length + padding);
+  padded.set(bytes);
+  padded.fill(padding, bytes.length);
+  const hex = Array.from(padded, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return hex.toUpperCase().match(/.{16}/g) ?? [];
+}
+
+/** XOR two 16-hex blocks, e.g. `P1 ⊕ IV` to trace the first CBC block. */
+export function xorHexBlocks(a: string, b: string): string {
+  const value = BigInt(`0x${a}`) ^ BigInt(`0x${b}`);
+  return value.toString(16).toUpperCase().padStart(16, "0");
+}
+
 function isDesResponse(value: unknown): value is DesResponse {
   if (typeof value !== "object" || value === null) return false;
   const body = value as Record<string, unknown>;
