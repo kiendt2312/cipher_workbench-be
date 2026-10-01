@@ -24,7 +24,23 @@ export type KeyInput =
   | { cipher: "affine"; a: string; b: string };
 
 export type TextRequest = KeyInput & { operation: Operation; text: string };
-export type FileRequest = KeyInput & { operation: Operation; file: File };
+/** `stripPadding` is Playfair-only and only changes a decrypt attachment (`strip_padding`). */
+export type FileRequest = KeyInput & { operation: Operation; file: File; stripPadding?: boolean };
+
+/** Padding letters detected on Playfair/Hill decrypt (frontend-integration.md A.9). */
+export interface PaddingInfo {
+  count: number;
+  /** 0-based indexes into the A-Z/a-z letters of `result`, ascending; not string indexes. */
+  positions: number[];
+  /** `result` without the letters at `positions`. */
+  filtered: string;
+}
+/** Playfair decrypt (text and file content mode): raw `result` plus detected fillers. */
+export interface PlayfairDecryptResponse {
+  success: true;
+  result: string;
+  padding: PaddingInfo;
+}
 
 export type HillKeyInput =
   | { key: number[][]; keyword?: never; m?: never }
@@ -55,6 +71,19 @@ export interface HillTransformResponse {
   blocks: Array<{ input: number[]; output: number[] }>;
   key: HillKeyAnalysis;
   warnings: HillWarning[];
+  /** Decrypt only. */
+  padding?: PaddingInfo;
+}
+
+function isPaddingInfo(value: unknown): value is PaddingInfo {
+  if (typeof value !== "object" || value === null) return false;
+  const padding = value as Record<string, unknown>;
+  return (
+    typeof padding.count === "number"
+    && Array.isArray(padding.positions)
+    && padding.positions.every((position) => Number.isInteger(position))
+    && typeof padding.filtered === "string"
+  );
 }
 
 function isHillTransformResponse(value: unknown): value is HillTransformResponse {
@@ -67,6 +96,7 @@ function isHillTransformResponse(value: unknown): value is HillTransformResponse
     && typeof body.key === "object"
     && body.key !== null
     && Array.isArray(body.warnings)
+    && (body.padding === undefined || isPaddingInfo(body.padding))
   );
 }
 
@@ -315,7 +345,10 @@ function textBody(request: TextRequest): string {
   }
 }
 
-/** Encrypt or decrypt text. Returns the server `result`. */
+/**
+ * Encrypt or decrypt text. Returns the server `result`.
+ * Playfair decrypt `result` is raw (fillers kept); use `playfairDecrypt` to also get `padding`.
+ */
 export async function transformText(request: TextRequest): Promise<string> {
   const response = await fetch(`/api/${request.cipher}/${request.operation}`, {
     method: "POST",
@@ -433,10 +466,16 @@ function fileForm(request: FileRequest, responseMode: ResponseMode): FormData {
   }
   data.append("action", request.operation);
   data.append("response_mode", responseMode);
+  if (request.cipher === "playfair" && request.stripPadding !== undefined) {
+    data.append("strip_padding", String(request.stripPadding));
+  }
   return data; // Never set Content-Type yourself; the browser adds the boundary.
 }
 
-/** First request for a file: returns the transformed text for preview. */
+/**
+ * First request for a file: returns the transformed text for preview.
+ * Playfair decrypt: use `playfairPreviewDecryptFile` to also get `padding`.
+ */
 export async function previewFile(request: FileRequest): Promise<string> {
   const response = await fetch(`/api/${request.cipher}/file`, {
     method: "POST",
@@ -470,13 +509,102 @@ async function readAttachment(response: Response): Promise<AttachmentResult> {
   return { blob: await response.blob(), filename };
 }
 
-/** Second request for a file: the official attachment with the server's filename and BOM. */
+/**
+ * Second request for a file: the official attachment with the server's filename and BOM.
+ * Playfair decrypt: pass `stripPadding` from the padding toggle to download the filtered text.
+ */
 export async function downloadFile(request: FileRequest): Promise<AttachmentResult> {
   const response = await fetch(`/api/${request.cipher}/file`, {
     method: "POST",
     body: fileForm(request, "file"),
   });
   return readAttachment(response);
+}
+
+// ---- Padding filter (Playfair/Hill decrypt) ----
+
+async function readPlayfairDecrypt(response: Response): Promise<PlayfairDecryptResponse> {
+  const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+  if (!contentType.includes("application/json")) throw new ApiError(SYSTEM_ERROR, response.status);
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    throw new ApiError(SYSTEM_ERROR, response.status);
+  }
+  if (isErrorBody(body)) throw new ApiError(body.message, response.status);
+  const success = body as Record<string, unknown>;
+  if (
+    response.status !== 200
+    || success.success !== true
+    || typeof success.result !== "string"
+    || !isPaddingInfo(success.padding)
+  ) {
+    throw new ApiError(SYSTEM_ERROR, response.status);
+  }
+  return { success: true, result: success.result, padding: success.padding };
+}
+
+/** Playfair text decrypt: raw `result` (fillers kept) plus `padding`. */
+export async function playfairDecrypt(request: {
+  text: string;
+  key: string;
+}): Promise<PlayfairDecryptResponse> {
+  const response = await fetch("/api/playfair/decrypt", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text: request.text, key: request.key }),
+  });
+  return readPlayfairDecrypt(response);
+}
+
+/** Preview of a Playfair file decrypt: always the raw `result` plus `padding`. */
+export async function playfairPreviewDecryptFile(request: {
+  file: File;
+  key: string;
+}): Promise<PlayfairDecryptResponse> {
+  const response = await fetch("/api/playfair/file", {
+    method: "POST",
+    body: fileForm(
+      { cipher: "playfair", operation: "decrypt", file: request.file, key: request.key },
+      "content",
+    ),
+  });
+  return readPlayfairDecrypt(response);
+}
+
+/** Text to show, copy or save for the "Tự động lọc ký tự đệm" toggle. */
+export function displayedResult(
+  response: { result: string; padding?: PaddingInfo },
+  filterPadding: boolean,
+): string {
+  return filterPadding && response.padding ? response.padding.filtered : response.result;
+}
+
+/** String indexes of `result` holding padding letters, for highlighting the raw text. */
+export function paddingCharIndexes(result: string, padding: PaddingInfo): number[] {
+  const wanted = new Set(padding.positions);
+  const indexes: number[] = [];
+  let letter = 0;
+  for (let index = 0; index < result.length; index += 1) {
+    const code = result.charCodeAt(index);
+    if ((code >= 65 && code <= 90) || (code >= 97 && code <= 122)) {
+      if (wanted.has(letter)) indexes.push(index);
+      letter += 1;
+    }
+  }
+  return indexes;
+}
+
+/** Hill analysis: 1-based block/cell of each padding letter (e.g. block 4, cells 2-3). */
+export function hillPaddingCells(
+  padding: PaddingInfo,
+  m: number,
+): Array<{ block: number; cell: number }> {
+  return padding.positions.map((position) => ({
+    block: Math.floor(position / m) + 1,
+    cell: (position % m) + 1,
+  }));
 }
 
 // ---- DES helpers ----

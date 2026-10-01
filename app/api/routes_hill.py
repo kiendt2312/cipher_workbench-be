@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.hill_schemas import decode, error, validate_key, validate_transform
 from app.api.history_recorder import note_history
+from app.api.schemas import PaddingInfo
 from app.core import hill
 from app.errors.exceptions import HillError as ApiHillError
 
@@ -43,13 +44,17 @@ class HillKeyAnalysis(BaseModel):
     inverse: HillMatrix
 
 
-class HillTransformResponse(BaseModel):
+class HillEncryptResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
     success: Literal[True]
     result: str
     blocks: list[HillBlock]
     key: HillKeyAnalysis
     warnings: list[HillWarning]
+
+
+class HillDecryptResponse(HillEncryptResponse):
+    padding: PaddingInfo
 
 
 class HillKeyResponse(BaseModel):
@@ -74,7 +79,15 @@ _OPTIONS = {
     "type": "object",
     "properties": {
         "stripDiacritics": {"type": "boolean", "default": False},
-        "padChar": {"type": "string", "pattern": "^[A-Z]$", "default": "X"},
+        "padChar": {
+            "type": "string",
+            "pattern": "^[A-Z]$",
+            "default": "X",
+            "description": (
+                "Mã hóa: chữ đệm cho khối cuối. Giải mã: chữ dùng để nhận diện tối đa "
+                "m - 1 ký tự đệm ở cuối trong padding; không đổi result."
+            ),
+        },
     },
     "additionalProperties": False,
 }
@@ -189,7 +202,7 @@ async def _transform(request: Request, operation: Literal["encrypt", "decrypt"])
 
 @router.post(
     "/encrypt",
-    response_model=HillTransformResponse,
+    response_model=HillEncryptResponse,
     responses=_ERROR_RESPONSES,
     openapi_extra={
         "requestBody": {
@@ -204,7 +217,7 @@ async def encrypt_hill(request: Request) -> dict[str, Any]:
 
 @router.post(
     "/decrypt",
-    response_model=HillTransformResponse,
+    response_model=HillDecryptResponse,
     responses=_ERROR_RESPONSES,
     openapi_extra={
         "requestBody": {

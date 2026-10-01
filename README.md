@@ -110,16 +110,18 @@ Các vector chuẩn:
 | Decrypt | `BMODZBXDNABEKUDMUIXMMOUVIF` | — | `HIDETHEGOLDINTHETREXESTUMP` |
 | Encrypt | `XX` | `XQXQ` | `GWGW` |
 | Encrypt | `ABX` | `ABXQ` | `PDGW` |
-| Decrypt | `PDGW` | — | `ABX` |
-| Decrypt | `GWGW` | — | `XQX` |
+| Decrypt | `PDGW` | — | `ABXQ` (lọc: `ABX`) |
+| Decrypt | `GWGW` | — | `XQXQ` (lọc: `XX`) |
 
-Playfair cố ý mất thông tin. Decrypt trả uppercase prepared plaintext, giữ filler
-`X` giữa chuỗi (ví dụ `BALXLOON`) nhưng **bỏ đúng một filler cuối chuỗi**: nếu kết
-quả kết thúc bằng `XQ` thì bỏ `Q`, ngược lại nếu kết thúc bằng `X` thì bỏ `X`.
-Vì ciphertext không phân biệt được filler với chữ thật, plaintext chẵn kết thúc
-bằng `X` sẽ mất `X` cuối (ví dụ `AX → A`). Server không phục hồi `J`, case,
+Playfair cố ý mất thông tin. Decrypt trả `result` là uppercase prepared plaintext
+**thô** (giữ mọi filler) cùng `padding: {count, positions, filtered}`. Filler được nhận
+diện theo cấu trúc digraph: chữ thứ hai của một cặp là `X` (hoặc `Q` sau `X`) và cặp kế
+tiếp bắt đầu bằng đúng chữ đầu của cặp đó (`BALXLOON → BALLOON`), hoặc đó là cặp cuối
+(`TAXICABX → TAXICAB`). Vì ciphertext không phân biệt được filler với chữ thật, bản lọc
+mất chữ thật trùng mẫu filler (ví dụ `AX → A`). Server không phục hồi `J`, case,
 whitespace, dấu câu hay Unicode đã bị loại, nên round-trip không nhất thiết bằng
-input gốc.
+input gốc. `/api/playfair/file` nhận thêm `strip_padding=true|false` để attachment khi
+decrypt là bản lọc.
 
 ### 2.4 Affine modulo 26
 
@@ -237,7 +239,8 @@ contract request/response đã test.
 
 Hill là ngoại lệ có chủ đích: không có `/api/hill/file`. FE đọc `.txt` UTF-8,
 kiểm tối đa 5 MiB (5.242.880 byte), rồi gửi nội dung qua endpoint JSON. Hai route biến đổi
-trả `{success,result,blocks,key,warnings}`; hai route khóa trả
+trả `{success,result,blocks,key,warnings}`, riêng decrypt thêm `padding` nhận diện tối đa
+`m − 1` chữ `padChar` ở cuối (`result` vẫn giữ chúng); hai route khóa trả
 `{success,result,warnings}`. Lỗi nghiệp vụ Hill trả thêm `code` và `details`.
 
 DES có đủ text/file như năm cipher cổ điển, thêm `/api/des/trace`. Ba route
@@ -303,8 +306,10 @@ Ba endpoint Caesar/Vigenère/Playfair `/file` nhận `multipart/form-data` với
 | `key` | Có | Chuỗi multipart; Caesar dùng signed integer, hai cipher còn lại dùng string key |
 | `action` | Có | Chính xác `encrypt` hoặc `decrypt` |
 | `response_mode` | Không | `content` hoặc `file`; mặc định `content` |
+| `strip_padding` | Không (chỉ Playfair) | `true` hoặc `false`; mặc định `false`; `true` cho attachment decrypt là bản đã lọc ký tự đệm |
 
-`action` và `response_mode` phân biệt hoa thường. Với Caesar, key multipart được
+`action`, `response_mode` và `strip_padding` phân biệt hoa thường; `strip_padding` sai trả
+422 `Tùy chọn lọc ký tự đệm phải là true hoặc false.`. Với Caesar, key multipart được
 trim, phải khớp `[+-]?[0-9]+` và dài tối đa 32 ký tự. Vigenère không trim hay tự
 sửa key; Playfair normalize key theo quy tắc thuật toán.
 
@@ -443,8 +448,9 @@ Lỗi của năm cipher cũ trả JSON đúng hai field, kể cả request dùng
 {"success":false,"message":"Khóa phải là số nguyên."}
 ```
 
-Hill là ngoại lệ đã duyệt: transform trả `blocks,key,warnings`, key API trả
-`result,warnings`, và lỗi nghiệp vụ trả thêm `code,details`. DES thành công trả
+Hill là ngoại lệ đã duyệt: transform trả `blocks,key,warnings` (decrypt thêm `padding`),
+key API trả `result,warnings`, và lỗi nghiệp vụ trả thêm `code,details`. Playfair decrypt
+(text và file content mode) trả thêm `padding`. DES thành công trả
 `{success,result,warnings}` (`/trace` thêm `trace`), nhưng lỗi DES giữ đúng envelope
 hai trường `{success,message}`. Contract năm cipher cũ
 không có machine error `code`, `detail`, field errors, `normalizedInput`, matrix,
@@ -814,7 +820,8 @@ Ngoài phạm vi hiện tại:
 - cipher khác ngoài bảy cipher này, autokey Vigenère, Playfair 6×6 hoặc Playfair Unicode/lossless;
 - 3DES, AES, các chế độ CFB/OFB/CTR, sinh khóa từ mật khẩu (KDF), xác thực bản mã
   (MAC), kiểm tra/tự sửa bit chẵn lẻ của khóa DES và demo thám mã DES;
-- phục hồi format, `J` hoặc filler giữa chuỗi khi decrypt Playfair;
+- phục hồi format hoặc `J` khi decrypt Playfair, và phân biệt chữ thật với ký tự đệm
+  trùng mẫu (bản lọc `padding.filtered` có thể bỏ nhầm; `result` luôn là bản thô);
 - CORS có credentials (cookie) hoặc mở cho mọi origin;
 - production reverse proxy, TLS, rate limiting, cloud deployment và CI/CD;
 - streaming file lớn hơn giới hạn nghiệp vụ.

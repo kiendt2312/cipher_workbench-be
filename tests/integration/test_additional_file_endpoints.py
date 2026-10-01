@@ -33,6 +33,7 @@ def _post_file(
     key: object = "LEMON",
     action: object = "encrypt",
     response_mode: object = "content",
+    strip_padding: object = _UNSET,
     include_file: bool = True,
 ):
     data: dict[str, object] = {}
@@ -42,6 +43,8 @@ def _post_file(
         data["action"] = action
     if response_mode is not _UNSET:
         data["response_mode"] = response_mode
+    if strip_padding is not _UNSET:
+        data["strip_padding"] = strip_padding
     files = {"file": (filename, content, "text/plain")} if include_file else None
     return client.post(path, files=files, data=data)
 
@@ -52,6 +55,17 @@ def _assert_content(response, result: str) -> None:
     assert "content-disposition" not in response.headers
     assert response.json() == {"success": True, "result": result}
     assert set(response.json()) == {"success", "result"}
+
+
+def _assert_padded_content(response, result: str, positions: list[int], filtered: str) -> None:
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/json")
+    assert "content-disposition" not in response.headers
+    assert response.json() == {
+        "success": True,
+        "result": result,
+        "padding": {"count": len(positions), "positions": positions, "filtered": filtered},
+    }
 
 
 def _assert_error(response, status: int, message: str) -> None:
@@ -113,7 +127,7 @@ def test_omitted_response_mode_defaults_to_content(
             b"BMODZBXDNAGE",
             "PLAYFAIR EXAMPLE",
             "decrypt",
-            b"HIDETHEGOLD",
+            b"HIDETHEGOLDX",
             "bao.cao.decrypted.txt",
         ),
     ],
@@ -179,7 +193,7 @@ def test_vigenere_preserves_crlf_unicode_and_key_position(client: TestClient) ->
     )
 
 
-def test_playfair_file_normalizes_format_and_drops_trailing_decrypt_filler(
+def test_playfair_file_normalizes_format_and_reports_decrypt_padding(
     client: TestClient,
 ) -> None:
     encrypted = _post_file(
@@ -197,7 +211,109 @@ def test_playfair_file_normalizes_format_and_drops_trailing_decrypt_filler(
         key="PLAYFAIR EXAMPLE",
         action="decrypt",
     )
-    _assert_content(decrypted, "XQX")
+    _assert_padded_content(decrypted, "XQXQ", [1, 3], "XX")
+
+
+@pytest.mark.parametrize("strip_padding", [_UNSET, "false", "true"])
+@pytest.mark.parametrize("had_bom", [False, True])
+def test_playfair_content_mode_always_returns_raw_result_and_padding(
+    client: TestClient, strip_padding: object, had_bom: bool
+) -> None:
+    response = _post_file(
+        client,
+        PLAYFAIR_FILE,
+        content=(UTF8_BOM if had_bom else b"") + b"PDGW",
+        key="PLAYFAIR EXAMPLE",
+        action="decrypt",
+        strip_padding=strip_padding,
+    )
+
+    _assert_padded_content(response, "ABXQ", [3], "ABX")
+
+
+@pytest.mark.parametrize(
+    ("strip_padding", "expected"),
+    [(_UNSET, b"ABXQ"), ("false", b"ABXQ"), ("true", b"ABX")],
+)
+@pytest.mark.parametrize("had_bom", [False, True])
+def test_playfair_attachment_follows_strip_padding(
+    client: TestClient, strip_padding: object, expected: bytes, had_bom: bool
+) -> None:
+    response = _post_file(
+        client,
+        PLAYFAIR_FILE,
+        filename="secret.txt",
+        content=(UTF8_BOM if had_bom else b"") + b"PDGW",
+        key="PLAYFAIR EXAMPLE",
+        action="decrypt",
+        response_mode="file",
+        strip_padding=strip_padding,
+    )
+
+    assert response.status_code == 200
+    assert "secret.decrypted.txt" in response.headers["content-disposition"]
+    assert response.content == (UTF8_BOM if had_bom else b"") + expected
+
+
+@pytest.mark.parametrize("response_mode", ["content", "file"])
+def test_strip_padding_does_not_change_playfair_encrypt(
+    client: TestClient, response_mode: str
+) -> None:
+    kwargs = {"content": b"ABX", "key": "PLAYFAIR EXAMPLE", "response_mode": response_mode}
+    plain = _post_file(client, PLAYFAIR_FILE, **kwargs)
+    stripped = _post_file(client, PLAYFAIR_FILE, strip_padding="true", **kwargs)
+
+    assert plain.status_code == stripped.status_code == 200
+    assert plain.content == stripped.content
+    if response_mode == "content":
+        _assert_content(stripped, "PDGW")
+
+
+@pytest.mark.parametrize("strip_padding", ["TRUE", "1", "yes", ""])
+def test_invalid_strip_padding_is_rejected(client: TestClient, strip_padding: str) -> None:
+    _assert_error(
+        _post_file(
+            client,
+            PLAYFAIR_FILE,
+            content=b"PDGW",
+            key="PLAYFAIR EXAMPLE",
+            action="decrypt",
+            strip_padding=strip_padding,
+        ),
+        422,
+        messages.INVALID_STRIP_PADDING,
+    )
+
+
+def test_strip_padding_precedence_after_response_mode_before_extension(
+    client: TestClient,
+) -> None:
+    _assert_error(
+        _post_file(
+            client,
+            PLAYFAIR_FILE,
+            key="PLAYFAIR EXAMPLE",
+            response_mode="FILE",
+            strip_padding="yes",
+        ),
+        422,
+        messages.INVALID_RESPONSE_MODE,
+    )
+    _assert_error(
+        _post_file(
+            client,
+            PLAYFAIR_FILE,
+            filename="bad.md",
+            key="PLAYFAIR EXAMPLE",
+            strip_padding="yes",
+        ),
+        422,
+        messages.INVALID_STRIP_PADDING,
+    )
+
+
+def test_vigenere_ignores_strip_padding_part(client: TestClient) -> None:
+    _assert_content(_post_file(client, VIGENERE_FILE, strip_padding="yes"), "Lxfopv ef rnhr!")
 
 
 @pytest.mark.parametrize("path", FILE_PATHS)
@@ -386,6 +502,19 @@ def test_openapi_documents_both_file_success_modes(client: TestClient) -> None:
             "text/plain",
         }
         assert set(operation["responses"]["422"]["content"]) == {"application/json"}
+
+    vigenere = schema["paths"][VIGENERE_FILE]["post"]
+    playfair = schema["paths"][PLAYFAIR_FILE]["post"]
+    vigenere_form = vigenere["requestBody"]["content"]["multipart/form-data"]["schema"]
+    playfair_form = playfair["requestBody"]["content"]["multipart/form-data"]["schema"]
+    assert "strip_padding" not in vigenere_form["properties"]
+    assert playfair_form["properties"]["strip_padding"]["enum"] == ["true", "false"]
+    assert playfair_form["properties"]["strip_padding"]["default"] == "false"
+    variants = playfair["responses"]["200"]["content"]["application/json"]["schema"]["oneOf"]
+    assert [set(variant["required"]) for variant in variants] == [
+        {"success", "result"},
+        {"success", "result", "padding"},
+    ]
 
 
 def test_unexpected_file_mode_failure_is_sanitized_without_attachment_or_payload_log(

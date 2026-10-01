@@ -30,6 +30,7 @@ from app.core.hill import (
 )
 
 T01_KEY = [[3, 3], [2, 5]]
+K3_KEY = [[6, 1, 3], [17, 5, 7], [3, 2, 3]]
 T01_INVERSE = [[15, 17], [20, 9]]
 T01_ANALYSIS = {
     "matrix": T01_KEY,
@@ -144,6 +145,81 @@ def test_padding_blocks_case_punctuation_and_custom_pad() -> None:
     assert encrypt("HELLO", T01_KEY, pad_char="Q")["result"] == "DPDKWS"
     assert encrypt("Help, me!", T01_KEY)["result"] == "Dple, se!"
     assert decrypt("DPDKKB", T01_KEY)["result"] == "HELLOX"
+
+
+def test_decrypt_reports_padding_without_changing_result() -> None:
+    decrypted = decrypt("DPDKKB", T01_KEY)
+
+    assert decrypted["result"] == "HELLOX"
+    assert decrypted["padding"] == {"count": 1, "positions": [5], "filtered": "HELLO"}
+    assert decrypted["blocks"][-1] == {"input": [10, 1], "output": [14, 23]}
+    assert "padding" not in encrypt("HELLO", T01_KEY)
+
+
+@pytest.mark.parametrize(
+    ("ciphertext", "key", "pad_char", "result", "positions", "filtered"),
+    [
+        pytest.param("DPDKK!B", T01_KEY, "X", "HELLO!X", [5], "HELLO!", id="after-punctuation"),
+        pytest.param(
+            "HQKRJYDPDONU", K3_KEY, "X", "THUDOHANOIXX", [10, 11], "THUDOHANOI", id="two-pads"
+        ),
+        pytest.param("ACN", K3_KEY, "X", "XXX", [1, 2], "X", id="at-most-m-minus-one"),
+        pytest.param("LGB", K3_KEY, "X", "MAX", [2], "MA", id="accepted-false-positive"),
+        pytest.param("DPDKWS", T01_KEY, "Q", "HELLOQ", [5], "HELLO", id="custom-pad"),
+        pytest.param("DPDKWS", T01_KEY, "X", "HELLOQ", [], "HELLOQ", id="pad-mismatch"),
+        pytest.param("dpdkkb", T01_KEY, "X", "hellox", [5], "hello", id="case-insensitive"),
+        pytest.param("DPLE", T01_KEY, "X", "HELP", [], "HELP", id="no-padding"),
+    ],
+)
+def test_decrypt_detects_at_most_m_minus_one_trailing_pad_letters(
+    ciphertext: str,
+    key: list[list[int]],
+    pad_char: str,
+    result: str,
+    positions: list[int],
+    filtered: str,
+) -> None:
+    decrypted = decrypt(ciphertext, key, options={"padChar": pad_char})
+
+    assert decrypted["result"] == result
+    assert decrypted["padding"] == {
+        "count": len(positions),
+        "positions": positions,
+        "filtered": filtered,
+    }
+
+
+@pytest.mark.parametrize("text", ["Aế", "A🙂", "A ñ"])
+def test_padding_positions_count_letters_not_characters(text: str) -> None:
+    decrypted = decrypt(encrypt(text, T01_KEY)["result"], T01_KEY)
+
+    assert decrypted["result"] == f"{text}X"
+    assert decrypted["padding"] == {"count": 1, "positions": [1], "filtered": text}
+
+
+def test_padding_invariants_hold_for_random_keys_and_text() -> None:
+    rng = random.Random(20261001)
+    alphabet = "ABCXxyz !ế🙂"
+    for size in (2, 3, 4):
+        for _ in range(200):
+            key = random_key(size, rng=rng)
+            text = "".join(rng.choice(alphabet) for _ in range(rng.randint(1, 12)))
+            if not any(char.isascii() and char.isalpha() for char in text):
+                continue
+            decrypted = decrypt(encrypt(text, key)["result"], key)
+            padding = decrypted["padding"]
+            letter_slots = [
+                index
+                for index, char in enumerate(decrypted["result"])
+                if char.isascii() and char.isalpha()
+            ]
+            removed = {letter_slots[position] for position in padding["positions"]}
+
+            assert padding["count"] == len(padding["positions"]) <= size - 1
+            assert padding["positions"] == sorted(set(padding["positions"]))
+            assert padding["filtered"] == "".join(
+                char for index, char in enumerate(decrypted["result"]) if index not in removed
+            )
 
 
 def test_identity_and_self_inverse_warnings_have_the_expected_reason() -> None:

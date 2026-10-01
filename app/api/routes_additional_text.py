@@ -6,11 +6,14 @@ from fastapi import APIRouter, Request
 
 from app.api.history_recorder import note_history
 from app.api.schemas import (
+    PaddingInfo,
+    PlayfairDecryptResponse,
     StringKeyCipherRequest,
     TextCipherResponse,
     decode_string_key_request,
     validate_additional_text_request,
 )
+from app.core.playfair import decrypt_with_padding as decrypt_playfair_with_padding
 from app.core.playfair import transform_text as transform_playfair
 from app.core.vigenere import transform_text as transform_vigenere
 from app.errors import messages
@@ -69,14 +72,24 @@ async def _process_vigenere(
     return TextCipherResponse(success=True, result=result)
 
 
-async def _process_playfair(
-    request: Request, operation: Literal["encrypt", "decrypt"]
-) -> TextCipherResponse:
-    text, key = await _request_fields(request, "playfair", operation)
+async def _encrypt_playfair(request: Request) -> TextCipherResponse:
+    text, key = await _request_fields(request, "playfair", "encrypt")
     note_history(request, input_length=len(text))
-    result = transform_playfair(text, key, operation)
+    result = transform_playfair(text, key, "encrypt")
     note_history(request, output_length=len(result))
     return TextCipherResponse(success=True, result=result)
+
+
+async def _decrypt_playfair(request: Request) -> PlayfairDecryptResponse:
+    text, key = await _request_fields(request, "playfair", "decrypt")
+    note_history(request, input_length=len(text))
+    result, positions, filtered = decrypt_playfair_with_padding(text, key)
+    note_history(request, output_length=len(result))
+    return PlayfairDecryptResponse(
+        success=True,
+        result=result,
+        padding=PaddingInfo(count=len(positions), positions=positions, filtered=filtered),
+    )
 
 
 @vigenere_router.post(
@@ -106,14 +119,14 @@ async def decrypt_vigenere_text(request: Request) -> TextCipherResponse:
     openapi_extra=_REQUEST_BODY,
 )
 async def encrypt_playfair_text(request: Request) -> TextCipherResponse:
-    return await _process_playfair(request, "encrypt")
+    return await _encrypt_playfair(request)
 
 
 @playfair_router.post(
     "/decrypt",
-    response_model=TextCipherResponse,
+    response_model=PlayfairDecryptResponse,
     responses=_ERROR_RESPONSES,
     openapi_extra=_REQUEST_BODY,
 )
-async def decrypt_playfair_text(request: Request) -> TextCipherResponse:
-    return await _process_playfair(request, "decrypt")
+async def decrypt_playfair_text(request: Request) -> PlayfairDecryptResponse:
+    return await _decrypt_playfair(request)
