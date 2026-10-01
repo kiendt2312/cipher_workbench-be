@@ -827,7 +827,7 @@ hoàn chỉnh.
 README là bản nhập môn, không thay thế đặc tả hoặc OpenAPI. Khi có khác biệt, dùng
 thứ tự sau:
 
-1. [OpenSpec DES](openspec/changes/add-des-cipher/) cho DES (gồm quyết định chủ sở
+1. [OpenSpec DES](openspec/changes/archive/2026-10-01-add-des-cipher/) cho DES (gồm quyết định chủ sở
    hữu Q1–Q22 ngày 2026-10-01), [OpenSpec Hill đã hoàn thành](openspec/changes/archive/2026-10-01-add-hill-cipher/)
    cho Hill, [OpenSpec Columnar đã hoàn thành](openspec/changes/archive/2026-09-28-add-columnar-transposition-cipher/)
    cho Columnar, [OpenSpec Affine](openspec/changes/archive/2026-09-28-add-affine-cipher/) cho Affine,

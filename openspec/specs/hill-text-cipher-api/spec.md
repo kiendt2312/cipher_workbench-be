@@ -63,4 +63,3 @@ OpenAPI SHALL gắn hai operation vào tag `Hill`, mô tả hai request variant,
 - **WHEN** người dùng chọn `.txt` không đọc được UTF-8
 - **THEN** FE hiển thị E07 và không gửi request Hill
 - **AND** backend không khai báo E07 như response có thể phát sinh của bốn API Hill
-

@@ -69,4 +69,3 @@ Warning SHALL không chặn response 200, mỗi item có đúng `code`, `message
 #### Scenario: Hai warning cùng lúc
 - **WHEN** encrypt một text cần một ký tự đệm, có một chữ Việt có dấu được giữ nguyên, với khóa đơn vị
 - **THEN** warnings có đúng thứ tự W01, W02, W03 và mỗi warning có details tương ứng
-
