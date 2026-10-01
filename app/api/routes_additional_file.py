@@ -14,9 +14,13 @@ from app.api.request_size_guard import MultipartCompletionGuard
 from app.api.schemas import (
     MISSING,
     FileCipherResponse,
+    PaddingInfo,
+    PlayfairDecryptResponse,
     validate_additional_file_form_fields,
     validate_playfair_content,
+    validate_strip_padding,
 )
+from app.core.playfair import decrypt_with_padding as decrypt_playfair_with_padding
 from app.core.playfair import transform_text as transform_playfair
 from app.core.vigenere import transform_text as transform_vigenere
 from app.errors import messages
@@ -102,6 +106,40 @@ _FILE_REQUEST_BODY = {
         },
     }
 }
+_PLAYFAIR_RESPONSES = {
+    **_RESPONSES,
+    200: {
+        **_RESPONSES[200],
+        "content": {
+            "application/json": {
+                "schema": {"oneOf": [_SUCCESS_CONTENT, PlayfairDecryptResponse.model_json_schema()]}
+            },
+            "text/plain": {"schema": {"type": "string", "format": "binary"}},
+        },
+    },
+}
+_FORM_SCHEMA = _FILE_REQUEST_BODY["requestBody"]["content"]["multipart/form-data"]["schema"]
+_PLAYFAIR_FILE_REQUEST_BODY = {
+    "requestBody": {
+        "required": True,
+        "content": {
+            "multipart/form-data": {
+                "schema": {
+                    **_FORM_SCHEMA,
+                    "properties": {
+                        **_FORM_SCHEMA["properties"],
+                        "strip_padding": {
+                            "type": "string",
+                            "enum": ["true", "false"],
+                            "default": "false",
+                            "description": messages.FILE_API_STRIP_PADDING_DESCRIPTION,
+                        },
+                    },
+                }
+            }
+        },
+    }
+}
 
 
 async def _process_file(
@@ -126,6 +164,11 @@ async def _process_file(
         cipher,
     )
     note_history(request, operation=parsed_action, response_mode=parsed_response_mode)
+    strip_padding = (
+        validate_strip_padding(form.get("strip_padding", MISSING))
+        if cipher == "playfair"
+        else False
+    )
 
     if not has_allowed_extension(file.filename):
         raise UnsupportedFileTypeError()
@@ -139,13 +182,25 @@ async def _process_file(
     del raw
     if cipher == "playfair":
         validate_playfair_content(text, parsed_action)
-    result = transformer(text, parsed_key, parsed_action)
-    note_history(request, output_length=result_byte_length(result, had_bom))
+    padding: PaddingInfo | None = None
+    if cipher == "playfair" and parsed_action == "decrypt":
+        result, positions, filtered = decrypt_playfair_with_padding(text, parsed_key)
+        padding = PaddingInfo(count=len(positions), positions=positions, filtered=filtered)
+    else:
+        result = transformer(text, parsed_key, parsed_action)
 
     if parsed_response_mode == "content":
-        return JSONResponse(
-            content=FileCipherResponse(success=True, result=result).model_dump(mode="json")
+        note_history(request, output_length=result_byte_length(result, had_bom))
+        content = (
+            FileCipherResponse(success=True, result=result)
+            if padding is None
+            else PlayfairDecryptResponse(success=True, result=result, padding=padding)
         )
+        return JSONResponse(content=content.model_dump(mode="json"))
+
+    if strip_padding and padding is not None:
+        result = padding.filtered
+    note_history(request, output_length=result_byte_length(result, had_bom))
 
     result_filename = build_result_filename(file.filename, parsed_action)
     return Response(
@@ -177,8 +232,8 @@ async def process_vigenere_file(
 @playfair_file_router.post(
     "/file",
     response_class=Response,
-    responses=_RESPONSES,
-    openapi_extra=_FILE_REQUEST_BODY,
+    responses=_PLAYFAIR_RESPONSES,
+    openapi_extra=_PLAYFAIR_FILE_REQUEST_BODY,
 )
 async def process_playfair_file(
     request: Request,

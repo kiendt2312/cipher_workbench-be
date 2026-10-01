@@ -52,6 +52,54 @@ def test_encrypt_decrypt_T01_exact_response(client: TestClient) -> None:
     decrypted = client.post("/api/hill/decrypt", json={"text": "DPLE", "key": T01})
     assert decrypted.status_code == 200
     assert decrypted.json()["result"] == "HELP"
+    assert decrypted.json()["padding"] == {"count": 0, "positions": [], "filtered": "HELP"}
+
+
+def test_decrypt_returns_six_fields_with_padding(client: TestClient) -> None:
+    response = client.post("/api/hill/decrypt", json={"text": "DPDKKB", "key": T01})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert list(body) == ["success", "result", "blocks", "key", "warnings", "padding"]
+    assert body["result"] == "HELLOX"
+    assert len(body["blocks"]) == 3
+    assert body["padding"] == {"count": 1, "positions": [5], "filtered": "HELLO"}
+    encrypted = client.post("/api/hill/encrypt", json={"text": "HELLO", "key": T01}).json()
+    assert list(encrypted) == ["success", "result", "blocks", "key", "warnings"]
+
+
+@pytest.mark.parametrize(
+    ("body", "result", "padding"),
+    [
+        (
+            {"text": "HQKRJYDPDONU", "key": [[6, 1, 3], [17, 5, 7], [3, 2, 3]]},
+            "THUDOHANOIXX",
+            {"count": 2, "positions": [10, 11], "filtered": "THUDOHANOI"},
+        ),
+        (
+            {"text": "DPDKK!B", "key": T01},
+            "HELLO!X",
+            {"count": 1, "positions": [5], "filtered": "HELLO!"},
+        ),
+        (
+            {"text": "DPDKWS", "key": T01, "options": {"padChar": "Q"}},
+            "HELLOQ",
+            {"count": 1, "positions": [5], "filtered": "HELLO"},
+        ),
+        (
+            {"text": "DPDKWS", "key": T01},
+            "HELLOQ",
+            {"count": 0, "positions": [], "filtered": "HELLOQ"},
+        ),
+    ],
+)
+def test_decrypt_padding_follows_pad_char_and_keeps_result_raw(
+    client: TestClient, body: dict[str, object], result: str, padding: dict[str, object]
+) -> None:
+    response = client.post("/api/hill/decrypt", json=body).json()
+
+    assert response["result"] == result
+    assert response["padding"] == padding
 
 
 def test_keyword_padding_case_and_punctuation(client: TestClient) -> None:
@@ -201,6 +249,16 @@ def test_openapi_documents_hill_contract(client: TestClient) -> None:
         )
         assert operation["responses"]["413"]["description"] == ("Text Hill vượt giới hạn 5 MiB.")
     assert "/api/hill/file" not in schema["paths"]
+    components = schema["components"]["schemas"]
+    assert "padding" not in components["HillEncryptResponse"]["properties"]
+    assert "padding" in components["HillDecryptResponse"]["required"]
+    assert set(components["PaddingInfo"]["required"]) == {"count", "positions", "filtered"}
+    for path, model in (
+        ("/api/hill/encrypt", "HillEncryptResponse"),
+        ("/api/hill/decrypt", "HillDecryptResponse"),
+    ):
+        response_schema = schema["paths"][path]["post"]["responses"]["200"]["content"]
+        assert response_schema["application/json"]["schema"]["$ref"].endswith(f"/{model}")
     random_operation = schema["paths"]["/api/hill/key/random"]["get"]
     assert random_operation["parameters"] == [
         {

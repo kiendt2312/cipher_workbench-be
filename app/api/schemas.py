@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Final, Literal
+from typing import Annotated, Any, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.datastructures import FormData, UploadFile
@@ -27,6 +27,7 @@ from app.errors.exceptions import (
     InvalidRequestBodyError,
     InvalidResponseModeError,
     InvalidStringKeyError,
+    InvalidStripPaddingError,
     InvalidVigenereKeyError,
     MissingAffineMultiplierError,
     MissingAffineShiftError,
@@ -119,6 +120,30 @@ class FileCipherResponse(BaseModel):
 
     success: Literal[True]
     result: str
+
+
+class PaddingInfo(BaseModel):
+    """Padding letters detected in a raw decrypt ``result``.
+
+    ``positions`` index the letters taking part in the cipher, not string characters;
+    ``filtered`` is ``result`` without the letters at those positions.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    count: int = Field(ge=0)
+    positions: list[Annotated[int, Field(ge=0)]]
+    filtered: str
+
+
+class PlayfairDecryptResponse(BaseModel):
+    """Playfair decrypt success envelope: raw ``result`` plus detected fillers."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    success: Literal[True]
+    result: str
+    padding: PaddingInfo
 
 
 def parse_key(value: Any) -> int:
@@ -574,3 +599,13 @@ def validate_additional_file_form_fields(
         parsed_response_mode = response_mode
 
     return parsed_key, action, parsed_response_mode
+
+
+def validate_strip_padding(value: Any) -> bool:
+    """Validate the optional Playfair multipart ``strip_padding`` flag."""
+
+    if value is MISSING or value is None:
+        return False
+    if value not in ("true", "false"):
+        raise InvalidStripPaddingError()
+    return value == "true"

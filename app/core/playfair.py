@@ -83,12 +83,21 @@ def validate_ciphertext(text: str) -> str:
     return normalized
 
 
-def strip_trailing_filler(text: str) -> str:
-    """Drop one trailing filler: ``Q`` after ``X``, otherwise a final ``X``."""
+def find_filler_positions(raw: str) -> list[int]:
+    """Locate fillers in raw decrypted text by digraph structure.
 
-    if text.endswith((FILLER + FALLBACK_FILLER, FILLER)):
-        return text[:-1]
-    return text
+    Only the second letter of a digraph can be a filler: ``X`` (``Q`` after ``X``)
+    that either separates a repeated letter from the next digraph or ends the text.
+    """
+
+    positions: list[int] = []
+    for index in range(1, len(raw), 2):
+        previous = raw[index - 1]
+        if raw[index] != (FALLBACK_FILLER if previous == FILLER else FILLER):
+            continue
+        if index == len(raw) - 1 or raw[index + 1] == previous:
+            positions.append(index)
+    return positions
 
 
 def _matrix_positions(matrix: Matrix) -> Positions:
@@ -141,4 +150,14 @@ def transform_text(text: str, keyword: str, operation: Operation) -> str:
         _transform_pair(prepared[index : index + 2], matrix, positions, operation)
         for index in range(0, len(prepared), 2)
     )
-    return strip_trailing_filler(result) if operation == "decrypt" else result
+    return result
+
+
+def decrypt_with_padding(text: str, keyword: str) -> tuple[str, list[int], str]:
+    """Return raw plaintext, filler positions and the plaintext without those fillers."""
+
+    raw = transform_text(text, keyword, "decrypt")
+    positions = find_filler_positions(raw)
+    removed = set(positions)
+    filtered = "".join(char for index, char in enumerate(raw) if index not in removed)
+    return raw, positions, filtered

@@ -137,6 +137,11 @@ class InvalidResponseModeError(AppError):
         super().__init__(422, messages.INVALID_RESPONSE_MODE)
 
 
+class InvalidStripPaddingError(AppError):
+    def __init__(self) -> None:
+        super().__init__(422, messages.INVALID_STRIP_PADDING)
+
+
 class FileReadError(AppError):
     def __init__(self) -> None:
         super().__init__(500, messages.FILE_READ_FAILURE)

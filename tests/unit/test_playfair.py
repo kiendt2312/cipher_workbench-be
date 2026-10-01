@@ -6,10 +6,11 @@ import pytest
 
 from app.core.playfair import (
     build_matrix,
+    decrypt_with_padding,
+    find_filler_positions,
     normalize_keyword,
     normalize_text,
     prepare_plaintext,
-    strip_trailing_filler,
     transform_pair,
     transform_text,
     validate_ciphertext,
@@ -97,38 +98,63 @@ def test_collision_and_text_file_vectors(plaintext: str, prepared: str, cipherte
     assert transform_text(plaintext, KEY, "encrypt") == ciphertext
 
 
-def test_decrypt_drops_only_trailing_filler_and_does_not_restore_format() -> None:
-    assert transform_text("GWGW", KEY, "decrypt") == "XQX"
+def test_decrypt_returns_raw_digraphs_and_does_not_restore_format() -> None:
+    assert transform_text("GWGW", KEY, "decrypt") == "XQXQ"
 
     encrypted = transform_text("Jig saw!", KEY, "encrypt")
-    assert transform_text(encrypted, KEY, "decrypt") == "IXIGSAW"
+    assert transform_text(encrypted, KEY, "decrypt") == "IXIGSAWX"
 
 
 @pytest.mark.parametrize(
-    "plaintext, expected",
+    "plaintext, raw, positions, filtered",
     [
-        pytest.param("ABX", "ABX", id="trailing-q-after-x"),
-        pytest.param("ABC", "ABC", id="trailing-x"),
-        pytest.param("HIDE THE GOLD", "HIDETHEGOLD", id="odd-tail"),
-        pytest.param("BALLOON", "BALXLOON", id="middle-filler-kept"),
-        pytest.param("HELLOS", "HELXLOS", id="middle-kept-tail-dropped"),
-        pytest.param("AB", "AB", id="no-filler"),
+        pytest.param("BALLOON", "BALXLOON", [3], "BALLOON", id="middle-filler"),
+        pytest.param("TAXICAB", "TAXICABX", [7], "TAXICAB", id="real-x-kept"),
+        pytest.param("ABX", "ABXQ", [3], "ABX", id="trailing-q-after-x"),
+        pytest.param("ABC", "ABCX", [3], "ABC", id="trailing-x"),
+        pytest.param("XX", "XQXQ", [1, 3], "XX", id="repeated-x"),
+        pytest.param("HIDE THE GOLD", "HIDETHEGOLDX", [11], "HIDETHEGOLD", id="odd-tail"),
+        pytest.param("HELLOS", "HELXLOSX", [3, 7], "HELLOS", id="middle-and-tail"),
+        pytest.param("Jig saw!", "IXIGSAWX", [1, 7], "IIGSAW", id="lossy-format"),
+        pytest.param("BOOKKEEPER", "BOOKKEEPER", [], "BOOKKEEPER", id="no-filler"),
+        pytest.param("AX", "AX", [1], "A", id="even-x-ambiguity"),
     ],
 )
-def test_decrypt_round_trip_drops_trailing_filler(plaintext: str, expected: str) -> None:
-    assert transform_text(transform_text(plaintext, KEY, "encrypt"), KEY, "decrypt") == expected
+def test_decrypt_with_padding_reports_raw_positions_and_filtered(
+    plaintext: str, raw: str, positions: list[int], filtered: str
+) -> None:
+    ciphertext = transform_text(plaintext, KEY, "encrypt")
+
+    assert decrypt_with_padding(ciphertext, KEY) == (raw, positions, filtered)
+    assert transform_text(ciphertext, KEY, "decrypt") == raw
+
+
+def test_canonical_decrypt_filters_middle_filler() -> None:
+    raw, positions, filtered = decrypt_with_padding("BMODZBXDNABEKUDMUIXMMOUVIF", KEY)
+
+    assert raw == "HIDETHEGOLDINTHETREXESTUMP"
+    assert positions == [19]
+    assert filtered == "HIDETHEGOLDINTHETREESTUMP"
 
 
 @pytest.mark.parametrize(
-    "text, expected",
-    [("ABXQ", "ABX"), ("ABCX", "ABC"), ("XQXQ", "XQX"), ("ABQX", "ABQ"), ("ABCD", "ABCD")],
+    "raw, expected",
+    [
+        pytest.param("ABXQ", [3], id="q-after-x-at-end"),
+        pytest.param("ABQX", [3], id="x-after-q-at-end"),
+        pytest.param("XQXA", [1], id="q-between-repeated-x"),
+        pytest.param("AXAB", [1], id="accepted-false-positive"),
+        pytest.param("AXBA", [], id="different-neighbours"),
+        pytest.param("XBXC", [], id="even-index-never-filler"),
+        pytest.param("AQAB", [], id="q-only-after-x"),
+        pytest.param("XXAB", [], id="x-after-x-is-not-filler"),
+        pytest.param("ABCD", [], id="no-filler"),
+    ],
 )
-def test_strip_trailing_filler_removes_one_filler(text: str, expected: str) -> None:
-    assert strip_trailing_filler(text) == expected
-
-
-def test_even_plaintext_ending_in_x_is_known_ambiguity() -> None:
-    assert transform_text(transform_text("AX", KEY, "encrypt"), KEY, "decrypt") == "A"
+def test_find_filler_positions_only_checks_second_letter_of_digraphs(
+    raw: str, expected: list[int]
+) -> None:
+    assert find_filler_positions(raw) == expected
 
 
 @pytest.mark.parametrize(

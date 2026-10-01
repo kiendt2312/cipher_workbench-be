@@ -44,7 +44,8 @@ class TransformResult(dict[str, Any]):
 
     The properties are conveniences for callers that prefer attribute access;
     the mapping itself has the exact ``result``, ``blocks``, ``key`` and
-    ``warnings`` fields used by the Hill response contract.
+    ``warnings`` fields used by the Hill response contract, plus ``padding``
+    on decrypt.
     """
 
     @property
@@ -714,6 +715,9 @@ def _transform(
     result = "".join(prepared.parts)
     if pad_count:
         result += "".join(chr(value + ord("A")) for value in islice(output_values, pad_count))
+    padding = (
+        _detect_padding(prepared, resolved_pad, len(matrix)) if operation == "decrypt" else None
+    )
 
     warnings: list[WarningItem] = []
     if pad_count:
@@ -739,7 +743,7 @@ def _transform(
             }
         )
     warnings.extend(warnings_for_key(analysis))
-    return TransformResult(
+    transformed_result = TransformResult(
         {
             "result": result,
             "blocks": blocks,
@@ -747,6 +751,25 @@ def _transform(
             "warnings": warnings,
         }
     )
+    if padding is not None:
+        transformed_result["padding"] = padding
+    return transformed_result
+
+
+def _detect_padding(prepared: _PreparedText, pad_char: str, size: int) -> dict[str, Any]:
+    """Find up to ``size - 1`` trailing ``pad_char`` letters in decrypted ``prepared`` text."""
+
+    letter_count = len(prepared.slots)
+    count = 0
+    while (
+        count < min(size - 1, letter_count)
+        and prepared.parts[prepared.slots[letter_count - 1 - count]].upper() == pad_char
+    ):
+        count += 1
+    positions = list(range(letter_count - count, letter_count))
+    for position in positions:
+        prepared.parts[prepared.slots[position]] = ""
+    return {"count": count, "positions": positions, "filtered": "".join(prepared.parts)}
 
 
 def encrypt(

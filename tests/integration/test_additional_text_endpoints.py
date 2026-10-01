@@ -46,21 +46,46 @@ def _assert_error(response, status: int, message: str) -> None:
             {"text": "HIDE THE GOLD IN THE TREE STUMP", "key": "PLAYFAIR EXAMPLE"},
             "BMODZBXDNABEKUDMUIXMMOUVIF",
         ),
-        (
-            PLAYFAIR_DECRYPT,
-            {"text": "BMODZBXDNABEKUDMUIXMMOUVIF", "key": "PLAYFAIR EXAMPLE"},
-            "HIDETHEGOLDINTHETREXESTUMP",
-        ),
         (PLAYFAIR_ENCRYPT, {"text": "XX", "key": "PLAYFAIR EXAMPLE"}, "GWGW"),
         (PLAYFAIR_ENCRYPT, {"text": "ABX", "key": "PLAYFAIR EXAMPLE"}, "PDGW"),
-        (PLAYFAIR_DECRYPT, {"text": "PDGW", "key": "PLAYFAIR EXAMPLE"}, "ABX"),
-        (PLAYFAIR_DECRYPT, {"text": "GWGW", "key": "PLAYFAIR EXAMPLE"}, "XQX"),
     ],
 )
 def test_text_happy_paths(
     client: TestClient, path: str, payload: dict[str, str], expected: str
 ) -> None:
     _assert_success(client.post(path, json=payload), expected)
+
+
+@pytest.mark.parametrize(
+    ("ciphertext", "result", "positions", "filtered"),
+    [
+        (
+            "BMODZBXDNABEKUDMUIXMMOUVIF",
+            "HIDETHEGOLDINTHETREXESTUMP",
+            [19],
+            "HIDETHEGOLDINTHETREESTUMP",
+        ),
+        ("PDGW", "ABXQ", [3], "ABX"),
+        ("GWGW", "XQXQ", [1, 3], "XX"),
+        ("BMODZBXDNAGE", "HIDETHEGOLDX", [11], "HIDETHEGOLD"),
+        ("DPYRANQO", "BALXLOON", [3], "BALLOON"),
+        ("VPMRDLGI", "TAXICABX", [7], "TAXICAB"),
+        ("DKQNOIIAXE", "BOOKKEEPER", [], "BOOKKEEPER"),
+    ],
+)
+def test_playfair_decrypt_returns_raw_result_and_padding(
+    client: TestClient, ciphertext: str, result: str, positions: list[int], filtered: str
+) -> None:
+    response = client.post(PLAYFAIR_DECRYPT, json={"text": ciphertext, "key": "PLAYFAIR EXAMPLE"})
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "success": True,
+        "result": result,
+        "padding": {"count": len(positions), "positions": positions, "filtered": filtered},
+    }
+    assert list(response.json()) == ["success", "result", "padding"]
+    assert "normalizedInput" not in response.json()
 
 
 @pytest.mark.parametrize(
@@ -152,6 +177,14 @@ def test_openapi_documents_four_string_key_routes(client: TestClient) -> None:
             error_schema = operation["responses"][status]["content"]["application/json"]["schema"]
             assert set(error_schema["required"]) == {"success", "message"}
             assert set(error_schema["properties"]) == {"success", "message"}
+
+    def success_model(path: str) -> str:
+        content = schema["paths"][path]["post"]["responses"]["200"]["content"]
+        return content["application/json"]["schema"]["$ref"].rsplit("/", 1)[-1]
+
+    assert success_model(PLAYFAIR_ENCRYPT) == success_model(VIGENERE_DECRYPT)
+    decrypt_model = schema["components"]["schemas"][success_model(PLAYFAIR_DECRYPT)]
+    assert set(decrypt_model["required"]) == {"success", "result", "padding"}
 
 
 def test_caesar_integer_contract_remains_unchanged(client: TestClient) -> None:

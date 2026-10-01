@@ -210,6 +210,35 @@ def test_file_lengths_count_the_bom_on_both_sides(
     assert (entry.input_length, entry.output_length) == (5, 5)
 
 
+def test_playfair_decrypt_records_raw_result_length_for_text_and_content(
+    client: TestClient, recorded
+) -> None:
+    client.post("/api/playfair/decrypt", json={"text": "PDGW", "key": "PLAYFAIR EXAMPLE"})
+    client.post(
+        "/api/playfair/file",
+        data={"key": "PLAYFAIR EXAMPLE", "action": "decrypt", "strip_padding": "true"},
+        files={"file": ("a.txt", b"PDGW", "text/plain")},
+    )
+    assert [entry.output_length for entry in recorded] == [4, 4]
+
+
+@pytest.mark.parametrize(("strip_padding", "output_length"), [("false", 4), ("true", 3)])
+def test_playfair_attachment_records_returned_body_length(
+    client: TestClient, recorded, strip_padding: str, output_length: int
+) -> None:
+    client.post(
+        "/api/playfair/file",
+        data={
+            "key": "PLAYFAIR EXAMPLE",
+            "action": "decrypt",
+            "response_mode": "file",
+            "strip_padding": strip_padding,
+        },
+        files={"file": ("a.txt", b"PDGW", "text/plain")},
+    )
+    assert recorded[0].output_length == output_length
+
+
 def test_unexpected_error_is_recorded_as_500(
     client: TestClient, recorded, monkeypatch: pytest.MonkeyPatch
 ) -> None:

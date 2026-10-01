@@ -26,6 +26,7 @@ FILE_TOO_LARGE = "File vượt quá dung lượng tối đa 5 MB."
 UNSUPPORTED_ENCODING = "File phải sử dụng UTF-8."
 INVALID_ACTION = "Action phải là encrypt hoặc decrypt."
 INVALID_RESPONSE_MODE = "Response mode phải là content hoặc file."
+INVALID_STRIP_PADDING = "Tùy chọn lọc ký tự đệm phải là true hoặc false."
 FILE_READ_FAILURE = "Không thể đọc file."
 UNEXPECTED_FAILURE = "Đã xảy ra lỗi hệ thống."
 INVALID_REQUEST_BODY = "Dữ liệu gửi lên không hợp lệ."
@@ -63,6 +64,10 @@ FILE_API_SUCCESS_DESCRIPTION = "Kết quả JSON xem trước hoặc file văn b
 FILE_API_UNSUPPORTED_DESCRIPTION = "Loại file hoặc bảng mã không được hỗ trợ."
 FILE_API_INVALID_MULTIPART_DESCRIPTION = "Dữ liệu multipart không hợp lệ."
 FILE_API_UPLOAD_DESCRIPTION = "File .txt sử dụng UTF-8."
+FILE_API_STRIP_PADDING_DESCRIPTION = (
+    "Chỉ Playfair: true để file đính kèm khi giải mã là bản đã lọc ký tự đệm; "
+    "JSON xem trước luôn có cả result thô và padding."
+)
 
 CANONICAL_MESSAGES = (
     TEXT_EMPTY,
@@ -87,6 +92,7 @@ CANONICAL_MESSAGES = (
     UNSUPPORTED_ENCODING,
     INVALID_ACTION,
     INVALID_RESPONSE_MODE,
+    INVALID_STRIP_PADDING,
     FILE_READ_FAILURE,
     UNEXPECTED_FAILURE,
     INVALID_REQUEST_BODY,
