@@ -35,4 +35,3 @@ Ba nơi trả phân tích khóa (trường `key` của encrypt/decrypt, `result`
 #### Scenario: Cùng khóa, cùng phân tích
 - **WHEN** analyze và encrypt cùng nhận K T01
 - **THEN** `analyze.result` bằng `encrypt.key`
-

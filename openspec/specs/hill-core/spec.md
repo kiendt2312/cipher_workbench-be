@@ -79,4 +79,3 @@ Core SHALL khớp T01–T12 trong HTML Hill, cộng vector cấp bốn ở trên
 #### Scenario: Bộ vector
 - **WHEN** chạy T01–T12 bằng core ở operation tương ứng
 - **THEN** mọi result, inverse, mã lỗi và warning đều khớp dữ liệu kỳ vọng trong HTML Hill
-
