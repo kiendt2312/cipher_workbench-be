@@ -3,12 +3,10 @@
 ## Purpose
 
 Định nghĩa endpoint đọc lịch sử thao tác: phân trang, bộ lọc, envelope và lỗi.
-
 ## Requirements
-
 ### Requirement: Endpoint GET /api/history
 
-Hệ thống SHALL cung cấp `GET /api/history` nhận query tùy chọn `limit` (số nguyên 1–100, mặc định 20), `cursor` (chuỗi opaque do server trả về), `cipher` (một trong năm tên cipher) và `operation` (`encrypt` hoặc `decrypt`). Kết quả SHALL sắp theo `created_at` giảm dần rồi `id` giảm dần. Response thành công SHALL là HTTP 200 với JSON `{"success": true, "result": {"items": [...], "nextCursor": <chuỗi hoặc null>}}`. Mỗi item SHALL có đúng các trường `id`, `createdAt` (ISO 8601 UTC), `cipher`, `operation`, `source`, `responseMode`, `inputLength`, `outputLength`, `httpStatus`, `succeeded`, `durationMs`. (Truy vết: quyết định chủ sở hữu 2026-09-28)
+Hệ thống SHALL cung cấp `GET /api/history` nhận query tùy chọn `limit` (số nguyên 1–100, mặc định 20), `cursor` (chuỗi opaque do server trả về), `cipher` (một trong sáu tên `caesar`, `vigenere`, `playfair`, `affine`, `columnar`, `hill`) và `operation` (`encrypt` hoặc `decrypt`). Kết quả SHALL sắp theo `created_at` giảm dần rồi `id` giảm dần. Response thành công SHALL là HTTP 200 với JSON `{"success": true, "result": {"items": [...], "nextCursor": <chuỗi hoặc null>}}`. Mỗi item SHALL có đúng các trường `id`, `createdAt` (ISO 8601 UTC), `cipher`, `operation`, `source`, `responseMode`, `inputLength`, `outputLength`, `httpStatus`, `succeeded`, `durationMs`. (Truy vết: main spec `history-api`; quyết định chủ sở hữu Q3 ngày 2026-09-29)
 
 #### Scenario: Trang đầu mặc định
 - **WHEN** DB có 25 bản ghi và client gọi `GET /api/history`
@@ -23,6 +21,10 @@ Hệ thống SHALL cung cấp `GET /api/history` nhận query tùy chọn `limit
 #### Scenario: Lọc theo cipher
 - **WHEN** client gọi `GET /api/history?cipher=playfair&operation=decrypt`
 - **THEN** mọi item có `cipher = "playfair"` và `operation = "decrypt"`
+
+#### Scenario: Lọc Hill
+- **WHEN** history được bật và client gọi `GET /api/history?cipher=hill`
+- **THEN** mọi item có `cipher="hill"` và `source="text"`
 
 ### Requirement: Validation query và lỗi tiếng Việt
 

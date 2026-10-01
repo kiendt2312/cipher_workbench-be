@@ -18,7 +18,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-CIPHERS = ("caesar", "vigenere", "playfair", "affine", "columnar", "hill")
+CIPHERS = ("caesar", "vigenere", "playfair", "affine", "columnar", "hill", "des")
 OPERATIONS = ("encrypt", "decrypt")
 SOURCES = ("text", "file")
 RESPONSE_MODES = ("content", "file")

@@ -1,7 +1,8 @@
-# Backend Caesar, Vigenère, Playfair, Affine và Columnar Transposition
+# Backend Caesar, Vigenère, Playfair, Affine, Columnar Transposition, Hill và DES
 
-Backend FastAPI cung cấp API mã hóa/giải mã cho năm thuật toán cổ điển:
-**Caesar**, **Vigenère**, **Playfair**, **Affine** và **Columnar Transposition**.
+Backend FastAPI cung cấp API mã hóa/giải mã cho bảy thuật toán: năm hệ mã cổ điển
+**Caesar**, **Vigenère**, **Playfair**, **Affine**, **Columnar Transposition**, hệ mã
+khối cổ điển **Hill** và hệ mã khối hiện đại **DES** (64 bit, 16 vòng Feistel).
 API nhận văn bản JSON hoặc file `.txt`, trả kết quả xem trước dạng JSON hoặc file
 đính kèm do server tạo.
 
@@ -12,7 +13,7 @@ chính `result` server trả về. Client chỉ nên kiểm tra sơ bộ để h
 
 Đội Frontend nên bắt đầu từ
 [`repo_docs/frontend-integration.md`](repo_docs/frontend-integration.md), tài liệu
-consumer contract chi tiết cho cả 15 endpoint.
+consumer contract chi tiết cho cả 23 endpoint cipher, health và lịch sử.
 
 ## 1. Tổng quan hành vi
 
@@ -28,16 +29,16 @@ JSON text hoặc multipart .txt
  request guards + validation xác định
               │
               ▼
- Caesar | Vigenère | Playfair | Affine | Columnar core
+ Caesar | Vigenère | Playfair | Affine | Columnar | Hill | DES core
               │
               ▼
- JSON hai trường hoặc attachment UTF-8
+ JSON (hai trường; Hill/DES thêm warnings) hoặc attachment UTF-8
 ```
 
 Repo này chỉ có backend. UI do project FE riêng đảm nhiệm và tích hợp theo
 `repo_docs/frontend-integration.md`; app không phục vụ trang nào ở `/`.
 
-## 2. Năm thuật toán
+## 2. Thuật toán
 
 ### 2.1 Caesar
 
@@ -167,7 +168,41 @@ MEET ME AT NOON + BALLOON → EAM NETT EO NMO → MEET ME AT NOON
 😀A𝄞é + 2 1 3 → A😀é𝄞 → 😀A𝄞é
 ```
 
-## 3. API: 19 endpoint (18 POST, 1 GET)
+### 2.6 DES
+
+DES được tự cài đặt chỉ bằng thư viện chuẩn Python theo đúng các bảng PC-1, PC-2,
+LS, IP, IP⁻¹, E, P, S1–S8 của tài liệu thuật toán; lõi dùng bảng tra dẫn xuất
+(SP-box) để tăng tốc. `cryptography` chỉ nằm trong nhóm dev để test đối chiếu, không
+phải dependency runtime.
+
+- Khối 64 bit, khóa 64 bit nhập dưới dạng **đúng 16 ký tự hex**. Server bỏ khoảng
+  trắng ASCII (space, tab, CR, LF, FF, VT) và không phân biệt hoa thường. 8 bit chẵn
+  lẻ (bit 8, 16, …, 64) bị PC-1 loại và **không được kiểm tra hay tự sửa**, nên
+  `123456789ABCDEF0` cho cùng kết quả với `133457799BBCDFF1`.
+- Sinh khóa: PC-1 → C0, D0 (28 bit) → dịch vòng trái theo LS → PC-2 cho K1…K16.
+- 16 vòng Feistel: `Li = Ri−1`, `Ri = Li−1 ⊕ P(S(E(Ri−1) ⊕ Ki))`; đầu ra là
+  `IP⁻¹(R16L16)`. Giải mã dùng cùng thuật toán với khóa con K16…K1.
+- Chế độ: `ECB` (mặc định, mỗi khối độc lập) hoặc `CBC` với IV đúng 16 hex. Ở `ECB`
+  server bỏ qua `iv` dù có giá trị gì. IV sai khi giải mã `CBC` chỉ làm lệch khối 8
+  byte đầu nên có thể vẫn trả 200; server không phát hiện được IV sai.
+- Dữ liệu văn bản (`inputFormat=text`, mặc định) được mã UTF-8 rồi **luôn** đệm
+  PKCS#7; dữ liệu đã đủ bội 8 byte vẫn thêm một khối `0808080808080808`.
+- Dữ liệu hex (`inputFormat=hex`) là một hoặc nhiều khối, độ dài bội của 16 ký tự
+  hex, **không đệm**; dùng cho bài tập trên slide.
+- Bản mã luôn là hex in hoa, không khoảng trắng. Giải mã `outputFormat=text` gỡ
+  PKCS#7 rồi giải mã UTF-8 nghiêm ngặt; `outputFormat=hex` trả nguyên byte dạng hex,
+  không gỡ padding.
+- 4 khóa yếu và 12 khóa nửa yếu được nhận diện sau khi xóa bit chẵn lẻ; chúng chỉ
+  sinh cảnh báo W01/W02, không chặn thao tác.
+
+```text
+0123456789ABCDEF + 133457799BBCDFF1 (hex, ECB)              → 85E813540F0AB405
+Hello World      + 133457799BBCDFF1 (text, ECB)             → B1CA74BB3514268701A9ACC3E4E69FAA
+Hello World      + 133457799BBCDFF1 (text, CBC, IV 0…0)     → B1CA74BB351426875F9A5BCA734D9EF4
+8787878787878787 + 0E329232EA6D0D73 (hex, ECB)              → 0000000000000000
+```
+
+## 3. API: 23 endpoint (22 POST, 1 GET)
 
 | Cipher | Method và path | Request | Vai trò |
 |---|---|---|---|
@@ -190,6 +225,10 @@ MEET ME AT NOON + BALLOON → EAM NETT EO NMO → MEET ME AT NOON
 | Hill | `POST /api/hill/decrypt` | JSON | Giải mã text và trả dữ liệu từng khối |
 | Hill | `POST /api/hill/key/analyze` | JSON | Phân tích khóa |
 | Hill | `GET /api/hill/key/random?m=3` | Query | Sinh khóa hợp lệ cấp 2–4 |
+| DES | `POST /api/des/encrypt` | JSON | Mã hóa text hoặc hex, ECB/CBC |
+| DES | `POST /api/des/decrypt` | JSON | Giải mã bản mã hex ra text hoặc hex |
+| DES | `POST /api/des/file` | Multipart | Mã hóa/giải mã file |
+| DES | `POST /api/des/trace` | JSON | Giá trị trung gian của đúng một khối |
 
 Consumer đang dùng allowlist 12 route phải mở lên đúng ba path Columnar trên để
 thành 15 route; không có route generalized hoặc versioned mới. OpenAPI gắn cả ba
@@ -200,6 +239,11 @@ Hill là ngoại lệ có chủ đích: không có `/api/hill/file`. FE đọc `
 kiểm tối đa 5 MiB (5.242.880 byte), rồi gửi nội dung qua endpoint JSON. Hai route biến đổi
 trả `{success,result,blocks,key,warnings}`; hai route khóa trả
 `{success,result,warnings}`. Lỗi nghiệp vụ Hill trả thêm `code` và `details`.
+
+DES có đủ text/file như năm cipher cổ điển, thêm `/api/des/trace`. Ba route
+encrypt/decrypt/file (content mode) trả `{success,result,warnings}`; `/trace` trả
+thêm `trace`. Lỗi DES dùng envelope hai trường `{success,message}` như năm cipher cổ
+điển, không có `code`. Chi tiết ở §3.3 và §4.1.
 
 ### 3.1 Text JSON
 
@@ -213,6 +257,7 @@ cũng nhận `application/*+json` và media type parameter hợp lệ:
 | Playfair | `{"text":"HIDE THE GOLD","key":"PLAYFAIR EXAMPLE"}` | String còn ít nhất một ASCII letter sau normalize |
 | Affine | `{"text":"HELLO","a":5,"b":8}` | Hai JSON integer thật; không có default |
 | Columnar | `{"text":"ABCDE","key":"3 1 4 2"}` | String numeric permutation hoặc keyword |
+| DES | `{"text":"Hello World","key":"133457799BBCDFF1"}` | String 16 hex; thêm `inputFormat`/`outputFormat`, `mode`, `iv` (§3.3) |
 
 `text` phải là string khác rỗng. Chuỗi chỉ có whitespace hợp lệ với Caesar,
 Vigenère, Affine và Columnar; Playfair từ chối nếu normalization không còn ASCII
@@ -296,6 +341,93 @@ curl -sS -X POST http://localhost:8000/api/columnar/file \
   -F 'key=BALLOON' -F 'action=encrypt' -F 'response_mode=content'
 ```
 
+`POST /api/des/file` cũng là exact multipart object với field `file,key,action` và
+optional `mode`, `iv`, `response_mode` (§3.3).
+
+### 3.3 DES
+
+Ba route JSON nhận object strict, field camelCase; field lạ, trùng hoặc sai kiểu trả
+422 `Dữ liệu gửi lên không hợp lệ.`. Giá trị enum khớp chính xác, phân biệt hoa thường.
+
+| Route | Field (★ bắt buộc) | Ghi chú |
+|---|---|---|
+| `POST /api/des/encrypt` | `text`★, `key`★, `inputFormat` (`text`\|`hex`, mặc định `text`), `mode` (`ECB`\|`CBC`, mặc định `ECB`), `iv` (string hoặc `null`) | `text` UTF-8 + PKCS#7; `hex` bội 16 ký tự, không đệm |
+| `POST /api/des/decrypt` | `text`★ (bản mã hex), `key`★, `outputFormat` (`text`\|`hex`, mặc định `text`), `mode`, `iv` | Bản mã được bỏ khoảng trắng/xuống dòng, nhận chữ thường |
+| `POST /api/des/trace` | `block`★ (đúng 16 hex, cho phép khoảng trắng), `key`★, `operation` (`encrypt`\|`decrypt`, mặc định `encrypt`) | Không có mode, IV, padding; không ghi lịch sử |
+| `POST /api/des/file` | Multipart `file`★, `key`★, `action`★, `mode`, `iv`, `response_mode` | encrypt: file text → hex; decrypt: file hex (nhiều dòng được) → text |
+
+`iv` bắt buộc là 16 hex khi `mode=CBC` và bị bỏ qua khi `mode=ECB`. Cặp định dạng
+phải khớp: bản mã của `inputFormat=text` giải mã bằng `outputFormat=text`; bản mã
+của `inputFormat=hex` giải mã bằng `outputFormat=hex`. Giải mã bản mã hex bằng
+`outputFormat=text` thường gặp lỗi padding; giải mã bản mã text bằng
+`outputFormat=hex` trả cả các byte PKCS#7 (ví dụ `…0505050505`).
+
+```bash
+curl -sS -X POST http://localhost:8000/api/des/encrypt \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"0123456789ABCDEF","key":"133457799BBCDFF1","inputFormat":"hex"}'
+# {"success":true,"result":"85E813540F0AB405","warnings":[]}
+
+curl -sS -X POST http://localhost:8000/api/des/encrypt \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"Hello World","key":"133457799BBCDFF1"}'
+# {"success":true,"result":"B1CA74BB3514268701A9ACC3E4E69FAA","warnings":[]}
+
+curl -sS -X POST http://localhost:8000/api/des/decrypt \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"B1CA74BB3514268701A9ACC3E4E69FAA","key":"133457799BBCDFF1"}'
+# {"success":true,"result":"Hello World","warnings":[]}
+
+curl -sS -X POST http://localhost:8000/api/des/trace \
+  -H 'Content-Type: application/json' \
+  -d '{"block":"0123456789ABCDEF","key":"133457799BBCDFF1","operation":"encrypt"}'
+
+curl -sS -X POST http://localhost:8000/api/des/file \
+  -F 'file=@input.txt;type=text/plain' -F 'key=133457799BBCDFF1' \
+  -F 'action=encrypt' -F 'mode=CBC' -F 'iv=0000000000000000' -F 'response_mode=content'
+```
+
+Response `/trace` (rút gọn; `subkeys` và `rounds` luôn đủ 16 phần tử, `sbox` đủ 8):
+
+```json
+{
+  "success": true,
+  "result": "85E813540F0AB405",
+  "trace": {
+    "operation": "encrypt",
+    "input": "0123456789ABCDEF",
+    "key": "133457799BBCDFF1",
+    "pc1": "F0CCAAF556678F",
+    "subkeys": [{"n": 1, "shift": 1, "c": "E19955F", "d": "AACCF1E", "k": "1B02EFFC7072"}],
+    "ip": "CC00CCFFF0AAF0AA",
+    "l0": "CC00CCFF",
+    "r0": "F0AAF0AA",
+    "rounds": [{
+      "n": 1, "subkey": 1,
+      "expansion": "7A15557A1555", "xorKey": "6117BA866527",
+      "sbox": [{"row": 0, "col": 12, "value": 5}, {"row": 1, "col": 8, "value": 12}],
+      "sboxOutput": "5C82B597", "f": "234AA9BB", "l": "F0AAF0AA", "r": "EF4A6544"
+    }],
+    "preOutput": "0A4CD99543423234"
+  },
+  "warnings": []
+}
+```
+
+Với `operation=decrypt`, `input` là bản mã, `result` là bản rõ hex và
+`rounds[i].subkey` chạy từ 16 về 1; `subkeys` vẫn theo thứ tự K1…K16.
+
+`/api/des/file` dùng lại toàn bộ pipeline file hiện hành (§5): `response_mode=content`
+trả `{success,result,warnings}`; `response_mode=file` trả attachment
+`<tên>.encrypted.txt`/`<tên>.decrypted.txt`, không mang warnings. Chiều decrypt của
+file luôn ra text, nên file chỉ giải mã được bản mã của văn bản UTF-8.
+
+Giới hạn 5 MiB (5.242.880 byte UTF-8 của `text`/`block`, hoặc byte file) áp dụng cho
+**cả hai chiều**. Bản mã hex dài gấp đôi dữ liệu, nên văn bản lớn nhất còn giải mã lại
+được qua API là **2.621.439 byte UTF-8**; bản mã của văn bản lớn hơn bị 413 ở chiều
+giải mã. Trên máy đo (Ryzen 7, Python 3.12), mã hóa 5 MiB mất khoảng 6 giây mỗi
+chiều; giải mã 5 MiB hex (2,5 MiB dữ liệu) khoảng 3 giây.
+
 ## 4. Response và lỗi
 
 Với năm cipher cũ, text thành công và file `response_mode=content` trả HTTP `200`
@@ -312,7 +444,9 @@ Lỗi của năm cipher cũ trả JSON đúng hai field, kể cả request dùng
 ```
 
 Hill là ngoại lệ đã duyệt: transform trả `blocks,key,warnings`, key API trả
-`result,warnings`, và lỗi nghiệp vụ trả thêm `code,details`. Contract năm cipher cũ
+`result,warnings`, và lỗi nghiệp vụ trả thêm `code,details`. DES thành công trả
+`{success,result,warnings}` (`/trace` thêm `trace`), nhưng lỗi DES giữ đúng envelope
+hai trường `{success,message}`. Contract năm cipher cũ
 không có machine error `code`, `detail`, field errors, `normalizedInput`, matrix,
 prepared text hoặc metadata bổ sung. Client nên dùng
 HTTP status và request context cho logic, còn `message` tiếng Việt để hiển thị.
@@ -326,7 +460,7 @@ Các nhóm status chính:
 | Status | Ý nghĩa |
 |---:|---|
 | `200` | Thành công; JSON preview hoặc attachment |
-| `413` | File vượt 5 MiB hoặc request rõ ràng vượt trần hạ tầng |
+| `413` | File vượt 5 MiB, text Hill/DES vượt 5 MiB hoặc request rõ ràng vượt trần hạ tầng |
 | `415` | Sai đuôi `.txt` hoặc file không phải UTF-8 |
 | `422` | Body/field/key/action/content không hợp lệ |
 | `500` | Lỗi đọc file hoặc lỗi hệ thống đã được che chi tiết kỹ thuật |
@@ -348,6 +482,48 @@ type → key content → transform`; file dùng `multipart framing/exact fields 
 Key sai wire type dùng `Khóa phải là chuỗi.`; content sai dùng
 `Khóa Columnar phải là hoán vị 1..m hoặc từ khóa gồm 2 đến 256 chữ cái A-Z.`.
 
+### 4.1 Lỗi và cảnh báo DES
+
+Mọi lỗi của bốn route DES là đúng `{"success":false,"message":"…"}`, kể cả ở
+`response_mode=file`; mã DES-Exx chỉ dùng để đặt tên test/tài liệu, không có trong
+response. `{n}` là số ký tự sau khi bỏ khoảng trắng ASCII.
+
+| Mã | Điều kiện | HTTP | `message` |
+|---|---|---:|---|
+| Body | Media type không phải JSON, JSON hỏng, không phải object, field lạ/trùng, `text`/`key`/`block`/`iv` sai kiểu (khác string và null); multipart field lạ/trùng hoặc bị cắt | 422 | `Dữ liệu gửi lên không hợp lệ.` |
+| E01 | `text` thiếu/null/rỗng; dữ liệu hex rỗng sau khi bỏ khoảng trắng | 422 | `Nhập văn bản hoặc tải file .txt để bắt đầu.` |
+| E02 | `key` thiếu/null/rỗng sau khi bỏ khoảng trắng | 422 | `Thiếu khóa. Khóa DES gồm 16 ký tự hex (64 bit).` |
+| E03 | Khóa có ký tự ngoài `0–9`, `a–f`, `A–F` | 422 | `Khóa chỉ được chứa ký tự hex 0–9, A–F.` |
+| E04 | Khóa hex khác 16 ký tự | 422 | `Khóa phải đúng 16 ký tự hex (64 bit), hiện có {n}.` |
+| E05 | Dữ liệu hex có ký tự không hợp lệ | 422 | `Dữ liệu hex chỉ được chứa ký tự hex 0–9, A–F.` |
+| E06 | Dữ liệu hex không phải bội 16 ký tự | 422 | `Dữ liệu hex phải có độ dài là bội của 16 ký tự hex (64 bit), hiện có {n}.` |
+| E07 | Giải mã ra text nhưng PKCS#7 sai | 422 | `Padding không hợp lệ: sai khóa hoặc bản mã bị hỏng.` |
+| E08 | Giải mã ra byte không phải UTF-8 | 422 | `Kết quả giải mã không phải văn bản UTF-8 hợp lệ. Thử outputFormat = hex.` |
+| E09 | `mode=CBC` mà `iv` thiếu/null/không đúng 16 hex | 422 | `IV phải đúng 16 ký tự hex khi dùng chế độ CBC.` |
+| E10 | `inputFormat`, `outputFormat`, `mode`, `operation` sai giá trị, sai kiểu hoặc `null` | 422 | `Tham số {name} không hợp lệ.` |
+| E11 | Lỗi file | 415/413/422/500 | Message file hiện hành (§5): `Chỉ chấp nhận file .txt.`, `File phải sử dụng UTF-8.`, `File vượt quá dung lượng tối đa 5 MB.`, `Thiếu file.`, `File không được để trống.`, `Action phải là encrypt hoặc decrypt.`, `Response mode phải là content hoặc file.`, `Không thể đọc file.` |
+| E12 | UTF-8 của `text`/`block` vượt 5.242.880 byte | 413 | `Dữ liệu vượt quá 5 MiB.` |
+| E13 | `/trace` với `block` không phải đúng 16 hex | 422 | `Trace chỉ áp dụng cho đúng 1 khối 16 ký tự hex.` |
+
+Request có `Content-Length` hợp lệ lớn hơn 64 MiB bị guard chặn trước: route JSON DES
+trả 413 `Yêu cầu vượt quá dung lượng cho phép.`, `/api/des/file` trả 413
+`File vượt quá dung lượng tối đa 5 MB.`. Lỗi bất ngờ trả 500 `Đã xảy ra lỗi hệ thống.`.
+
+Thứ tự JSON: `guard 64 MiB → body → 5 MiB (E12) → E10 (inputFormat/outputFormat →
+mode → operation) → khóa (E02/E03/E04) → IV khi CBC (E09) → dữ liệu (E01/E05/E06,
+hoặc E13 với /trace) → E07 → E08`. Thứ tự file: `guard/multipart framing → exact
+field set → file → khóa → action → response_mode → mode → IV khi CBC → extension →
+5 MiB → file rỗng → UTF-8 → nội dung hex khi decrypt → E07 → E08`.
+
+Cảnh báo không chặn kết quả, luôn là object `{code,message,details}`, theo thứ tự W01
+→ W02 → W03, mỗi mã tối đa một lần:
+
+| Mã | Khi nào | `message` | `details` |
+|---|---|---|---|
+| W01 | Khóa yếu (mọi thao tác dùng khóa: encrypt, decrypt, file, trace) | `Khóa yếu: mã hóa hai lần sẽ trả lại bản rõ. Không nên dùng.` | `{}` |
+| W02 | Khóa nửa yếu (như W01) | `Khóa nửa yếu: tồn tại khóa khác giải mã được bản mã của khóa này.` | `{}` |
+| W03 | Chỉ khi mã hóa `ECB` (JSON hoặc file content) và bản mã có ít nhất hai khối giống nhau | `Chế độ ECB: có khối bản mã lặp lại, lộ cấu trúc bản rõ. Cân nhắc dùng CBC.` | `{"repeatedBlocks": <số khối trùng một khối trước nó>}` |
+
 ## 5. Contract file
 
 - Chỉ nhận filename kết thúc bằng `.txt`, không phân biệt hoa thường; ví dụ
@@ -358,9 +534,11 @@ Key sai wire type dùng `Khóa phải là chuỗi.`; content sai dùng
   Đúng giới hạn được chấp nhận; `5.242.881` byte trả HTTP `413`. Message public
   vẫn ghi “5 MB” để giữ contract đã chấp nhận.
 - File `0` byte bị từ chối, nhưng file chỉ có UTF-8 BOM hợp lệ. Whitespace-only
-  hợp lệ với Caesar/Vigenère/Affine/Columnar,
-  nhưng Playfair từ chối sau normalization.
-- `response_mode=content` trả JSON preview và loại BOM khỏi chuỗi `result`.
+  hợp lệ với Caesar/Vigenère/Affine/Columnar và DES encrypt,
+  nhưng Playfair từ chối sau normalization và DES decrypt trả
+  `Nhập văn bản hoặc tải file .txt để bắt đầu.`.
+- `response_mode=content` trả JSON preview và loại BOM khỏi chuỗi `result`; với DES
+  preview có thêm mảng `warnings`.
 - `response_mode=file` trả attachment do server tạo; attachment giữ BOM nếu và
   chỉ nếu input có BOM.
 - Filename chỉ bỏ đuôi `.txt` cuối cùng, giữ các dấu chấm trước đó và luôn dùng
@@ -390,9 +568,10 @@ preview thành file thay thế.
 - Lịch sử: `GET /api/history?limit=&cursor=&cipher=&operation=` trả metadata thao
   tác, mới nhất trước; contract chi tiết nằm trong `repo_docs/frontend-integration.md`.
 - Request guard có trần hạ tầng `64 MiB` cho một `Content-Length` decimal hợp lệ;
-  trần này không thay đổi giới hạn nghiệp vụ file 5 MiB. Cả năm route file được
-  phân loại bằng file-size message và multipart-completion guard; các route text
-  Affine/Columnar dùng message request generic giống các route text khác.
+  trần này không thay đổi giới hạn nghiệp vụ file 5 MiB. Cả sáu route file (năm cipher
+  cổ điển và DES) được phân loại bằng file-size message và multipart-completion guard;
+  các route text Affine/Columnar/Hill/DES (gồm `/api/des/trace`) dùng message request
+  generic giống các route text khác.
 
 ## 7. Cài đặt và chạy local
 
@@ -435,7 +614,7 @@ uv sync --frozen
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-Không đặt `DATABASE_URL` thì app chạy không có database: 18 POST route cipher hoạt
+Không đặt `DATABASE_URL` thì app chạy không có database: 22 POST route cipher hoạt
 động bình thường, `/api/health` báo `database: "disabled"` và `/api/history` trả
 503. Muốn chạy app bằng uv (có `--reload`) nhưng dùng PostgreSQL của
 docker-compose, chỉ bật service `db`; nó mở cổng `127.0.0.1:${DB_HOST_PORT}`
@@ -528,6 +707,13 @@ ciphertext, key, tên file, nội dung file, IP hay user agent. Ghi lịch sử 
 best-effort: DB lỗi hoặc chậm quá 500 ms thì bản ghi bị bỏ qua, response cipher
 không đổi.
 
+Có 20 route biến đổi được ghi: encrypt/decrypt/file của năm cipher cổ điển và DES,
+cùng encrypt/decrypt của Hill. Hai route khóa Hill và `/api/des/trace` không được ghi.
+Với DES không lưu khóa, IV, `mode`, `inputFormat`/`outputFormat` hay warnings. Migration
+`0003_allow_des_cipher_operations.py` nới CHECK `cipher` để nhận `des`; DB cũ cần
+`alembic upgrade head` trước khi bản ghi DES được lưu, và `GET /api/history` nhận
+`cipher=des`.
+
 Project không có authentication, nên việc đọc lịch sử được khóa bằng cấu hình:
 
 | Biến | Mặc định | Ý nghĩa |
@@ -567,7 +753,8 @@ app/
 │   ├── playfair.py                 # Playfair 5×5 thuần
 │   ├── affine.py                   # Affine modulo 26 thuần
 │   ├── columnar.py                 # Columnar Transposition thuần
-│   └── hill.py                     # Hill vector hàng, ma trận cấp 2–4
+│   ├── hill.py                     # Hill vector hàng, ma trận cấp 2–4
+│   └── des.py                      # DES 16 vòng, ECB/CBC, PKCS#7, trace
 ├── api/
 │   ├── routes_text.py              # Caesar JSON
 │   ├── routes_file.py              # Caesar multipart
@@ -579,6 +766,9 @@ app/
 │   ├── routes_columnar_file.py     # Columnar multipart strict
 │   ├── routes_hill.py              # bốn API Hill
 │   ├── hill_schemas.py             # decoder/validator Hill strict
+│   ├── routes_des.py               # DES encrypt/decrypt/trace JSON
+│   ├── routes_des_file.py          # DES multipart strict
+│   ├── des_schemas.py              # decoder/validator DES strict
 │   ├── routes_health.py            # GET /api/health
 │   ├── routes_history.py           # GET /api/history
 │   ├── history_recorder.py         # middleware ghi metadata sau response
@@ -590,7 +780,7 @@ app/
 │   ├── engine.py                   # async engine, session factory, ping
 │   └── models.py                   # bảng cipher_operations
 ├── history/
-│   ├── routes.py                   # 17 route biến đổi được ghi lịch sử
+│   ├── routes.py                   # 20 route biến đổi được ghi lịch sử
 │   ├── cursor.py                   # cursor phân trang opaque
 │   └── store.py                    # ghi/đọc cipher_operations
 └── errors/
@@ -612,8 +802,8 @@ bytes, encoding, BOM và attachment; error handlers dùng một envelope thống
 
 ## 11. Phạm vi và ngoài phạm vi
 
-Repository này là backend cipher service cho Caesar, Vigenère, Playfair, Affine
-và Columnar Transposition.
+Repository này là backend cipher service cho Caesar, Vigenère, Playfair, Affine,
+Columnar Transposition, Hill và DES.
 UI thuộc project FE riêng, là consumer tách biệt tích hợp theo
 `repo_docs/frontend-integration.md`.
 
@@ -621,7 +811,9 @@ Ngoài phạm vi hiện tại:
 
 - authentication, authorization, session và lịch sử theo từng user trên server;
 - lưu nội dung người dùng (input, key, file, kết quả) vào database;
-- cipher khác ngoài sáu cipher này, autokey Vigenère, Playfair 6×6 hoặc Playfair Unicode/lossless;
+- cipher khác ngoài bảy cipher này, autokey Vigenère, Playfair 6×6 hoặc Playfair Unicode/lossless;
+- 3DES, AES, các chế độ CFB/OFB/CTR, sinh khóa từ mật khẩu (KDF), xác thực bản mã
+  (MAC), kiểm tra/tự sửa bit chẵn lẻ của khóa DES và demo thám mã DES;
 - phục hồi format, `J` hoặc filler giữa chuỗi khi decrypt Playfair;
 - CORS có credentials (cookie) hoặc mở cho mọi origin;
 - production reverse proxy, TLS, rate limiting, cloud deployment và CI/CD;
@@ -635,7 +827,9 @@ hoàn chỉnh.
 README là bản nhập môn, không thay thế đặc tả hoặc OpenAPI. Khi có khác biệt, dùng
 thứ tự sau:
 
-1. [OpenSpec Columnar đã hoàn thành](openspec/changes/archive/2026-09-28-add-columnar-transposition-cipher/)
+1. [OpenSpec DES](openspec/changes/add-des-cipher/) cho DES (gồm quyết định chủ sở
+   hữu Q1–Q22 ngày 2026-10-01), [OpenSpec Hill đã hoàn thành](openspec/changes/archive/2026-10-01-add-hill-cipher/)
+   cho Hill, [OpenSpec Columnar đã hoàn thành](openspec/changes/archive/2026-09-28-add-columnar-transposition-cipher/)
    cho Columnar, [OpenSpec Affine](openspec/changes/archive/2026-09-28-add-affine-cipher/) cho Affine,
    [OpenSpec Playfair/Vigenère đã hoàn thành](openspec/changes/archive/2026-09-28-add-playfair-vigenere-ciphers/)
    cho hai cipher đó, cùng
@@ -646,12 +840,30 @@ thứ tự sau:
 3. [Frontend integration guide](repo_docs/frontend-integration.md) diễn giải
    consumer contract chi tiết và phải được đồng bộ nếu lệch hai nguồn trên.
 4. [Bản scope Caesar bảo tồn](docs/reference/be-scope-v1.0.md) và các source DOCX
-   dùng để truy vết yêu cầu gốc.
+   dùng để truy vết yêu cầu gốc. Với DES, `Scope Backend_ Hệ mã hóa DES.html` là nguồn
+   tham số, bảng lỗi/cảnh báo, API, test vector T01–T20 và tiêu chí nghiệm thu;
+   `Hệ mã hóa DES_ thuật toán và logic.html` là nguồn bảng hoán vị, hộp S, quy ước bit
+   và giá trị trung gian. Cả hai bị các quyết định chủ sở hữu ngày 2026-10-01 ghi đè ở
+   các điểm trong bảng dưới.
 5. `Caesar_Cipher_Tool_Demo.html` và `affine-cipher.html` chỉ là UI/algorithm
    reference; mock, client-side result/default, giới hạn 1 MB,
    filename dấu gạch dưới, host/cổng hard-code hoặc local cipher trong demo không
    ghi đè accepted behavior.
 
-README cố ý không sao chép toàn bộ OpenAPI, bảng message hay validation matrix.
+Khác biệt có chủ đích giữa scope DES và runtime:
+
+| Scope DES nói | Runtime làm | Quyết định |
+|---|---|---|
+| Lỗi validation HTTP 400 | HTTP 422; vượt 5 MiB vẫn 413 | Q7 |
+| E05/E06 "Bản mã chỉ được…" | "Dữ liệu hex chỉ được…" (dùng cho bản rõ hex, bản mã) | Q3 |
+| E11 một message chung cho lỗi file | Dùng lại message file hiện hành (415/413/422/500) | Q11 |
+| File kết quả `<tên>.des.txt` | `<tên>.encrypted.txt` / `<tên>.decrypted.txt` | Q11 |
+| Mảng `warnings` không nêu hình dạng | Object `{code,message,details}` như Hill | Q8 |
+| File 5 MiB xử lý dưới 2 giây | Khoảng 6 giây mỗi chiều đo thực tế; không có performance gate | Q20, Q21 |
+| E12 đứng đầu luồng xử lý | Giới hạn đo sau khi parse JSON; body hỏng cú pháp vẫn trả 422 trước | Q13 |
+| (không nêu) | 5 MiB áp dụng cả chiều giải mã; văn bản lớn nhất còn giải mã lại được là 2.621.439 byte UTF-8 | Q22 |
+
+Ngoài bảng lỗi/cảnh báo DES ở §4.1, README cố ý không sao chép toàn bộ OpenAPI,
+bảng message hay validation matrix.
 Khi contract thay đổi, cập nhật OpenSpec/runtime trước rồi đồng bộ các tài liệu
 consumer tương ứng.

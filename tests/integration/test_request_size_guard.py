@@ -106,6 +106,7 @@ def test_over_ceiling_is_rejected_before_downstream_or_body_receive() -> None:
         ("/api/playfair/file", messages.FILE_TOO_LARGE),
         ("/api/affine/file", messages.FILE_TOO_LARGE),
         ("/api/columnar/file", messages.FILE_TOO_LARGE),
+        ("/api/des/file", messages.FILE_TOO_LARGE),
         ("/api/caesar/encrypt", messages.REQUEST_TOO_LARGE),
         ("/api/vigenere/encrypt", messages.REQUEST_TOO_LARGE),
         ("/api/vigenere/decrypt", messages.REQUEST_TOO_LARGE),
@@ -115,6 +116,9 @@ def test_over_ceiling_is_rejected_before_downstream_or_body_receive() -> None:
         ("/api/affine/decrypt", messages.REQUEST_TOO_LARGE),
         ("/api/columnar/encrypt", messages.REQUEST_TOO_LARGE),
         ("/api/columnar/decrypt", messages.REQUEST_TOO_LARGE),
+        ("/api/des/encrypt", messages.REQUEST_TOO_LARGE),
+        ("/api/des/decrypt", messages.REQUEST_TOO_LARGE),
+        ("/api/des/trace", messages.REQUEST_TOO_LARGE),
         ("/api/not-a-file-route", messages.REQUEST_TOO_LARGE),
         ("/docs", messages.REQUEST_TOO_LARGE),
     ],
@@ -253,13 +257,14 @@ def test_multipart_completion_requires_a_line_delimited_closing_boundary(
     assert observed == [expected]
 
 
-def test_file_route_guard_inventory_is_exactly_five() -> None:
+def test_file_route_guard_inventory_is_exactly_six() -> None:
     assert {
         "/api/caesar/file",
         "/api/vigenere/file",
         "/api/playfair/file",
         "/api/affine/file",
         "/api/columnar/file",
+        "/api/des/file",
     } == FILE_ROUTE_PATHS
 
 

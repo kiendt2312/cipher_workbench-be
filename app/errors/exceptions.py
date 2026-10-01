@@ -23,6 +23,10 @@ class HillError(AppError):
         super().__init__(status_code, message)
 
 
+class DesError(AppError):
+    """A DES error with an already formatted message, using the two-field envelope."""
+
+
 class EmptyTextError(AppError):
     def __init__(self) -> None:
         super().__init__(422, messages.TEXT_EMPTY)
