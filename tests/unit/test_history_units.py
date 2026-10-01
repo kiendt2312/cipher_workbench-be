@@ -43,12 +43,14 @@ def test_engine_is_lazy_and_ping_reports_unreachable_database() -> None:
     assert asyncio.run(check()) is False
 
 
-def test_exactly_seventeen_cipher_routes_are_recorded() -> None:
-    assert len(CIPHER_ROUTES) == 17
+def test_exactly_twenty_cipher_routes_are_recorded() -> None:
+    assert len(CIPHER_ROUTES) == 20
     assert "/api/hill/encrypt" in CIPHER_ROUTES
     assert "/api/hill/decrypt" in CIPHER_ROUTES
     assert "/api/hill/file" not in CIPHER_ROUTES
     assert "/api/hill/key/analyze" not in CIPHER_ROUTES
+    assert {"/api/des/encrypt", "/api/des/decrypt", "/api/des/file"} <= CIPHER_ROUTES.keys()
+    assert "/api/des/trace" not in CIPHER_ROUTES
     route = match_cipher_route("POST", "/api/affine/file")
     assert route is not None
     assert (route.cipher, route.source, route.operation) == ("affine", "file", None)

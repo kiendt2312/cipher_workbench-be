@@ -200,6 +200,40 @@ def test_history_filter_returns_only_hill_text_rows(db_url: str) -> None:
     assert (page["items"][0]["cipher"], page["items"][0]["source"]) == ("hill", "text")
 
 
+def test_des_migration_preserves_rows_and_allows_des(db_url: str) -> None:
+    _run_alembic(db_url, "downgrade", "0002")
+    _insert_rows(db_url, 1, cipher="caesar")
+    _insert_rows(db_url, 1, cipher="hill")
+    _run_alembic(db_url, "upgrade", "head")
+    _insert_rows(db_url, 1, cipher="des")
+
+    assert run_sql(db_url, "SELECT cipher FROM cipher_operations ORDER BY id") == [
+        ("caesar",),
+        ("hill",),
+        ("des",),
+    ]
+    with pytest.raises(IntegrityError):
+        _insert_rows(db_url, 1, cipher="aes")
+
+
+def test_history_filter_returns_des_text_and_file_rows(db_url: str) -> None:
+    with TestClient(app) as client:
+        client.post("/api/caesar/encrypt", json={"text": "Hi", "key": 1})
+        client.post("/api/des/encrypt", json={"text": "Hi", "key": "133457799BBCDFF1"})
+        client.post(
+            "/api/des/file",
+            data={"key": "133457799BBCDFF1", "action": "encrypt"},
+            files={"file": ("a.txt", b"Hi", "text/plain")},
+        )
+        client.post("/api/des/trace", json={"block": "0123456789ABCDEF", "key": "133457799BBCDFF1"})
+        page = client.get("/api/history?cipher=des").json()["result"]
+
+    assert sorted((item["cipher"], item["source"]) for item in page["items"]) == [
+        ("des", "file"),
+        ("des", "text"),
+    ]
+
+
 def test_health_reports_ok(db_url: str) -> None:
     with TestClient(app) as client:
         response = client.get("/api/health")

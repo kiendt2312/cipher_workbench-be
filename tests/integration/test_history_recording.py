@@ -89,6 +89,63 @@ def test_hill_records_only_transforms_with_code_point_lengths(client: TestClient
     assert entry.response_mode is None
 
 
+def test_des_records_transforms_but_not_trace(client: TestClient, recorded) -> None:
+    response = client.post(
+        "/api/des/encrypt", json={"text": "Hello World", "key": "133457799BBCDFF1"}
+    )
+    client.post("/api/des/trace", json={"block": "0123456789ABCDEF", "key": "133457799BBCDFF1"})
+
+    assert response.status_code == 200
+    assert len(recorded) == 1
+    entry = recorded[0]
+    assert (entry.cipher, entry.source, entry.operation) == ("des", "text", "encrypt")
+    assert (entry.input_length, entry.output_length) == (11, 32)
+    assert entry.response_mode is None
+
+
+@pytest.mark.parametrize(
+    ("path", "kwargs", "status", "operation"),
+    [
+        (
+            "/api/des/encrypt",
+            {"json": {"text": "a" * (5 * 1024 * 1024 + 1), "key": "x"}},
+            413,
+            "encrypt",
+        ),
+        (
+            "/api/des/decrypt",
+            {"json": {"text": "85E813540F0AB405", "key": "133457799BBCDFF1"}},
+            422,
+            "decrypt",
+        ),
+        (
+            "/api/des/file",
+            {
+                "data": {"key": "133457799BBCDFF1", "action": "encrypt"},
+                "files": {"file": ("x.md", b"abc", "text/plain")},
+            },
+            415,
+            "encrypt",
+        ),
+    ],
+)
+def test_failed_des_requests_are_recorded(
+    client: TestClient, recorded, path: str, kwargs: dict, status: int, operation: str
+) -> None:
+    response = client.post(path, **kwargs)
+
+    assert response.status_code == status
+    assert len(recorded) == 1
+    entry = recorded[0]
+    assert (entry.cipher, entry.operation, entry.http_status, entry.succeeded) == (
+        "des",
+        operation,
+        status,
+        False,
+    )
+    assert entry.output_length is None
+
+
 def test_failed_hill_transform_is_recorded_without_sensitive_content(
     client: TestClient, recorded
 ) -> None:

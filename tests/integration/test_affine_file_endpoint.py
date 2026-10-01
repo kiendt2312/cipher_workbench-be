@@ -350,7 +350,7 @@ def test_affine_file_openapi_is_exact(client: TestClient) -> None:
         assert set(error_schema["properties"]) == {"success", "message"}
 
 
-def test_cipher_post_route_inventory_is_exactly_eighteen(client: TestClient) -> None:
+def test_cipher_post_route_inventory_is_exactly_twenty_two(client: TestClient) -> None:
     paths = {
         path
         for path, operations in client.get("/openapi.json").json()["paths"].items()
@@ -359,10 +359,11 @@ def test_cipher_post_route_inventory_is_exactly_eighteen(client: TestClient) -> 
 
     expected = {
         f"/api/{cipher}/{operation}"
-        for cipher in ("caesar", "vigenere", "playfair", "affine", "columnar")
+        for cipher in ("caesar", "vigenere", "playfair", "affine", "columnar", "des")
         for operation in ("encrypt", "decrypt", "file")
     }
     expected.update({"/api/hill/encrypt", "/api/hill/decrypt", "/api/hill/key/analyze"})
+    expected.add("/api/des/trace")
     assert paths == expected
 
 
