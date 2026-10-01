@@ -6,7 +6,14 @@
  * and follows repo_docs/frontend-integration.md. Results always come from the server.
  */
 
-export type Cipher = "caesar" | "vigenere" | "playfair" | "affine" | "columnar" | "hill";
+export type Cipher =
+  | "caesar"
+  | "vigenere"
+  | "playfair"
+  | "affine"
+  | "columnar"
+  | "hill"
+  | "des";
 export type Operation = "encrypt" | "decrypt";
 export type ResponseMode = "content" | "file";
 
@@ -61,6 +68,107 @@ function isHillTransformResponse(value: unknown): value is HillTransformResponse
     && body.key !== null
     && Array.isArray(body.warnings)
   );
+}
+
+// ---- DES (strict JSON, camelCase fields; errors are the two-field envelope) ----
+
+export type DesMode = "ECB" | "CBC";
+export type DesFormat = "text" | "hex";
+
+/** `iv` (16 hex) is required for CBC and ignored by the server for ECB. */
+export interface DesModeInput {
+  mode?: DesMode;
+  iv?: string;
+}
+/** `inputFormat: "text"` = UTF-8 + PKCS#7; `"hex"` = whole 16-hex blocks, no padding. */
+export interface DesEncryptRequest extends DesModeInput {
+  text: string;
+  key: string;
+  inputFormat?: DesFormat;
+}
+/** Use the same format that produced the ciphertext: text ↔ text, hex ↔ hex. */
+export interface DesDecryptRequest extends DesModeInput {
+  text: string;
+  key: string;
+  outputFormat?: DesFormat;
+}
+export interface DesTraceRequest {
+  block: string;
+  key: string;
+  operation?: Operation;
+}
+/** File encrypt reads UTF-8 text; file decrypt reads hex (multi-line allowed) and returns text. */
+export interface DesFileRequest extends DesModeInput {
+  operation: Operation;
+  file: File;
+  key: string;
+}
+
+/** Order is always W01 → W02 → W03; W03 only for ECB encryption with repeated blocks. */
+export type DesWarning =
+  | { code: "W01" | "W02"; message: string; details: Record<string, never> }
+  | { code: "W03"; message: string; details: { repeatedBlocks: number } };
+
+export interface DesResponse {
+  success: true;
+  result: string;
+  warnings: DesWarning[];
+}
+export interface DesSubkey {
+  n: number;
+  shift: number;
+  c: string;
+  d: string;
+  k: string;
+}
+export interface DesRound {
+  n: number;
+  /** Index of the subkey used: 1…16 for encrypt, 16…1 for decrypt. */
+  subkey: number;
+  expansion: string;
+  xorKey: string;
+  /** S1…S8 lookups. */
+  sbox: Array<{ row: number; col: number; value: number }>;
+  sboxOutput: string;
+  f: string;
+  l: string;
+  r: string;
+}
+export interface DesTrace {
+  operation: Operation;
+  input: string;
+  key: string;
+  pc1: string;
+  /** Always K1…K16, even for decrypt. */
+  subkeys: DesSubkey[];
+  ip: string;
+  l0: string;
+  r0: string;
+  rounds: DesRound[];
+  preOutput: string;
+}
+export interface DesTraceResponse extends DesResponse {
+  trace: DesTrace;
+}
+
+/** Text, hex ciphertext and trace blocks are limited to 5 MiB of UTF-8 in both directions. */
+export const DES_MAX_INPUT_BYTES = 5 * 1024 * 1024;
+/** Largest UTF-8 text whose hex ciphertext still fits the 5 MiB decrypt limit. */
+export const DES_MAX_ROUND_TRIP_TEXT_BYTES = 2_621_439;
+
+export function utf8ByteLength(text: string): number {
+  return new TextEncoder().encode(text).byteLength;
+}
+
+/** Length of the hex ciphertext for `inputFormat: "text"` (PKCS#7 always adds 1–8 bytes). */
+export function desCiphertextHexLength(plaintextBytes: number): number {
+  return 2 * (Math.floor(plaintextBytes / 8) * 8 + 8);
+}
+
+function isDesResponse(value: unknown): value is DesResponse {
+  if (typeof value !== "object" || value === null) return false;
+  const body = value as Record<string, unknown>;
+  return body.success === true && typeof body.result === "string" && Array.isArray(body.warnings);
 }
 
 export interface HillTextFile {
@@ -330,12 +438,7 @@ function attachmentFilename(disposition: string): string | null {
   return quoted ? quoted[1].replace(/\\([\\"])/g, "$1") : null;
 }
 
-/** Second request for a file: the official attachment with the server's filename and BOM. */
-export async function downloadFile(request: FileRequest): Promise<AttachmentResult> {
-  const response = await fetch(`/api/${request.cipher}/file`, {
-    method: "POST",
-    body: fileForm(request, "file"),
-  });
+async function readAttachment(response: Response): Promise<AttachmentResult> {
   const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
   if (response.status !== 200 || contentType.includes("application/json")) {
     await readResult<never>(response);
@@ -345,6 +448,100 @@ export async function downloadFile(request: FileRequest): Promise<AttachmentResu
     throw new ApiError(SYSTEM_ERROR, response.status);
   }
   return { blob: await response.blob(), filename };
+}
+
+/** Second request for a file: the official attachment with the server's filename and BOM. */
+export async function downloadFile(request: FileRequest): Promise<AttachmentResult> {
+  const response = await fetch(`/api/${request.cipher}/file`, {
+    method: "POST",
+    body: fileForm(request, "file"),
+  });
+  return readAttachment(response);
+}
+
+// ---- DES helpers ----
+
+async function readDes(response: Response): Promise<DesResponse> {
+  const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+  if (!contentType.includes("application/json")) throw new ApiError(SYSTEM_ERROR, response.status);
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    throw new ApiError(SYSTEM_ERROR, response.status);
+  }
+  // DES errors never carry `code`/`details`: show `message` as-is.
+  if (isErrorBody(body)) throw new ApiError(body.message, response.status);
+  if (response.status !== 200 || !isDesResponse(body)) {
+    throw new ApiError(SYSTEM_ERROR, response.status);
+  }
+  return body;
+}
+
+function isDesTraceResponse(value: DesResponse): value is DesTraceResponse {
+  const trace = (value as { trace?: unknown }).trace;
+  return typeof trace === "object" && trace !== null;
+}
+
+function postDesJson(path: string, body: Record<string, string | undefined>): Promise<Response> {
+  return fetch(`/api/des/${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body), // `undefined` fields are omitted; the server rejects unknown ones.
+  });
+}
+
+/** Encrypt text (UTF-8 + PKCS#7) or hex blocks. Result is upper-case hex. ~6 s for 5 MiB. */
+export async function desEncrypt(request: DesEncryptRequest): Promise<DesResponse> {
+  const { text, key, inputFormat, mode, iv } = request;
+  return readDes(await postDesJson("encrypt", { text, key, inputFormat, mode, iv }));
+}
+
+/**
+ * Decrypt hex ciphertext (whitespace/newlines allowed) to text or raw hex.
+ * A wrong CBC `iv` is not detected: only the first 8 bytes come out wrong and the
+ * response can still be 200, so keep the IV next to the ciphertext.
+ */
+export async function desDecrypt(request: DesDecryptRequest): Promise<DesResponse> {
+  const { text, key, outputFormat, mode, iv } = request;
+  return readDes(await postDesJson("decrypt", { text, key, outputFormat, mode, iv }));
+}
+
+/** Every intermediate value for exactly one 16-hex block. Not recorded in server history. */
+export async function desTrace(request: DesTraceRequest): Promise<DesTraceResponse> {
+  const { block, key, operation } = request;
+  const body = await readDes(await postDesJson("trace", { block, key, operation }));
+  if (!isDesTraceResponse(body)) throw new ApiError(SYSTEM_ERROR, 200);
+  return body;
+}
+
+function desFileForm(request: DesFileRequest, responseMode: ResponseMode): FormData {
+  const data = new FormData();
+  data.append("file", request.file);
+  data.append("key", request.key);
+  data.append("action", request.operation);
+  if (request.mode !== undefined) data.append("mode", request.mode);
+  if (request.mode === "CBC" && request.iv !== undefined) data.append("iv", request.iv);
+  data.append("response_mode", responseMode);
+  return data;
+}
+
+/** First request for a DES file: preview with warnings. */
+export async function desPreviewFile(request: DesFileRequest): Promise<DesResponse> {
+  const response = await fetch("/api/des/file", {
+    method: "POST",
+    body: desFileForm(request, "content"),
+  });
+  return readDes(response);
+}
+
+/** Second request for a DES file: `<name>.encrypted.txt` / `<name>.decrypted.txt`, no warnings. */
+export async function desDownloadFile(request: DesFileRequest): Promise<AttachmentResult> {
+  const response = await fetch("/api/des/file", {
+    method: "POST",
+    body: desFileForm(request, "file"),
+  });
+  return readAttachment(response);
 }
 
 /** Save a Blob with the given name (text results or a `downloadFile` attachment). */
@@ -391,7 +588,8 @@ export interface LocalHistoryEntry {
   key:
     | { key: string }
     | { a: string; b: string }
-    | HillKeyInput;
+    | HillKeyInput
+    | { key: string; mode: DesMode; iv?: string; format: DesFormat };
   /** `null` for files: file contents are never stored. */
   result: string | null;
 }
