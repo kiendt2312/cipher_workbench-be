@@ -23,7 +23,7 @@ Mọi lỗi phát sinh trên bốn RSA endpoint SHALL trả JSON object có đú
 
 ### Requirement: JSON object và field set strict
 
-RSA JSON body SHALL là một object UTF-8 hợp lệ. Parser SHALL phát hiện duplicate member name trước khi model validation; unknown, duplicate và inapplicable field đều bị từ chối, không silently ignore. Malformed JSON, non-object body hoặc missing discriminator dùng `INVALID_REQUEST`; field là `null` khi không quy được cho một member, còn missing/unknown/duplicate/inapplicable member dùng đúng tên field. Nếu có nhiều duplicate/unknown field cùng cấp, field đầu tiên theo thứ tự raw JSON SHALL thắng. (Truy vết: quyết định chủ sở hữu Q15; strict request precedent trong repository)
+RSA JSON body SHALL là một object UTF-8 hợp lệ. Parser SHALL phát hiện duplicate member name trước khi model validation; unknown, duplicate và inapplicable field đều bị từ chối, không silently ignore. Malformed JSON, non-object body hoặc missing discriminator dùng `INVALID_REQUEST`; field là `null` khi không quy được cho một member, còn missing/unknown/duplicate/inapplicable member dùng đúng tên field. Ngoại lệ duy nhất cho missing required member là block decrypt thiếu `originalUtf8ByteLength`: trường hợp đó SHALL dùng `INVALID_LENGTH_METADATA` với field cùng tên theo `rsa-transform-api`. Nếu có nhiều duplicate/unknown field cùng cấp, field đầu tiên theo thứ tự raw JSON SHALL thắng. (Truy vết: quyết định chủ sở hữu Q15; strict request precedent trong repository; làm rõ corrective R1 được chủ sở hữu duyệt ngày 2026-10-06)
 
 #### Scenario: Duplicate cryptographic field
 
@@ -85,7 +85,7 @@ RSA SHALL dùng các mapping dưới đây; message có placeholder SHALL nội 
 | `P_TOO_LARGE` | 422 | `P = {P} ≥ n = {n}. Hãy chia khối hoặc dùng n lớn hơn.` | `data` |
 | `N_TOO_SMALL` | 422 | block: `n phải lớn hơn 256 để chứa ít nhất 1 byte mỗi khối.`; general: `n phải lớn hơn 1.` | `n` |
 | `CIPHER_TOO_LARGE` | 422 | `Bản mã không hợp lệ với khóa này.` | `cipher[{i}]` |
-| `DECODE_FAILED` | 422 | `Không khôi phục được văn bản hợp lệ từ dữ liệu đã giải mã.` | `cipher` hoặc indexed path gần nhất |
+| `DECODE_FAILED` | 422 | `Không khôi phục được văn bản hợp lệ từ dữ liệu đã giải mã.` | `data`, `cipher` hoặc indexed path gần nhất |
 | `EMPTY_INPUT` | 422 | `Dữ liệu đầu vào đang rỗng.` | `data`, `cipher` hoặc `file` |
 | `INPUT_TOO_LARGE` | 422 | text: `Dữ liệu văn bản không được vượt quá 10.000 ký tự Unicode.`; collection: `Danh sách bản mã vượt quá giới hạn cho phép.` | `data`, `file` hoặc `cipher` |
 | `FILE_INVALID` | 413/415 | size: `File vượt quá dung lượng tối đa 1 MB.`; extension: `Chỉ nhận file .txt.`; encoding: `File phải sử dụng UTF-8.` | `file` |
@@ -94,7 +94,7 @@ RSA SHALL dùng các mapping dưới đây; message có placeholder SHALL nội 
 | `FILE_READ_FAILED` | 500 | `Không thể đọc file.` | `file` |
 | `INTERNAL_ERROR` | 500 | `Đã xảy ra lỗi hệ thống.` | `null` |
 
-(Truy vết: PDF RSA trang 3–4; quyết định chủ sở hữu Q5, Q8, Q13–Q15; wording hiện hành trong `app/errors/messages.py`; deviation `DECODE_FAILED` tránh khẳng định phát hiện sai khóa)
+(Truy vết: PDF RSA trang 3–4; quyết định chủ sở hữu Q5, Q8, Q13–Q15; làm rõ corrective R2 được chủ sở hữu duyệt ngày 2026-10-06; wording hiện hành trong `app/errors/messages.py`; deviation `DECODE_FAILED` tránh khẳng định phát hiện sai khóa)
 
 #### Scenario: TC-13 n quá nhỏ
 
@@ -111,6 +111,11 @@ RSA SHALL dùng các mapping dưới đây; message có placeholder SHALL nội 
 - **WHEN** private key sai vẫn tạo block width, padding và UTF-8 hợp lệ
 - **THEN** endpoint trả HTTP 200 với plaintext quan sát được
 - **AND** không trả hoặc tuyên bố một lỗi wrong-key
+
+#### Scenario: Plaintext JSON chứa lone surrogate
+
+- **WHEN** text encrypt nhận `data` là JSON string chứa lone surrogate nên không encode được thành UTF-8 strict
+- **THEN** HTTP 422 với exact body `{"success":false,"code":"DECODE_FAILED","message":"Không khôi phục được văn bản hợp lệ từ dữ liệu đã giải mã.","field":"data"}`
 
 ### Requirement: Control integer strict
 

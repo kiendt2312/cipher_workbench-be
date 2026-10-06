@@ -1,8 +1,10 @@
 # Handoff tích hợp Frontend — tám hệ mã
 
-Tài liệu này là **consumer contract duy nhất cho Frontend** khi tích hợp với backend
+Tài liệu này là **điểm vào consumer contract cho Frontend** khi tích hợp với backend
 cipher. Nội dung độc lập framework: FE có thể dùng React, Vue, Svelte hoặc JavaScript
 thuần, nhưng hành vi API và trạng thái quan sát được phải giữ đúng contract dưới đây.
+Phần RSA có contract triển khai chi tiết tại
+[`rsa-frontend-contract.md`](rsa-frontend-contract.md); mục A.9 chỉ là quick start.
 
 - Cập nhật: `2026-10-06`. Backend có 26 POST route cipher (gồm bốn route RSA), một GET sinh khóa Hill,
   `GET /api/health`,
@@ -82,15 +84,18 @@ chỉ là plaintext `.txt` gửi thẳng tới `/api/rsa/encrypt`; response luô
 | Columnar | `"key": "3 1 4 2"` hoặc `"BALLOON"` | `key` | Hoán vị `1..m` (2–256 cột) hoặc từ khóa 2–256 chữ cái | `MEET ME AT NOON` + `BALLOON` → `EAM NETT EO NMO` |
 | Hill | `"key":[[3,3],[2,5]]` hoặc `"keyword":"HILL","m":2` | Không có file route | Ma trận vuông cấp 2–4 khả nghịch mod 26 | `HELP` → `DPLE` |
 | DES | `"key":"133457799BBCDFF1"` (string) | `key`, thêm `mode`, `iv` | Đúng 16 hex sau khi bỏ khoảng trắng; không kiểm bit chẵn lẻ | `Hello World` → `B1CA74BB3514268701A9ACC3E4E69FAA` |
+| RSA | Encrypt `"e":"7","n":"187"`; decrypt `"d":"23","n":"187"` | `e`, `n` trên encrypt plaintext | Mọi crypto integer là decimal string; không qua JS `Number` | Number `88` → `11` → `88` |
 
-Ba điều hay sai nhất:
+Bốn điều hay sai nhất:
 
 1. Caesar và Affine gửi **JSON number**, nhưng giữ giá trị người dùng nhập dưới dạng
    chuỗi và ghép token bằng `BigInt` để không mất độ chính xác (có sẵn trong file mẫu).
 2. Gửi `text` và chuỗi khóa **nguyên văn**: không `trim()`, không đổi hoa thường.
-3. File luôn hai request: `response_mode=content` để xem trước, rồi
-   `response_mode=file` để tải file chính thức với tên file từ header
+3. File của năm cipher cũ và DES luôn hai request: `response_mode=content` để xem
+   trước, rồi `response_mode=file` để tải file chính thức với tên file từ header
    `Content-Disposition`.
+4. RSA là ngoại lệ file/number: crypto integer luôn giữ dưới dạng decimal string;
+   multipart chỉ encrypt plaintext và luôn trả JSON, không có `response_mode`.
 
 ### A.4 API client dùng ngay
 
@@ -236,11 +241,16 @@ Giữ cặp định dạng: mã hóa `inputFormat=text` ↔ giải mã `outputFo
 
 ### A.9 RSA nhanh và lossless package
 
-> Cảnh báo bắt buộc: textbook RSA 16–128 bit chỉ minh họa thuật toán, không bảo vệ
-> dữ liệu thật, không có OAEP/authenticity và không chứng minh được key/metadata đúng.
+> Cảnh báo bắt buộc: textbook RSA chỉ minh họa thuật toán; random keygen hỗ trợ
+> modulus 16/32/64/128 bit, còn manual key có giới hạn riêng và có thể nhỏ hơn. Không
+> bảo vệ dữ liệu thật, không có OAEP/authenticity và không chứng minh được
+> key/metadata đúng.
+
+Đọc [`rsa-frontend-contract.md`](rsa-frontend-contract.md) trước khi implement. File đó
+là nguồn chi tiết cho exact union types, bốn endpoint, errors, limits, multipart,
+trace, lossless package và history RSA; phần dưới chỉ giúp thử nhanh một block flow.
 
 ```ts
-const key = await postJson("/api/rsa/keys", { p: "17", q: "11", e: "7" });
 const encrypted = await postJson("/api/rsa/encrypt", {
   e: "3", n: "67591", inputType: "text", mode: "block", data: "Hi!",
   traceBlockIndex: 0,
@@ -264,6 +274,11 @@ const decrypted = await postJson("/api/rsa/decrypt", {
   block đó. Không có pagination/truncation và không có trace route thứ năm.
 - Multipart fields exact: `file,e,n,mode,traceBlockIndex?`; `.txt` case-insensitive,
   UTF-8 strict, plaintext encrypt only. Không có attachment hoặc ciphertext upload.
+- Block decrypt thiếu hoặc gửi sai `originalUtf8ByteLength` trả 422
+  `INVALID_LENGTH_METADATA`; plaintext chứa lone surrogate trả 422 `DECODE_FAILED`
+  với `field=data`. Exact envelope và ví dụ ở contract chuyên biệt mục 11.1.
+- `postJson` trong snippet là pseudo-helper cục bộ, không phải export hiện có của
+  `examples/cipher-api.ts`; contract chi tiết có helper copyable.
 
 ### A.10 Lọc ký tự đệm Playfair/Hill
 
@@ -2016,7 +2031,8 @@ hiện tại luôn thắng demo.
 
 ## 14. Acceptance checklist
 
-- [ ] Cả 22 POST endpoint và GET random Hill được chọn đúng theo cipher/source/operation.
+- [ ] Cả 22 POST transform, bốn POST helper/trace/keygen và GET random Hill được chọn
+  đúng theo cipher/source/operation.
 - [ ] Caesar vector `Hello World`, key `3` cho `Khoor Zruog` và decrypt đúng chiều ngược lại.
 - [ ] Vigenère vector `Attack at dawn!`/`LEMON` cho `Lxfopv ef rnhr!` và decrypt đúng.
 - [ ] Playfair canonical vector cho `BMODZBXDNABEKUDMUIXMMOUVIF`: decrypt trả `result` thô `HIDETHEGOLDINTHETREXESTUMP` và `padding.filtered` `HIDETHEGOLDINTHETREESTUMP`.
@@ -2053,6 +2069,16 @@ hiện tại luôn thắng demo.
 - [ ] DES trace chỉ hiển thị giá trị server trả; muốn trace khối đầu của văn bản thì
   dùng `desPlaintextBlocksHex` (và `xorHexBlocks` với IV khi CBC), kết quả trace phải
   bằng 16 hex đầu của bản mã.
+- [ ] RSA chỉ gọi đúng bốn endpoint bằng URL tương đối; crypto integer là decimal
+  string, control integer là JSON integer theo exact request variant.
+- [ ] RSA number/char/block response giữ exact shape và `trace:null|object`; block
+  decrypt gửi lại nguyên `cipher` + `originalUtf8ByteLength`, không trim/normalize
+  BOM, newline, Unicode composition hoặc trailing NUL.
+- [ ] RSA multipart chỉ encrypt plaintext `.txt` tại `/api/rsa/encrypt`, dùng
+  `FormData` không tự đặt `Content-Type`, không gửi `action/response_mode`, và luôn
+  đọc JSON; error xử lý theo `{success,code,message,field}`.
+- [ ] RSA UI luôn cảnh báo textbook/insecure, không claim phát hiện wrong key; nếu có
+  history thì chỉ hai transform được ghi metadata best-effort, keygen bị loại.
 - [ ] FE không tự strip filler ngoài `padding.filtered` và hiển thị cảnh báo Playfair không lossless.
 - [ ] Caesar text gửi một JSON integer; Affine gửi hai integer `a,b`;
   Vigenère/Playfair/Columnar gửi string key.
@@ -2093,7 +2119,12 @@ Thứ tự áp dụng:
 1. Primary authority: spec hiện hành trong [`openspec/specs/`](../openspec/specs/)
    (mỗi capability một file, ví dụ `text-cipher-api`, `history-api`, `app-runtime`);
    lịch sử quyết định nằm trong [`openspec/changes/archive/`](../openspec/changes/archive/).
-   UI không có spec ở backend: giao diện thuộc project FE. Sau spec là
+   Riêng RSA đã ship nhưng change chưa sync/archive, accepted Q1–Q16 cùng hai làm rõ
+   corrective R1–R2 tại
+   [`openspec/changes/add-rsa-cipher/`](../openspec/changes/add-rsa-cipher/) là authority;
+   Q16 thay thế riêng quyết định no-history bằng safe transform metadata; R1–R2
+   reconcile hai error edge mà không mở rộng API. UI không có spec ở backend: giao
+   diện thuộc project FE. Sau spec là
    current implementation/tests cho observed behavior; cuối cùng runtime
    `/openapi.json` là machine-readable projection. Known OpenAPI under-description
    ở §2 không được dùng để thu hẹp behavior đã được spec/runtime test chấp nhận.
@@ -2120,6 +2151,9 @@ Các implementation link chính để audit contract là
 [`routes_des.py`](../app/api/routes_des.py),
 [`routes_des_file.py`](../app/api/routes_des_file.py) và
 [`des_schemas.py`](../app/api/des_schemas.py),
+[`routes_rsa.py`](../app/api/routes_rsa.py),
+[`rsa_schemas.py`](../app/api/rsa_schemas.py) và contract FE chuyên biệt
+[`rsa-frontend-contract.md`](rsa-frontend-contract.md),
 [`routes_health.py`](../app/api/routes_health.py) và
 [`routes_history.py`](../app/api/routes_history.py). File mẫu
 [`examples/cipher-api.ts`](examples/cipher-api.ts) phải được cập nhật cùng tài liệu

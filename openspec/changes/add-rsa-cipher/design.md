@@ -4,7 +4,7 @@
 
 Xem `proposal.md` cho động cơ và phạm vi. Backend hiện là Python `>=3.12,<3.13`, FastAPI/Pydantic v2, chia `app/core` cho thuật toán thuần và `app/api` cho schema/router. Router DES là tiền lệ gần nhất cho model strict, OpenAPI explicit và `run_in_threadpool`; request-size/multipart guards chạy trước router; history chỉ ghi các route có trong whitelist hiện hữu.
 
-RSA cắt ngang core, hai media type trên cùng route encrypt, middleware guard và error handling. Quyết định owner Q16 bổ sung transform metadata vào history/database hiện hữu mà không lưu content/key/trace và không đổi contract RSA. Hai tài liệu RSA ở source checkout là reference; Q1–Q16 trong proposal là authority cho ambiguity/deviation.
+RSA cắt ngang core, hai media type trên cùng route encrypt, middleware guard và error handling. Quyết định owner Q16 bổ sung transform metadata vào history/database hiện hữu mà không lưu content/key/trace và không đổi contract RSA. Hai tài liệu RSA ở source checkout là reference; Q1–Q16 cùng hai làm rõ corrective R1–R2 trong proposal là authority cho ambiguity/deviation.
 
 ## Goals / Non-Goals
 
@@ -151,6 +151,12 @@ Alternative chạy vòng modular exponentiation 40.000 block trực tiếp trong
 
 OpenAPI descriptions, README/consumer guide SHALL nói rõ textbook RSA 16–128 bit không an toàn cho dữ liệu thật, không có confidentiality production/authenticity và không phát hiện đáng tin cậy wrong key. Không thêm field `warnings` vào response vì không có trong contract đã chốt; warning nằm ở documentation/tag/operation descriptions.
 
+### 11. Reconcile hai error edge mà không đổi precedence chung
+
+Với block decrypt, exact-field phase vẫn kiểm unknown field trước, rồi các required member chung `d,n,inputType,mode,cipher` theo schema order. Nếu các kiểm tra đó qua nhưng thiếu `originalUtf8ByteLength`, schema SHALL tạo trực tiếp `INVALID_LENGTH_METADATA` với HTTP 422 và field cùng tên trước collection/control/crypto validation. Sai type, range, block count hoặc padding của metadata đã hiện diện tiếp tục dùng cùng code. Cách tách required member đặc biệt này giữ precedence và strictness hiện hữu nhưng khớp scenario `rsa-transform-api` đã được owner xác nhận tại R1.
+
+Lone surrogate trong JSON string đã parse là lỗi plaintext không thể encode UTF-8, không phải malformed JSON và không phải lỗi ciphertext. Runtime tiếp tục dùng `DECODE_FAILED` với `field="data"`; chỉ delta error mapping/scenario và regression assertion được bổ sung theo R2. Alternative đổi thành `INVALID_REQUEST` hoặc map về `cipher` bị loại vì sẽ đổi behavior đã ship mà owner không yêu cầu.
+
 ## Risks / Trade-offs
 
 - **[Textbook RSA và key rất nhỏ có thể bị lạm dụng]** → Gắn cảnh báo rõ trong OpenAPI/README; không mô tả là secure; không hỗ trợ OAEP/signature/key export.
@@ -163,6 +169,7 @@ OpenAPI descriptions, README/consumer guide SHALL nói rõ textbook RSA 16–128
 - **[RSA-specific 64 MiB envelope là nhánh cross-cutting]** → Match chính xác `/api/rsa/`, thêm regression tests cho mọi old file/non-file guard body.
 - **[App được deploy trước migration]** → CHECK cũ từ chối row RSA nhưng recorder nuốt lỗi, nên crypto response không hỏng; docs yêu cầu migrate-first và nêu rõ khoảng thời gian này mất metadata RSA.
 - **[Metadata vô tình chứa secret/content]** → Không đổi schema/store; test allow-list field và dump row PostgreSQL với marker nhạy cảm, key, cipher, trace, filename để chứng minh không có payload.
+- **[Special-case missing metadata có thể làm lệch strict-field precedence]** → Giữ unknown và các required member chung trong exact-field validator trước nhánh R1; regression test request đồng thời thiếu metadata và có unknown field.
 
 ## Migration Plan
 

@@ -388,9 +388,15 @@ def validate_decrypt(payload: dict[str, Any]) -> NumberDecryptRequest | TextDecr
     required = ["d", "n", "inputType", "mode", "cipher"]
     allowed = [*required, "traceBlockIndex"]
     if mode == "block":
-        required.append("originalUtf8ByteLength")
         allowed.append("originalUtf8ByteLength")
     _fields(payload, allowed=tuple(allowed), required=tuple(required))
+    if mode == "block" and "originalUtf8ByteLength" not in payload:
+        raise error(
+            422,
+            "INVALID_LENGTH_METADATA",
+            messages.RSA_INVALID_LENGTH_METADATA,
+            "originalUtf8ByteLength",
+        )
     limit = rsa.MAX_TEXT_CODEPOINTS if mode == "char" else rsa.MAX_BLOCK_CIPHER_ITEMS
     raw_cipher = payload.get("cipher")
     if type(raw_cipher) is not list:

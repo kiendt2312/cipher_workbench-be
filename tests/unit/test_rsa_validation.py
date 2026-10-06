@@ -162,7 +162,7 @@ def test_numeric_schema_order_beats_json_member_order() -> None:
         ),
         (
             '{"d":"3","n":"67591","inputType":"text","mode":"block","cipher":["1"]}',
-            "INVALID_REQUEST",
+            "INVALID_LENGTH_METADATA",
         ),
         (
             '{"d":"3","n":"67591","inputType":"text","mode":"block",'
@@ -175,6 +175,35 @@ def test_decrypt_shape_and_length_metadata(raw: str, code: str) -> None:
     with pytest.raises(RsaError) as caught:
         schemas.validate_decrypt(_decode(raw))
     assert caught.value.code == code
+    if code == "INVALID_LENGTH_METADATA":
+        assert caught.value.field == "originalUtf8ByteLength"
+
+
+def test_missing_block_length_preserves_exact_field_precedence() -> None:
+    raw = '{"d":"3","n":"67591","inputType":"text","mode":"block","cipher":["1"],"unexpected":true}'
+    with pytest.raises(RsaError) as caught:
+        schemas.validate_decrypt(_decode(raw))
+    assert (caught.value.code, caught.value.field) == ("INVALID_REQUEST", "unexpected")
+
+
+def test_length_metadata_remains_inapplicable_for_non_block_decrypt() -> None:
+    char_request = schemas.validate_decrypt(
+        _decode('{"d":"23","n":"187","inputType":"text","mode":"char","cipher":["11"]}')
+    )
+    assert isinstance(char_request, schemas.TextDecryptRequest)
+    assert char_request.original_utf8_byte_length is None
+
+    with pytest.raises(RsaError) as caught:
+        schemas.validate_decrypt(
+            _decode(
+                '{"d":"23","n":"187","inputType":"text","mode":"char",'
+                '"cipher":["11"],"originalUtf8ByteLength":1}'
+            )
+        )
+    assert (caught.value.code, caught.value.field) == (
+        "INVALID_REQUEST",
+        "originalUtf8ByteLength",
+    )
 
 
 def test_trace_control_is_strict_and_checked_after_domain() -> None:

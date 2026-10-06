@@ -86,6 +86,15 @@ Hai tài liệu RSA là tài liệu tham chiếu phải được bám theo, khô
 
 Q1–Q15 và toàn bộ bằng chứng hoàn thành trước đó vẫn được giữ nguyên. Q16 chỉ supersede quyết định cũ “RSA transform không tham gia history/database”; stateless cipher package, exact bốn route/response/error/trace/file/limit/round-trip contract và keygen no-history không đổi.
 
+### Làm rõ corrective đã được chủ sở hữu duyệt ngày 2026-10-06
+
+| # | Quyết định |
+|---|---|
+| R1 | Block decrypt thiếu `originalUtf8ByteLength` SHALL trả `INVALID_LENGTH_METADATA`, HTTP 422 và `field="originalUtf8ByteLength"`, đúng scenario đã chấp nhận trong `rsa-transform-api`; không dùng `INVALID_REQUEST` cho trường hợp riêng này. |
+| R2 | JSON text encrypt có `data` chứa lone surrogate không encode UTF-8 được tiếp tục trả `DECODE_FAILED`, HTTP 422 và `field="data"`; đây là làm rõ field mapping của behavior đã ship, không đổi API. |
+
+R1–R2 chỉ reconcile hai điểm runtime/spec đã được phát hiện khi hoàn thiện handoff FE. Chúng không ghi đè Q1–Q16, không thêm route, field, code, status hoặc policy sản phẩm mới.
+
 ### Khác biệt đã được chấp nhận
 
 | Tài liệu tham chiếu nói | Contract change này | Căn cứ |

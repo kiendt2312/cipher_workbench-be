@@ -250,6 +250,39 @@ def test_strict_raw_json_and_exact_error_envelope(client: TestClient) -> None:
         assert (response.json()["code"], response.json()["field"]) == (code, field)
 
 
+def test_owner_reconciled_missing_length_and_lone_surrogate_errors(client: TestClient) -> None:
+    missing_length = client.post(
+        "/api/rsa/decrypt",
+        json={
+            "d": "44715",
+            "n": "67591",
+            "inputType": "text",
+            "mode": "block",
+            "cipher": ["37222", "6468"],
+        },
+    )
+    assert missing_length.status_code == 422
+    assert missing_length.json() == {
+        "success": False,
+        "code": "INVALID_LENGTH_METADATA",
+        "message": "Độ dài UTF-8 gốc không khớp với danh sách bản mã.",
+        "field": "originalUtf8ByteLength",
+    }
+
+    lone_surrogate = client.post(
+        "/api/rsa/encrypt",
+        content=(b'{"e":"3","n":"67591","inputType":"text","mode":"char","data":"\\ud800"}'),
+        headers={"content-type": "application/json"},
+    )
+    assert lone_surrogate.status_code == 422
+    assert lone_surrogate.json() == {
+        "success": False,
+        "code": "DECODE_FAILED",
+        "message": "Không khôi phục được văn bản hợp lệ từ dữ liệu đã giải mã.",
+        "field": "data",
+    }
+
+
 def test_media_type_framework_and_unexpected_errors_use_rsa_envelope(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

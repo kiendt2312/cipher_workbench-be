@@ -76,3 +76,9 @@
 - [x] 9.4 Buộc RSA JSON body là UTF-8, giữ chấp nhận UTF-8 BOM, raw token, duplicate detection và error precedence. **Xong khi:** UTF-16/32 bị từ chối còn UTF-8 BOM và strict decoder regressions xanh.
 - [x] 9.5 Cho multipart scalar dài hơn 1 KiB đi tới decimal raw guard trong một giới hạn part hữu hạn, không nới file/request ceilings. **Xong khi:** `e`/`n` dài 1025 digit trả `NUMBER_TOO_LARGE` đúng field trước lỗi file và file caps vẫn xanh.
 - [x] 9.6 Sửa frontend guide để media contract RSA khớp OpenSpec/runtime, không mở rộng API. **Xong khi:** guide nêu JSON-only cho keygen/decrypt, JSON hoặc multipart cho encrypt và không quảng bá `application/*+json` cho RSA.
+
+## 10. Owner-approved Error Contract Reconciliation (2026-10-06)
+
+- [x] 10.1 Ghi nhận R1–R2 trong proposal/design và reconcile delta specs: missing block length dùng `INVALID_LENGTH_METADATA`; lone-surrogate plaintext giữ `DECODE_FAILED field=data`. **Xong khi:** Q1–Q16 còn nguyên, scenario/table chỉ phản ánh hai quyết định đã duyệt và OpenSpec strict validation xanh.
+- [x] 10.2 Sửa narrow schema branch cho missing `originalUtf8ByteLength` và thêm regression tests cho missing-vs-invalid metadata, unknown-field precedence, lone-surrogate exact envelope và non-block preservation. **Xong khi:** targeted RSA validation/endpoint suites xanh và không đổi behavior ngoài R1.
+- [x] 10.3 Đồng bộ hai tài liệu `repo_docs` thành một authoritative behavior, bỏ mismatch note cũ và refresh ví dụ lỗi copyable. **Xong khi:** ví dụ JSON parse được, link/fence/doc checks xanh, targeted RSA suite + Ruff + OpenSpec strict validation xanh; DB-dependent skip được báo riêng, không dùng làm DB proof.
