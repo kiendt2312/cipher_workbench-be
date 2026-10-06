@@ -244,13 +244,13 @@ def test_columnar_text_openapi_is_exact(client: TestClient) -> None:
         assert set(operation["responses"]) == {"200", "413", "422", "500"}
 
 
-def test_des_addition_has_twenty_two_cipher_post_routes(client: TestClient) -> None:
+def test_rsa_addition_has_twenty_six_cipher_post_routes(client: TestClient) -> None:
     paths = {
         path
         for path, operations in client.get("/openapi.json").json()["paths"].items()
         if path.startswith("/api/") and "post" in operations
     }
-    assert len(paths) == 22
+    assert len(paths) == 26
     assert {ENCRYPT_PATH, DECRYPT_PATH} <= paths
     assert "/api/columnar/file" in paths
 

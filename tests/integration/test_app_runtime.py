@@ -58,7 +58,7 @@ def test_cipher_route_inventory_includes_hill_without_a_file_route() -> None:
     }
     post_count = sum("post" in operations for operations in cipher_paths.values())
     get_count = sum("get" in operations for operations in cipher_paths.values())
-    assert post_count == 22
+    assert post_count == 26
     assert get_count == 1
     assert "/api/hill/file" not in cipher_paths
     assert {
@@ -66,6 +66,12 @@ def test_cipher_route_inventory_includes_hill_without_a_file_route() -> None:
         "/api/hill/decrypt",
         "/api/hill/key/analyze",
         "/api/hill/key/random",
+    } <= cipher_paths.keys()
+    assert {
+        "/api/rsa/keys",
+        "/api/rsa/keys/random",
+        "/api/rsa/encrypt",
+        "/api/rsa/decrypt",
     } <= cipher_paths.keys()
 
 

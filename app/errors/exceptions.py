@@ -27,6 +27,15 @@ class DesError(AppError):
     """A DES error with an already formatted message, using the two-field envelope."""
 
 
+class RsaError(AppError):
+    """RSA-only public error carrying the accepted four-field envelope."""
+
+    def __init__(self, status_code: int, code: str, message: str, field: str | None) -> None:
+        self.code = code
+        self.field = field
+        super().__init__(status_code, message)
+
+
 class EmptyTextError(AppError):
     def __init__(self) -> None:
         super().__init__(422, messages.TEXT_EMPTY)
