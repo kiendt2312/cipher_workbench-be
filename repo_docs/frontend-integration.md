@@ -618,9 +618,12 @@ chỉ lưu metadata thao tác, đọc qua `GET /api/history` (mục 16).
 | DES | `POST /api/des/encrypt` | `POST /api/des/decrypt` | `POST /api/des/file` |
 | RSA | `POST /api/rsa/encrypt` | `POST /api/rsa/decrypt` | Multipart plaintext dùng chính `/api/rsa/encrypt` |
 
-Text endpoints nhận `application/json` hoặc `application/*+json`. Các file endpoint
-truyền thống nhận `multipart/form-data` với response mode `content|file`; RSA multipart
-dùng chính `/api/rsa/encrypt`, luôn trả JSON và không có `response_mode`.
+Các text endpoint không phải RSA nhận `application/json` hoặc `application/*+json`.
+RSA chỉ nhận `application/json` cho hai route keygen và `/api/rsa/decrypt`;
+`/api/rsa/encrypt` nhận `application/json` hoặc `multipart/form-data` cho plaintext
+`.txt`. Mọi response RSA đều là JSON. Các file endpoint truyền thống nhận
+`multipart/form-data` với response mode `content|file`; RSA multipart không có
+`response_mode`.
 
 Ngoài 22 route biến đổi được history matcher ghi nhận, Hill có
 `POST /api/hill/key/analyze` và `GET /api/hill/key/random?m=2|3|4`; DES có

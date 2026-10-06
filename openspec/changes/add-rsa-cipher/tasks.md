@@ -67,3 +67,12 @@
 - [x] 8.4 Thêm Alembic `0004` chỉ nới `ck_cipher_operations_cipher` để nhận `rsa`, giữ schema/data/index; downgrade không âm thầm xóa row RSA. **Xong khi:** upgrade/downgrade/preserve/constraint tests xanh trên PostgreSQL disposable và code với schema `0003` vẫn trả nguyên response RSA dù recorder bỏ lỡ row.
 - [x] 8.5 Cập nhật README/frontend guide và delta OpenSpec history specs về `cipher=rsa`, metadata/null length semantics, migrate-first, pre-upgrade data-gap và rollback cần xử lý row RSA; không đổi bốn RSA contracts. **Xong khi:** docs không hứa lưu content/key và không còn statement transform RSA no-history lỗi thời.
 - [x] 8.6 Chạy targeted/full pytest, Ruff check/format, Alembic/OpenSpec strict checks và PostgreSQL disposable verification nếu khả thi. **Xong khi:** mọi gate thực thi xanh; nếu real DB không khả thi phải ghi exact blocker/skip, không trình bày skip-only là DB proof.
+
+## 9. Corrective Review Findings (2026-10-06)
+
+- [x] 9.1 Đồng bộ README tree/scope/source precedence với RSA và active OpenSpec `add-rsa-cipher`. **Xong khi:** ba module RSA có trong tree, phạm vi ghi tám cipher và Q1–Q16 xuất hiện trong thứ tự nguồn.
+- [x] 9.2 Bỏ encode UTF-8 lặp trong char encrypt mà không đổi validation hoặc response. **Xong khi:** byte length dùng chính bytes `_validate_text` đã trả và targeted core tests xanh.
+- [x] 9.3 Đổi multipart completion scope key sang tên trung lập cho mọi consumer hiện hữu. **Xong khi:** route inventory/guard behavior cũ không đổi và guard tests xanh.
+- [x] 9.4 Buộc RSA JSON body là UTF-8, giữ chấp nhận UTF-8 BOM, raw token, duplicate detection và error precedence. **Xong khi:** UTF-16/32 bị từ chối còn UTF-8 BOM và strict decoder regressions xanh.
+- [x] 9.5 Cho multipart scalar dài hơn 1 KiB đi tới decimal raw guard trong một giới hạn part hữu hạn, không nới file/request ceilings. **Xong khi:** `e`/`n` dài 1025 digit trả `NUMBER_TOO_LARGE` đúng field trước lỗi file và file caps vẫn xanh.
+- [x] 9.6 Sửa frontend guide để media contract RSA khớp OpenSpec/runtime, không mở rộng API. **Xong khi:** guide nêu JSON-only cho keygen/decrypt, JSON hoặc multipart cho encrypt và không quảng bá `application/*+json` cho RSA.

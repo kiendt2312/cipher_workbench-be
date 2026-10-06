@@ -39,6 +39,9 @@ from app.core import rsa
 from app.errors import messages
 
 router = APIRouter(prefix="/api/rsa", tags=["RSA (giáo dục)"])
+# Starlette applies this cap only to scalar parts.  Keep it finite at the RSA
+# upload byte budget while letting long numeric fields reach the 128-digit guard.
+_MAX_MULTIPART_SCALAR_BYTES = 1_000_000
 WARNING = (
     "Textbook RSA 16-128 bit chỉ dùng để học thuật toán; không có OAEP, không an toàn "
     "cho dữ liệu thật và không xác thực khóa hay metadata."
@@ -309,7 +312,11 @@ async def create_random_key(request: Request) -> dict[str, Any]:
 
 
 async def _multipart_encrypt(request: Request) -> dict[str, Any]:
-    form = await request.form(max_files=10, max_fields=10, max_part_size=1024)
+    form = await request.form(
+        max_files=10,
+        max_fields=10,
+        max_part_size=_MAX_MULTIPART_SCALAR_BYTES,
+    )
     if request.scope.get(MultipartCompletionGuard.SCOPE_KEY) is not True:
         raise StarletteHTTPException(status_code=400, detail="Malformed multipart body")
     validated: FileEncryptRequest = validate_file_form(form)

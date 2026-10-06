@@ -131,7 +131,7 @@ class MultipartCompletionGuard:
     every body chunk unchanged to Starlette's streaming parser.
     """
 
-    SCOPE_KEY = "caesar.multipart_complete"
+    SCOPE_KEY = "request.multipart_complete"
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app

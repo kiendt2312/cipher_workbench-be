@@ -38,6 +38,25 @@ def test_decode_preserves_raw_integer_and_float_lexemes() -> None:
     assert payload["float"] == "1e3"
 
 
+def test_decode_requires_utf8_but_preserves_accepted_utf8_bom_behavior() -> None:
+    payload = schemas.decode_json(b'\xef\xbb\xbf{"bits":128}', "application/json")
+    assert type(payload["bits"]) is schemas.JsonIntegerToken
+    assert payload["bits"] == "128"
+
+    with pytest.raises(RsaError) as duplicate:
+        schemas.decode_json(
+            b'\xef\xbb\xbf{"bits":128,"bits":64}',
+            "application/json",
+        )
+    assert (duplicate.value.code, duplicate.value.field) == ("INVALID_REQUEST", "bits")
+
+    for encoding in ("utf-16", "utf-32"):
+        raw = '{"bits":128}'.encode(encoding)
+        with pytest.raises(RsaError) as caught:
+            schemas.decode_json(raw, "application/json")
+        assert (caught.value.code, caught.value.field) == ("INVALID_REQUEST", None)
+
+
 @pytest.mark.parametrize("content_type", [None, "text/plain", "application/problem+json"])
 def test_decode_rejects_non_contract_media_types(content_type: str | None) -> None:
     with pytest.raises(RsaError) as caught:

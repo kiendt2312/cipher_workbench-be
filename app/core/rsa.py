@@ -312,12 +312,11 @@ def transform_char_encrypt(
 ) -> TransformResult:
     validate_transform_key(e, n, "encrypt")
     encoded = _validate_text(text)
-    del encoded
     blocks = tuple(ord(character) for character in text)
     for value in blocks:
         if value >= n:
             raise RsaCoreError("P_TOO_LARGE", value=value, n=n)
-    return _transform_many(blocks, e, n, "encrypt", 1, len(text.encode("utf-8")), trace_index)
+    return _transform_many(blocks, e, n, "encrypt", 1, len(encoded), trace_index)
 
 
 def transform_char_decrypt(

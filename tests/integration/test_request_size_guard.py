@@ -258,6 +258,7 @@ def test_multipart_completion_requires_a_line_delimited_closing_boundary(
 
 
 def test_file_route_guard_inventory_is_exactly_six() -> None:
+    assert MultipartCompletionGuard.SCOPE_KEY == "request.multipart_complete"
     assert {
         "/api/caesar/file",
         "/api/vigenere/file",

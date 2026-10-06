@@ -818,7 +818,8 @@ app/
 │   ├── affine.py                   # Affine modulo 26 thuần
 │   ├── columnar.py                 # Columnar Transposition thuần
 │   ├── hill.py                     # Hill vector hàng, ma trận cấp 2–4
-│   └── des.py                      # DES 16 vòng, ECB/CBC, PKCS#7, trace
+│   ├── des.py                      # DES 16 vòng, ECB/CBC, PKCS#7, trace
+│   └── rsa.py                      # textbook RSA, Unicode và block UTF-8
 ├── api/
 │   ├── routes_text.py              # Caesar JSON
 │   ├── routes_file.py              # Caesar multipart
@@ -833,6 +834,8 @@ app/
 │   ├── routes_des.py               # DES encrypt/decrypt/trace JSON
 │   ├── routes_des_file.py          # DES multipart strict
 │   ├── des_schemas.py              # decoder/validator DES strict
+│   ├── routes_rsa.py               # bốn endpoint RSA JSON/multipart
+│   ├── rsa_schemas.py              # decoder/validator RSA strict
 │   ├── routes_health.py            # GET /api/health
 │   ├── routes_history.py           # GET /api/history
 │   ├── history_recorder.py         # middleware ghi metadata sau response
@@ -866,8 +869,8 @@ bytes, encoding, BOM và attachment; error handlers dùng một envelope thống
 
 ## 11. Phạm vi và ngoài phạm vi
 
-Repository này là backend cipher service cho Caesar, Vigenère, Playfair, Affine,
-Columnar Transposition, Hill và DES.
+Repository này là backend cipher service cho tám cipher: Caesar, Vigenère, Playfair,
+Affine, Columnar Transposition, Hill, DES và RSA.
 UI thuộc project FE riêng, là consumer tách biệt tích hợp theo
 `repo_docs/frontend-integration.md`.
 
@@ -875,7 +878,7 @@ Ngoài phạm vi hiện tại:
 
 - authentication, authorization, session và lịch sử theo từng user trên server;
 - lưu nội dung người dùng (input, key, file, kết quả) vào database;
-- cipher khác ngoài bảy cipher này, autokey Vigenère, Playfair 6×6 hoặc Playfair Unicode/lossless;
+- cipher khác ngoài tám cipher này, autokey Vigenère, Playfair 6×6 hoặc Playfair Unicode/lossless;
 - 3DES, AES, các chế độ CFB/OFB/CTR, sinh khóa từ mật khẩu (KDF), xác thực bản mã
   (MAC), kiểm tra/tự sửa bit chẵn lẻ của khóa DES và demo thám mã DES;
 - phục hồi format hoặc `J` khi decrypt Playfair, và phân biệt chữ thật với ký tự đệm
@@ -892,8 +895,10 @@ hoàn chỉnh.
 README là bản nhập môn, không thay thế đặc tả hoặc OpenAPI. Khi có khác biệt, dùng
 thứ tự sau:
 
-1. [OpenSpec DES](openspec/changes/archive/2026-10-01-add-des-cipher/) cho DES (gồm quyết định chủ sở
-   hữu Q1–Q22 ngày 2026-10-01), [OpenSpec Hill đã hoàn thành](openspec/changes/archive/2026-10-01-add-hill-cipher/)
+1. [OpenSpec RSA đang hoạt động](openspec/changes/add-rsa-cipher/) cho RSA (gồm quyết định chủ sở
+   hữu Q1–Q16 ngày 2026-10-06), [OpenSpec DES](openspec/changes/archive/2026-10-01-add-des-cipher/)
+   cho DES (gồm quyết định chủ sở hữu Q1–Q22 ngày 2026-10-01),
+   [OpenSpec Hill đã hoàn thành](openspec/changes/archive/2026-10-01-add-hill-cipher/)
    cho Hill, [OpenSpec Columnar đã hoàn thành](openspec/changes/archive/2026-09-28-add-columnar-transposition-cipher/)
    cho Columnar, [OpenSpec Affine](openspec/changes/archive/2026-09-28-add-affine-cipher/) cho Affine,
    [OpenSpec Playfair/Vigenère đã hoàn thành](openspec/changes/archive/2026-09-28-add-playfair-vigenere-ciphers/)

@@ -142,6 +142,26 @@ def test_multipart_precedence_numeric_extension_size_decode_trace(client: TestCl
     assert domain_before_trace.json()["code"] == "N_TOO_SMALL"
 
 
+@pytest.mark.parametrize("field", ["e", "n"])
+def test_multipart_long_decimal_reaches_numeric_guard_before_file_validation(
+    client: TestClient,
+    field: str,
+) -> None:
+    data = {"e": "3", "n": "67591", "mode": "block", field: "9" * 1025}
+    response = client.post(
+        "/api/rsa/encrypt",
+        data=data,
+        files={"file": ("plain.bin", b"\xff" + b"A" * 1_000_000, "text/plain")},
+    )
+    assert response.status_code == 422
+    assert response.json() == {
+        "success": False,
+        "code": "NUMBER_TOO_LARGE",
+        "message": "Giá trị không được vượt quá 2^128 - 1.",
+        "field": field,
+    }
+
+
 def test_file_trace_and_codepoint_boundaries(client: TestClient) -> None:
     traced = client.post(
         "/api/rsa/encrypt",

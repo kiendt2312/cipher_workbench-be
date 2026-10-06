@@ -199,8 +199,9 @@ def decode_json(raw: bytes, content_type: str | None) -> dict[str, Any]:
     if media_type != "application/json":
         raise error(415, "UNSUPPORTED_MEDIA_TYPE", messages.RSA_UNSUPPORTED_MEDIA_TYPE)
     try:
+        text = raw.decode("utf-8-sig", errors="strict")
         decoded = json.loads(
-            raw,
+            text,
             parse_int=JsonIntegerToken,
             parse_float=JsonFloatToken,
             parse_constant=_reject_constant,
