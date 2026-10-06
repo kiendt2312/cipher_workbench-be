@@ -104,6 +104,32 @@ def test_des_records_transforms_but_not_trace(client: TestClient, recorded) -> N
 
 
 @pytest.mark.parametrize(
+    ("path", "kwargs"),
+    [
+        ("/api/rsa/keys", {"json": {"p": "17", "q": "11", "e": "7"}}),
+        ("/api/rsa/keys/random", {"json": {"bits": 16}}),
+        (
+            "/api/rsa/encrypt",
+            {"json": {"e": "17", "n": "3233", "inputType": "number", "data": "65"}},
+        ),
+        (
+            "/api/rsa/decrypt",
+            {"json": {"d": "23", "n": "187", "inputType": "number", "cipher": ["11"]}},
+        ),
+        (
+            "/api/rsa/encrypt",
+            {"json": {"e": "7", "n": "187", "inputType": "number", "data": "200"}},
+        ),
+    ],
+)
+def test_rsa_success_and_error_routes_never_record_history(
+    client: TestClient, recorded: list[OperationEntry], path: str, kwargs: dict
+) -> None:
+    client.post(path, **kwargs)
+    assert recorded == []
+
+
+@pytest.mark.parametrize(
     ("path", "kwargs", "status", "operation"),
     [
         (

@@ -1,10 +1,10 @@
-# Handoff tích hợp Frontend — bảy hệ mã
+# Handoff tích hợp Frontend — tám hệ mã
 
 Tài liệu này là **consumer contract duy nhất cho Frontend** khi tích hợp với backend
 cipher. Nội dung độc lập framework: FE có thể dùng React, Vue, Svelte hoặc JavaScript
 thuần, nhưng hành vi API và trạng thái quan sát được phải giữ đúng contract dưới đây.
 
-- Cập nhật: `2026-10-02`. Backend có 22 POST route cipher (gồm bốn route DES), một GET sinh khóa Hill,
+- Cập nhật: `2026-10-06`. Backend có 26 POST route cipher (gồm bốn route RSA), một GET sinh khóa Hill,
   `GET /api/health`,
   `GET /api/history` (tùy chọn, cần PostgreSQL).
 - **Người mới:** đọc mục **A. Bắt đầu nhanh** (khoảng 10 phút) rồi dùng file
@@ -44,7 +44,7 @@ Swagger để thử API: <http://localhost:8080/docs>.
 | Method | Path | Body | Thành công (HTTP 200) |
 |---|---|---|---|
 | POST | `/api/{legacy}/encrypt` | JSON, xem A.3 | `{"success":true,"result":"<bản mã>"}` |
-| POST | `/api/{legacy}/decrypt` | JSON, xem A.3 | `{"success":true,"result":"<bản rõ>"}`; riêng Playfair thêm `padding` (A.9) |
+| POST | `/api/{legacy}/decrypt` | JSON, xem A.3 | `{"success":true,"result":"<bản rõ>"}`; riêng Playfair thêm `padding` (A.10) |
 | POST | `/api/{legacy}/file` | multipart: `file`, khóa (A.3), `action`, `response_mode`; Playfair thêm `strip_padding` | `content`: JSON như trên; `file`: file `text/plain` đính kèm |
 | POST | `/api/hill/encrypt` | JSON Hill, xem A.7 | `{success,result,blocks,key,warnings}` |
 | POST | `/api/hill/decrypt` | JSON Hill, xem A.7 | `{success,result,blocks,key,warnings,padding}` |
@@ -56,12 +56,19 @@ Swagger để thử API: <http://localhost:8080/docs>.
 | POST | `/api/des/decrypt` | JSON DES, xem A.8 | `{success,result,warnings}` |
 | POST | `/api/des/file` | multipart: `file`, `key`, `action`, `mode`, `iv`, `response_mode` | `content`: `{success,result,warnings}`; `file`: file `text/plain` đính kèm |
 | POST | `/api/des/trace` | JSON `block`, `key`, `operation` | `{success,result,trace,warnings}` |
+| POST | `/api/rsa/keys` | JSON `p,q,e` dạng decimal string | Key material + full `egcdSteps` |
+| POST | `/api/rsa/keys/random` | JSON integer `bits=16|32|64|128` | Key material gồm `p,q` |
+| POST | `/api/rsa/encrypt` | JSON number/text hoặc multipart plaintext | Full blocks/cipher + optional selected trace |
+| POST | `/api/rsa/decrypt` | JSON cipher package | Full blocks/plaintext + optional selected trace |
 
 `{legacy}` là một trong `caesar`, `vigenere`, `playfair`, `affine`, `columnar`.
 Năm cipher này có đủ text/file (15 POST route); Hill chỉ có hai POST transform và một
 POST analyze, không có `/api/hill/file`. DES có đủ encrypt/decrypt/file và thêm
 `/api/des/trace`. `action` là `encrypt`/`decrypt`; `response_mode` là `content`
 (mặc định) hoặc `file` và dùng cho năm cipher cũ và DES.
+
+RSA chỉ dùng bốn route exact ở bảng, không có route file/trace/history khác. File RSA
+chỉ là plaintext `.txt` gửi thẳng tới `/api/rsa/encrypt`; response luôn JSON.
 
 ### A.3 Khóa theo cipher
 
@@ -123,7 +130,7 @@ try {
 
 const playfair = await playfairDecrypt({ text: "PDGW", key: "PLAYFAIR EXAMPLE" });
 // playfair.result === "ABXQ" (bản thô); playfair.padding.filtered === "ABX"
-const shown = displayedResult(playfair, filterPadding); // theo toggle lọc ký tự đệm (A.9)
+const shown = displayedResult(playfair, filterPadding); // theo toggle lọc ký tự đệm (A.10)
 
 const hill = await transformHill({
   operation: "encrypt", text: "HELP", key: [[3, 3], [2, 5]],
@@ -153,6 +160,11 @@ không phải response backend. Lỗi DES giữ envelope hai trường như năm
 có `code`), status 422/413/415/500; bảng message ở mục 9.2. Lỗi mạng thì FE tự hiện
 thông báo kết nối.
 
+Lỗi RSA có contract riêng chính xác
+`{success:false,code,message,field}`; `field` có thể là `null`, tên field hoặc path như
+`cipher[3]`. Status là 413 (size), 415 (media/extension/UTF-8), 422 (validation/domain)
+hoặc 500. Không áp contract RSA cho route cũ.
+
 ### A.6 UI tối thiểu phải có
 
 - Chọn cipher, chế độ mã hóa/giải mã, nguồn văn bản/file; ô khóa theo A.3 (Affine có
@@ -161,7 +173,7 @@ thông báo kết nối.
 - Khóa mọi control và chặn gửi lặp khi request đang chạy.
 - Cảnh báo Playfair luôn hiện khi chọn Playfair (câu chuẩn ở mục 11).
 - Playfair/Hill giải mã: toggle `Tự động lọc ký tự đệm (Playfair/Hill padding)` và
-  luôn cho xem được bản thô (A.9).
+  luôn cho xem được bản thô (A.10).
 - File của năm cipher cũ: kiểm tra sơ bộ `.txt`, tối đa 5 MiB, không rỗng; xem trước
   rồi mới tải. Hill: FE tự đọc `.txt` bằng UTF-8 fatal decode, kiểm tối đa 5 MiB theo
   byte gốc và gọi JSON; không gọi `/api/hill/file`. DES: dùng `/api/des/file` như năm
@@ -190,7 +202,7 @@ matrix `key`; `m` của keyword từ 2 đến 4.
 `options` tùy chọn gồm `stripDiacritics:boolean` và `padChar` là một chữ hoa A-Z.
 Khi giải mã, gửi lại đúng `padChar` đã dùng lúc mã hóa để backend nhận diện ký tự đệm.
 Encrypt trả đúng `success,result,blocks,key,warnings`; decrypt trả thêm `padding`
-(A.9). Analyze/random có `success,result,warnings`. FE đọc file bằng `TextDecoder("utf-8", {fatal:true})`;
+(A.10). Analyze/random có `success,result,warnings`. FE đọc file bằng `TextDecoder("utf-8", {fatal:true})`;
 decode lỗi thì hiển thị E07 và không gửi request.
 
 ### A.8 DES nhanh
@@ -221,7 +233,38 @@ decrypt chỉ nhận `text,key,outputFormat,mode,iv`; trace chỉ nhận `block,
 Giữ cặp định dạng: mã hóa `inputFormat=text` ↔ giải mã `outputFormat=text`; mã hóa
 `inputFormat=hex` ↔ giải mã `outputFormat=hex`. Chi tiết ở mục 4.7 và 9.2.
 
-### A.9 Lọc ký tự đệm Playfair/Hill
+### A.9 RSA nhanh và lossless package
+
+> Cảnh báo bắt buộc: textbook RSA 16–128 bit chỉ minh họa thuật toán, không bảo vệ
+> dữ liệu thật, không có OAEP/authenticity và không chứng minh được key/metadata đúng.
+
+```ts
+const key = await postJson("/api/rsa/keys", { p: "17", q: "11", e: "7" });
+const encrypted = await postJson("/api/rsa/encrypt", {
+  e: "3", n: "67591", inputType: "text", mode: "block", data: "Hi!",
+  traceBlockIndex: 0,
+});
+// encrypted.blockSize === 2; encrypted.originalUtf8ByteLength === 3
+// encrypted.cipher === ["37222", "6468"]
+const decrypted = await postJson("/api/rsa/decrypt", {
+  d: "44715", n: "67591", inputType: "text", mode: "block",
+  cipher: encrypted.cipher,
+  originalUtf8ByteLength: encrypted.originalUtf8ByteLength,
+});
+```
+
+- Crypto integers luôn là decimal string; không hex/base64. Output được canonicalize.
+- `mode=char` tạo một block/code point; `mode=block` đóng gói UTF-8 lossless. FE phải
+  lưu và gửi lại `originalUtf8ByteLength`, kể cả khi plaintext có BOM hoặc trailing NUL.
+- Không trim/normalize/đổi newline. BOM đầu vào là ký tự `U+FEFF`, không phải metadata.
+- Text tối đa 10.000 code point; cipher number/char/block tối đa 1/10.000/40.000 item;
+  file tối đa 1.000.000 raw byte decimal.
+- Mặc định `trace:null`. Gửi một `traceBlockIndex` zero-based để lấy full steps của đúng
+  block đó. Không có pagination/truncation và không có trace route thứ năm.
+- Multipart fields exact: `file,e,n,mode,traceBlockIndex?`; `.txt` case-insensitive,
+  UTF-8 strict, plaintext encrypt only. Không có attachment hoặc ciphertext upload.
+
+### A.10 Lọc ký tự đệm Playfair/Hill
 
 Khi **giải mã** Playfair hoặc Hill, `result` luôn là **bản thô toán học** (giữ cả ký tự
 đệm). Response có thêm `padding` cho biết ký tự nào là đệm:
@@ -276,7 +319,7 @@ cũ và filename **không đổi**. Mục này **thay thế** quy tắc ở 0.3.
 
 - `result` khi giải mã luôn là **bản thô toán học**, không bỏ ký tự nào.
   **BREAKING (Playfair):** backend không còn tự bỏ một filler cuối.
-- Response giải mã có thêm `padding: {count, positions, filtered}` (A.9). Playfair lọc cả
+- Response giải mã có thêm `padding: {count, positions, filtered}` (A.10). Playfair lọc cả
   filler giữa cặp chữ lặp lẫn filler cuối; Hill lọc tối đa `m − 1` chữ `padChar` ở cuối.
 - `/api/playfair/file` nhận thêm `strip_padding=true|false` (mặc định `false`) để file
   đính kèm khi giải mã là bản lọc. Giá trị khác trả 422
@@ -295,7 +338,7 @@ cũ và filename **không đổi**. Mục này **thay thế** quy tắc ở 0.3.
 **FE cần làm:**
 
 1. Thêm toggle `Tự động lọc ký tự đệm (Playfair/Hill padding)` cho chế độ giải mã
-   Playfair/Hill; bật thì dùng `padding.filtered`, tắt thì dùng `result` (A.9). Nếu chưa
+   Playfair/Hill; bật thì dùng `padding.filtered`, tắt thì dùng `result` (A.10). Nếu chưa
    làm toggle, hiển thị `padding.filtered` để giữ trải nghiệm gần như cũ.
 2. Playfair text: dùng `playfairDecrypt` thay cho `transformText` khi giải mã (helper cũ
    chỉ trả `result` thô). Playfair file: xem trước bằng `playfairPreviewDecryptFile`, tải
@@ -652,7 +695,7 @@ Các vector bắt buộc:
 | Decrypt | `GWGW` | — | `XQXQ` (lọc: `XX`) |
 
 Playfair output luôn uppercase ASCII. Decrypt trả `result` là prepared plaintext thô
-(giữ mọi filler) và `padding` chỉ ra filler nhận diện được (A.9): filler giữa cặp chữ
+(giữ mọi filler) và `padding` chỉ ra filler nhận diện được (A.10): filler giữa cặp chữ
 lặp và filler cuối. Vì ciphertext không phân biệt filler với chữ thật, bản lọc mất chữ
 thật trùng mẫu filler (`AX → A`). Backend không phục hồi `J`, case, whitespace, dấu câu
 hoặc Unicode đã bị loại. FE **không được tự strip filler** ngoài `padding.filtered` và
@@ -730,7 +773,7 @@ khác giữ nguyên. Mặc định chữ Việt có dấu NFC/NFD không tham gi
 `stripDiacritics=true` chuyển chúng (kể cả `đ/Đ`) thành ASCII trước khi mã hóa.
 Encrypt đệm `padChar` (mặc định `X`) và nối vị trí padding sau toàn bộ text; decrypt
 không xóa padding khỏi `result` mà trả `padding` nhận diện tối đa `m − 1` chữ `padChar`
-ở cuối (A.9). Response trả toàn bộ `blocks`, phân tích `key` và warnings
+ở cuối (A.10). Response trả toàn bộ `blocks`, phân tích `key` và warnings
 W01/W02/W03. Vector kiểm nhanh: `HELP → DPLE`; vector cấp bốn `TEST → FNMP` với
 K `[[3,1,2,0],[0,5,1,4],[0,0,7,2],[0,0,0,9]]`.
 
@@ -937,7 +980,7 @@ export interface SuccessResponse {
   result: string;
 }
 
-/** Ký tự đệm nhận diện khi giải mã Playfair/Hill (mục A.9). */
+/** Ký tự đệm nhận diện khi giải mã Playfair/Hill (mục A.10). */
 export interface PaddingInfo {
   count: number;
   /** Vị trí 0-based trong dãy chữ cái A–Z/a–z của result, tăng dần. */
@@ -1044,7 +1087,7 @@ Mọi success dùng đúng HTTP `200`. Với năm cipher cũ, success JSON luôn
 ```
 
 Ngoại lệ duy nhất: **Playfair decrypt** (text và file `response_mode=content`) có ba
-trường `success,result,padding` (A.9):
+trường `success,result,padding` (A.10):
 
 ```json
 {"success":true,"result":"ABXQ","padding":{"count":1,"positions":[3],"filtered":"ABX"}}
@@ -1297,7 +1340,7 @@ curl -sS -i -X POST http://localhost:8000/api/vigenere/encrypt \
 
 Đổi `encrypt` thành `decrypt` và truyền ciphertext tương ứng để gọi năm endpoint
 decrypt. Ví dụ Playfair decrypt trả normalized/prepared plaintext thô kèm `padding`
-(A.9), không phục hồi input.
+(A.10), không phục hồi input.
 
 ## 8. File flow
 
@@ -1320,7 +1363,7 @@ Không tự đặt `Content-Type` khi gửi `FormData`; browser phải thêm mul
 lọc (`padding.filtered`), `false`/bỏ trống trả bản thô. Preview `content` luôn trả
 `{success,result,padding}` với `result` thô; encrypt bỏ qua giá trị hợp lệ. Giá trị khác
 `true`/`false` (kể cả `TRUE`, `1`, chuỗi rỗng) trả 422. Gửi trường này theo trạng thái
-toggle lọc ký tự đệm (A.9); Caesar/Vigenère không đọc nó.
+toggle lọc ký tự đệm (A.10); Caesar/Vigenère không đọc nó.
 
 Caesar multipart key được trim, phải khớp `[+-]?[0-9]+` và dài tối đa 32 ký tự.
 Vigenère key phải khớp `[A-Za-z]+` mà không tự trim/sửa. Playfair key lọc ký tự
@@ -1727,7 +1770,7 @@ W02, W03:
 
 W01 chỉ có ở encrypt; W02 chỉ ở transform; W03 có thể có ở cả bốn route. Decrypt
 không xóa padding khỏi `result`; FE chọn hiển thị `result` hoặc `padding.filtered`
-theo toggle lọc ký tự đệm (A.9) và luôn hiển thị warning server trả.
+theo toggle lọc ký tự đệm (A.10) và luôn hiển thị warning server trả.
 
 ### 9.2 Lỗi và cảnh báo DES
 
@@ -1843,7 +1886,7 @@ source     = text | file
 text/file  = input hiện tại
 key/a/b    = raw input theo cipher; Hill thêm keyVariant, matrix/keyword, m
 options    = Hill stripDiacritics, padChar; DES format (text|hex), mode (ECB|CBC), iv
-filterPad  = boolean; toggle lọc ký tự đệm cho Playfair/Hill decrypt (A.9)
+filterPad  = boolean; toggle lọc ký tự đệm cho Playfair/Hill decrypt (A.10)
 result     = null | server result
 loading    = boolean
 error      = null | user-facing message

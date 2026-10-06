@@ -268,6 +268,40 @@ def test_file_route_guard_inventory_is_exactly_six() -> None:
     } == FILE_ROUTE_PATHS
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/rsa/keys",
+        "/api/rsa/keys/random",
+        "/api/rsa/encrypt",
+        "/api/rsa/decrypt",
+    ],
+)
+def test_rsa_over_ceiling_uses_exact_four_field_envelope(path: str) -> None:
+    events, receive_calls = _run_asgi(
+        app,
+        [(b"content-length", str(config.MAX_REQUEST_BYTES + 1).encode("ascii"))],
+        path,
+    )
+    assert receive_calls == 0
+    assert events[0]["status"] == 413
+    assert json.loads(_response_body(events)) == {
+        "success": False,
+        "code": "REQUEST_TOO_LARGE",
+        "message": "Yêu cầu vượt quá dung lượng cho phép.",
+        "field": None,
+    }
+
+
+def test_rsa_nearby_path_keeps_baseline_two_field_guard_envelope() -> None:
+    events, _ = _run_asgi(
+        app,
+        [(b"content-length", str(config.MAX_REQUEST_BYTES + 1).encode("ascii"))],
+        "/api/rsax/encrypt",
+    )
+    assert set(json.loads(_response_body(events))) == {"success", "message"}
+
+
 def test_multipart_completion_guard_ignores_routes_outside_exact_file_set() -> None:
     scope_keys: list[bool] = []
 

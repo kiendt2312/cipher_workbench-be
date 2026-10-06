@@ -1,8 +1,8 @@
-# Backend Caesar, Vigenère, Playfair, Affine, Columnar Transposition, Hill và DES
+# Backend Caesar, Vigenère, Playfair, Affine, Columnar, Hill, DES và RSA
 
-Backend FastAPI cung cấp API mã hóa/giải mã cho bảy thuật toán: năm hệ mã cổ điển
+Backend FastAPI cung cấp API mã hóa/giải mã cho tám thuật toán: năm hệ mã cổ điển
 **Caesar**, **Vigenère**, **Playfair**, **Affine**, **Columnar Transposition**, hệ mã
-khối cổ điển **Hill** và hệ mã khối hiện đại **DES** (64 bit, 16 vòng Feistel).
+khối cổ điển **Hill**, hệ mã khối **DES**, và textbook **RSA** phục vụ học tập.
 API nhận văn bản JSON hoặc file `.txt`, trả kết quả xem trước dạng JSON hoặc file
 đính kèm do server tạo.
 
@@ -13,7 +13,7 @@ chính `result` server trả về. Client chỉ nên kiểm tra sơ bộ để h
 
 Đội Frontend nên bắt đầu từ
 [`repo_docs/frontend-integration.md`](repo_docs/frontend-integration.md), tài liệu
-consumer contract chi tiết cho cả 23 endpoint cipher, health và lịch sử.
+consumer contract chi tiết cho cả 27 endpoint cipher, health và lịch sử.
 
 ## 1. Tổng quan hành vi
 
@@ -29,7 +29,7 @@ JSON text hoặc multipart .txt
  request guards + validation xác định
               │
               ▼
- Caesar | Vigenère | Playfair | Affine | Columnar | Hill | DES core
+ Caesar | Vigenère | Playfair | Affine | Columnar | Hill | DES | RSA core
               │
               ▼
  JSON (hai trường; Hill/DES thêm warnings) hoặc attachment UTF-8
@@ -204,7 +204,40 @@ Hello World      + 133457799BBCDFF1 (text, CBC, IV 0…0)     → B1CA74BB351426
 8787878787878787 + 0E329232EA6D0D73 (hex, ECB)              → 0000000000000000
 ```
 
-## 3. API: 23 endpoint (22 POST, 1 GET)
+### 2.7 Textbook RSA (chỉ dùng để học)
+
+RSA dùng số nguyên Python và phép lũy thừa modulo trực tiếp, không OAEP, không
+PKCS#1 v1.5, không chữ ký và không serialization khóa. Khóa ngẫu nhiên chỉ có
+modulus đúng 16/32/64/128 bit, vì vậy **không an toàn cho dữ liệu thật**. Server
+không thể xác thực ciphertext, private key hoặc metadata; khóa/metadata sai vẫn có
+thể tạo plaintext hợp lệ quan sát được.
+
+- Mọi số mật mã là chuỗi thập phân ASCII, tối đa `2^128-1`; `p,q` thủ công tối đa
+  `10^12`. Control như `bits`, `traceBlockIndex`, `originalUtf8ByteLength` là JSON integer.
+- `inputType=number|text`; text dùng `mode=char|block`. Char ánh xạ từng Unicode code
+  point. Block ghép UTF-8 big-endian theo `k` lớn nhất thỏa `256^k <= n-1`.
+- Text được giữ nguyên, gồm whitespace, CR/LF/CRLF, composition, trailing NUL và BOM
+  `U+FEFF`. Block decrypt phải nhận lại `originalUtf8ByteLength` do encrypt trả.
+- Transform luôn trả toàn bộ blocks/result. `traceBlockIndex` tùy chọn trả bảng
+  square-and-multiply đầy đủ cho đúng một block; keygen luôn trả full Euclid table.
+- RSA stateless, không ghi history/database. File chỉ là plaintext `.txt` để encrypt,
+  tối đa 1.000.000 byte và 10.000 code point; không upload/download ciphertext.
+
+```json
+POST /api/rsa/keys
+{"p":"17","q":"11","e":"7"}
+
+POST /api/rsa/encrypt
+{"e":"17","n":"3233","inputType":"number","data":"65"}
+
+POST /api/rsa/decrypt
+{"d":"23","n":"187","inputType":"number","cipher":["11"]}
+```
+
+Lỗi RSA có đúng `{success:false,code,message,field}` với status 413/415/422/500;
+field lạ, trùng hoặc không áp dụng đều bị từ chối.
+
+## 3. API: 27 endpoint (26 POST, 1 GET)
 
 | Cipher | Method và path | Request | Vai trò |
 |---|---|---|---|
@@ -231,6 +264,10 @@ Hello World      + 133457799BBCDFF1 (text, CBC, IV 0…0)     → B1CA74BB351426
 | DES | `POST /api/des/decrypt` | JSON | Giải mã bản mã hex ra text hoặc hex |
 | DES | `POST /api/des/file` | Multipart | Mã hóa/giải mã file |
 | DES | `POST /api/des/trace` | JSON | Giá trị trung gian của đúng một khối |
+| RSA | `POST /api/rsa/keys` | JSON | Sinh khóa thủ công và full Euclid table |
+| RSA | `POST /api/rsa/keys/random` | JSON | Sinh modulus đúng 16/32/64/128 bit |
+| RSA | `POST /api/rsa/encrypt` | JSON hoặc multipart | Mã hóa number/text hoặc plaintext `.txt` |
+| RSA | `POST /api/rsa/decrypt` | JSON | Giải mã number/text từ cipher package |
 
 Consumer đang dùng allowlist 12 route phải mở lên đúng ba path Columnar trên để
 thành 15 route; không có route generalized hoặc versioned mới. OpenAPI gắn cả ba
@@ -247,6 +284,10 @@ DES có đủ text/file như năm cipher cổ điển, thêm `/api/des/trace`. B
 encrypt/decrypt/file (content mode) trả `{success,result,warnings}`; `/trace` trả
 thêm `trace`. Lỗi DES dùng envelope hai trường `{success,message}` như năm cipher cổ
 điển, không có `code`. Chi tiết ở §3.3 và §4.1.
+
+RSA chỉ có đúng bốn POST route trên, không có `/file`, `/trace`, download hay history
+route riêng. `/encrypt` là route duy nhất nhận cả JSON và multipart; mọi response RSA
+kể cả file encrypt đều là JSON.
 
 ### 3.1 Text JSON
 

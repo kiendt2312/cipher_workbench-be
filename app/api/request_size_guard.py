@@ -20,6 +20,15 @@ FILE_ROUTE_PATHS = frozenset(
         "/api/des/file",
     }
 )
+RSA_ROUTE_PATHS = frozenset(
+    {
+        "/api/rsa/keys",
+        "/api/rsa/keys/random",
+        "/api/rsa/encrypt",
+        "/api/rsa/decrypt",
+    }
+)
+MULTIPART_ROUTE_PATHS = FILE_ROUTE_PATHS | {"/api/rsa/encrypt"}
 
 
 def _content_length(scope: Scope) -> bytes | None:
@@ -44,7 +53,7 @@ def _header(scope: Scope, target: bytes) -> bytes | None:
 def _multipart_boundary(scope: Scope) -> bytes | None:
     """Return the declared multipart boundary for the file endpoint, if any."""
 
-    if scope.get("method") != "POST" or scope.get("path") not in FILE_ROUTE_PATHS:
+    if scope.get("method") != "POST" or scope.get("path") not in MULTIPART_ROUTE_PATHS:
         return None
 
     content_type = _header(scope, b"content-type")
@@ -100,10 +109,16 @@ class RequestSizeGuard:
             await self.app(scope, receive, send)
             return
 
-        response = JSONResponse(
-            status_code=413,
-            content={"success": False, "message": _request_too_large_message(scope)},
-        )
+        if scope.get("path") in RSA_ROUTE_PATHS:
+            content = {
+                "success": False,
+                "code": "REQUEST_TOO_LARGE",
+                "message": messages.RSA_REQUEST_TOO_LARGE,
+                "field": None,
+            }
+        else:
+            content = {"success": False, "message": _request_too_large_message(scope)}
+        response = JSONResponse(status_code=413, content=content)
         await response(scope, receive, send)
 
 

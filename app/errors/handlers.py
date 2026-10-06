@@ -10,15 +10,33 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import messages
-from .exceptions import AppError, HillError
+from .exceptions import AppError, HillError, RsaError
 
 logger = logging.getLogger(__name__)
+
+RSA_PATHS = frozenset(
+    {
+        "/api/rsa/keys",
+        "/api/rsa/keys/random",
+        "/api/rsa/encrypt",
+        "/api/rsa/decrypt",
+    }
+)
 
 
 def _error_response(status_code: int, message: str) -> JSONResponse:
     return JSONResponse(
         status_code=status_code,
         content={"success": False, "message": message},
+    )
+
+
+def _rsa_error_response(
+    status_code: int, code: str, message: str, field: str | None = None
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=status_code,
+        content={"success": False, "code": code, "message": message, "field": field},
     )
 
 
@@ -42,6 +60,8 @@ def _log_server_error(request: Request, exc: Exception) -> None:
 async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
     if exc.status_code >= 500:
         _log_server_error(request, exc)
+    if isinstance(exc, RsaError):
+        return _rsa_error_response(exc.status_code, exc.code, exc.message, exc.field)
     if isinstance(exc, HillError):
         return JSONResponse(
             status_code=exc.status_code,
@@ -58,11 +78,22 @@ async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
 async def request_validation_error_handler(
     request: Request, exc: RequestValidationError
 ) -> JSONResponse:
-    del request, exc
+    del exc
+    if request.url.path in RSA_PATHS:
+        return _rsa_error_response(422, "INVALID_REQUEST", messages.RSA_INVALID_REQUEST)
     return _error_response(422, messages.INVALID_REQUEST_BODY)
 
 
 async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+    if request.url.path in RSA_PATHS:
+        if exc.status_code == 415:
+            return _rsa_error_response(
+                415, "UNSUPPORTED_MEDIA_TYPE", messages.RSA_UNSUPPORTED_MEDIA_TYPE
+            )
+        if exc.status_code >= 500:
+            _log_server_error(request, exc)
+            return _rsa_error_response(500, "INTERNAL_ERROR", messages.RSA_INTERNAL_ERROR)
+        return _rsa_error_response(422, "INVALID_REQUEST", messages.RSA_INVALID_REQUEST)
     if exc.status_code == 400:
         # Starlette reports malformed multipart bodies as HTTP 400.  At the
         # public boundary this is the same unreadable-body prerequisite as a
@@ -82,6 +113,8 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException) 
 
 async def unexpected_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     _log_server_error(request, exc)
+    if request.url.path in RSA_PATHS:
+        return _rsa_error_response(500, "INTERNAL_ERROR", messages.RSA_INTERNAL_ERROR)
     return _error_response(500, messages.UNEXPECTED_FAILURE)
 
 
