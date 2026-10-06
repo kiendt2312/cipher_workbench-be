@@ -216,6 +216,62 @@ def test_des_migration_preserves_rows_and_allows_des(db_url: str) -> None:
         _insert_rows(db_url, 1, cipher="aes")
 
 
+def test_rsa_migration_preserves_rows_and_allows_rsa(db_url: str) -> None:
+    _run_alembic(db_url, "downgrade", "0003")
+    _insert_rows(db_url, 1, cipher="caesar")
+    _insert_rows(db_url, 1, cipher="des")
+    _run_alembic(db_url, "upgrade", "head")
+    _insert_rows(db_url, 1, cipher="rsa")
+
+    assert run_sql(db_url, "SELECT cipher FROM cipher_operations ORDER BY id") == [
+        ("caesar",),
+        ("des",),
+        ("rsa",),
+    ]
+    with pytest.raises(IntegrityError):
+        _insert_rows(db_url, 1, cipher="aes")
+
+
+def test_rsa_rows_must_be_removed_before_migration_downgrade(db_url: str) -> None:
+    _insert_rows(db_url, 1, cipher="rsa")
+    try:
+        with pytest.raises(DBAPIError):
+            _run_alembic(db_url, "downgrade", "0003")
+        run_sql(db_url, "DELETE FROM cipher_operations WHERE cipher = 'rsa'")
+        _run_alembic(db_url, "downgrade", "0003")
+    finally:
+        _run_alembic(db_url, "upgrade", "head")
+
+
+def test_rsa_response_survives_pre_migration_schema(
+    db_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.api import history_recorder
+
+    payload = {"e": "17", "n": "3233", "inputType": "number", "data": "65"}
+    warnings: list[str] = []
+    monkeypatch.setattr(history_recorder.logger, "warning", warnings.append)
+    try:
+        _run_alembic(db_url, "downgrade", "0003")
+        with TestClient(app) as client:
+            response = client.post("/api/rsa/encrypt", json=payload)
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "success": True,
+            "inputType": "number",
+            "blocks": ["65"],
+            "cipher": ["2790"],
+            "blockSize": None,
+            "trace": None,
+        }
+        assert run_sql(db_url, "SELECT count(*) FROM cipher_operations") == [(0,)]
+        assert warnings == ["Could not record cipher operation history"]
+        assert "3233" not in " ".join(warnings)
+    finally:
+        _run_alembic(db_url, "upgrade", "head")
+
+
 def test_history_filter_returns_des_text_and_file_rows(db_url: str) -> None:
     with TestClient(app) as client:
         client.post("/api/caesar/encrypt", json={"text": "Hi", "key": 1})
@@ -232,6 +288,50 @@ def test_history_filter_returns_des_text_and_file_rows(db_url: str) -> None:
         ("des", "file"),
         ("des", "text"),
     ]
+
+
+def test_rsa_history_filter_returns_json_and_file_metadata_without_payload(db_url: str) -> None:
+    marker = "RSA-SENSITIVE-PLAINTEXT"
+    filename = "rsa-private-marker.txt"
+    with TestClient(app) as client:
+        json_response = client.post(
+            "/api/rsa/encrypt",
+            json={
+                "e": "3",
+                "n": "67591",
+                "inputType": "text",
+                "mode": "block",
+                "data": marker,
+                "traceBlockIndex": 0,
+            },
+        )
+        file_response = client.post(
+            "/api/rsa/encrypt",
+            data={"e": "3", "n": "67591", "mode": "block"},
+            files={"file": (filename, b"file marker", "text/plain")},
+        )
+        assert json_response.status_code == file_response.status_code == 200
+        client.post("/api/rsa/keys", json={"p": "17", "q": "11", "e": "7"})
+        client.post("/api/rsa/keys/random", json={"bits": 16})
+        page = client.get("/api/history?cipher=rsa").json()["result"]
+
+    assert sorted((item["source"], item["operation"]) for item in page["items"]) == [
+        ("file", "encrypt"),
+        ("text", "encrypt"),
+    ]
+    assert all(item["responseMode"] is None for item in page["items"])
+    rows = run_sql(db_url, "SELECT row_to_json(c)::text FROM cipher_operations c")
+    dumped = " ".join(row[0] for row in rows)
+    cipher_values = json_response.json()["cipher"] + file_response.json()["cipher"]
+    for sensitive in (
+        marker,
+        filename,
+        "67591",
+        "traceBlockIndex",
+        "privateKey",
+        *cipher_values,
+    ):
+        assert sensitive.lower() not in dumped.lower()
 
 
 def test_health_reports_ok(db_url: str) -> None:

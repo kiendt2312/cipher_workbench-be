@@ -4,7 +4,7 @@
 
 Xem `proposal.md` cho động cơ và phạm vi. Backend hiện là Python `>=3.12,<3.13`, FastAPI/Pydantic v2, chia `app/core` cho thuật toán thuần và `app/api` cho schema/router. Router DES là tiền lệ gần nhất cho model strict, OpenAPI explicit và `run_in_threadpool`; request-size/multipart guards chạy trước router; history chỉ ghi các route có trong whitelist hiện hữu.
 
-RSA cắt ngang core, hai media type trên cùng route encrypt, middleware guard và error handling, nhưng không thay đổi database. Hai tài liệu RSA ở source checkout là reference; Q1–Q15 trong proposal là authority cho ambiguity/deviation.
+RSA cắt ngang core, hai media type trên cùng route encrypt, middleware guard và error handling. Quyết định owner Q16 bổ sung transform metadata vào history/database hiện hữu mà không lưu content/key/trace và không đổi contract RSA. Hai tài liệu RSA ở source checkout là reference; Q1–Q16 trong proposal là authority cho ambiguity/deviation.
 
 ## Goals / Non-Goals
 
@@ -13,12 +13,13 @@ RSA cắt ngang core, hai media type trên cùng route encrypt, middleware guard
 - Tạo một seam rõ giữa số học/encoding thuần và transport FastAPI để test vector, lỗi, OpenAPI và lossless round-trip độc lập.
 - Bảo đảm mọi input không tin cậy bị giới hạn trước bước tốn CPU/bộ nhớ, mọi response RSA theo exact schema và route cũ không đổi.
 - Giữ đúng bốn endpoint bằng cách đặt selected-block trace trong request transform và dùng cùng route encrypt cho JSON/multipart.
+- Dùng đúng recorder/store/schema history hiện hữu cho hai transform, giữ best-effort khi DB tắt, lỗi hoặc chưa chạy migration.
 
 **Non-Goals:**
 
-- Không tạo framework cipher chung, repository abstraction, persistence, migration hoặc dependency runtime mới.
+- Không tạo framework cipher chung, repository abstraction, bảng/cột persistence hoặc dependency runtime mới; chỉ thêm migration nới CHECK cipher hiện hữu.
 - Không tối ưu textbook RSA thành thư viện mật mã production, không thêm padding/signature/key serialization.
-- Không đổi middleware/error/schema/history của route cũ ngoài nhánh nhận diện exact RSA path ở tầng guard.
+- Không đổi middleware/error/schema/history của route cũ ngoài đăng ký RSA transform/filter và CHECK tương thích.
 
 ## Decisions
 
@@ -134,11 +135,17 @@ Validation được viết thành các phase đúng `rsa-error-handling`; phase 
 
 Alternative thay toàn bộ global 422/500 contract bị loại vì Q2/Q15 cấm đổi old APIs; chỉ nhánh RSA path được phép cộng thêm. Alternative chỉ catch trong endpoint bị loại vì không bao phủ lỗi framework/response serialization. Alternative tái dùng two-field exception hiện hành bị loại vì thiếu `code/field`.
 
-### 9. CPU-bound work rời event loop, không persistence
+### 9. CPU-bound work rời event loop; history metadata tách khỏi crypto state
 
-Primality, random key generation và transform list được gọi qua threadpool như tiền lệ DES. Request parsing, bounded file read và response serialization ở async route. Collection/operand caps chạy trước threadpool. Không gọi `note_history`, không thêm RSA vào `history.routes`, `CIPHERS`, model hoặc migration; whitelist hiện hữu khiến middleware bỏ qua RSA.
+Primality, random key generation và transform list được gọi qua threadpool như tiền lệ DES. Request parsing, bounded file read và response serialization ở async route. Collection/operand caps chạy trước threadpool.
 
-Alternative chạy vòng modular exponentiation 40.000 block trực tiếp trong event loop bị loại vì có thể làm nghẽn request khác. Alternative queue/background job bị loại vì mở rộng contract và state.
+`CIPHERS` thêm `rsa`; route registry thêm chính xác hai transform path. `/api/rsa/encrypt` có route matcher riêng theo media type: JSON là `source="text"`, multipart là `source="file"`; `/api/rsa/decrypt` là `source="text"`. Keygen không nằm trong registry. Middleware/store hiện hữu tiếp tục ghi đúng một row sau response và nuốt lỗi/timeout DB.
+
+`note_history` chỉ nhận số đo an toàn: JSON text encrypt ghi `input_length=len(data)`; JSON text decrypt ghi `output_length=len(plaintext)`; multipart encrypt ghi `input_length=len(raw)` tính cả BOM. Number transform và phía ciphertext array để length `NULL`; RSA luôn `response_mode=NULL`. Không truyền plaintext, ciphertext, key, `data`, cipher array, `originalUtf8ByteLength`, filename, header, IP/user-agent hoặc trace vào notes/store.
+
+Migration `0004` drop/recreate `ck_cipher_operations_cipher` để thêm `rsa`, giữ nguyên 11 cột, hai index và mọi row. Nếu code chạy trước migration, insert RSA vi phạm CHECK; recorder bắt lỗi theo semantics best-effort nên transform response vẫn nguyên vẹn và chỉ cảnh báo generic. Rollback migration chỉ thành công khi không còn row RSA, giống tiền lệ Hill/DES; deploy phải chạy `alembic upgrade head` trước app để không mất history.
+
+Alternative chạy vòng modular exponentiation 40.000 block trực tiếp trong event loop bị loại vì có thể làm nghẽn request khác. Alternative queue/background job hoặc bảng RSA riêng bị loại vì mở rộng contract và state.
 
 ### 10. Warning giáo dục là tài liệu, không đổi success envelope
 
@@ -154,13 +161,16 @@ OpenAPI descriptions, README/consumer guide SHALL nói rõ textbook RSA 16–128
 - **[Miller–Rabin witness implementation sai làm lọt hợp số]** → Unit test prime/composite boundary và pseudoprime corpus trong miền 64 bit; recheck invariant sau generation.
 - **[Hai media type cùng route dễ có validation precedence khác nhau]** → Tách phase JSON/multipart nhưng dùng chung decimal/domain validators và cùng error factory; integration test cặp tương đương.
 - **[RSA-specific 64 MiB envelope là nhánh cross-cutting]** → Match chính xác `/api/rsa/`, thêm regression tests cho mọi old file/non-file guard body.
+- **[App được deploy trước migration]** → CHECK cũ từ chối row RSA nhưng recorder nuốt lỗi, nên crypto response không hỏng; docs yêu cầu migrate-first và nêu rõ khoảng thời gian này mất metadata RSA.
+- **[Metadata vô tình chứa secret/content]** → Không đổi schema/store; test allow-list field và dump row PostgreSQL với marker nhạy cảm, key, cipher, trace, filename để chứng minh không có payload.
 
 ## Migration Plan
 
 1. Thêm core và unit tests, chưa đăng router.
 2. Thêm strict schemas/error mapping, response models và OpenAPI fragments.
-3. Thêm router RSA, middleware path handling và include router; không có database migration.
-4. Chạy unit/integration/OpenAPI/history regression, Ruff và coverage gate theo repo trước merge implementation tương lai.
-5. Cập nhật README/consumer docs với warning và examples.
+3. Thêm router RSA, middleware path handling và include router; trạng thái ban đầu không có database migration (đã hoàn thành theo quyết định cũ).
+4. Theo Q16, thêm registration/history notes và migration `0004` nới CHECK để nhận `rsa`; không chạy migration trên DB của owner trong change này.
+5. Chạy unit/integration/OpenAPI/history regression, migration upgrade/downgrade trên PostgreSQL disposable, Ruff và coverage gate.
+6. Cập nhật README/consumer docs với warning, history filter và deploy/rollback behavior.
 
-Rollback là bỏ router include và các file RSA, rồi hoàn nguyên riêng nhánh RSA trong guards/messages. Vì không có persistence/schema change hoặc server state, không cần data migration/cleanup; old APIs phải giữ nguyên xuyên suốt deploy/rollback.
+Rollback feature history là dừng app, xóa các row `cipher='rsa'` nếu owner chấp nhận mất metadata, chạy `alembic downgrade 0003`, rồi deploy code không đăng ký RSA history. Nếu còn row RSA, downgrade cố ý thất bại khi tạo lại CHECK cũ để không âm thầm xóa/sửa dữ liệu. Rollback toàn bộ RSA vẫn bỏ router include/các file RSA và hoàn nguyên guard/messages; cipher content/key không cần cleanup vì chưa bao giờ được persist.

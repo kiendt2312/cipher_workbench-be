@@ -11,7 +11,7 @@ Backend hiện chưa có RSA trong khi hai tài liệu tham chiếu ngày 2026-1
 - Mọi cryptographic value dùng chuỗi thập phân canonical; không hỗ trợ hex/base64. Operand bị giới hạn ở `2^128-1`; manual `p,q <= 10^12`; text tối đa 10.000 Unicode code point; file tối đa 1.000.000 byte; cipher list tối đa 1/10.000/40.000 item theo number/char/block.
 - Transform mặc định trả toàn bộ block/result nhưng không trả bảng từng bit. Client có thể chọn đúng một `traceBlockIndex` mỗi request để nhận bảng modPow đầy đủ, không cắt ngầm; keygen luôn trả toàn bộ bảng Euclid mở rộng.
 - Lỗi RSA dùng status hiện hành (413/415/422/500) nhưng có envelope bổ sung riêng `{success:false,code,message,field}`. Request strict: field lạ, trùng hoặc không áp dụng bị từ chối; lỗi lexical của số dùng `NOT_INTEGER`. Không thay đổi error contract của API cũ.
-- RSA hoàn toàn stateless và không tham gia database/history. Đây là textbook RSA không OAEP, không dùng cho dữ liệu thật và không thể xác định đáng tin cậy một kết quả giải mã trông hợp lệ có dùng sai khóa hay không.
+- RSA vẫn stateless về nội dung/khóa nhưng hai endpoint transform tham gia history metadata chuẩn của server: chỉ cipher, operation, source, độ dài an toàn khi xác định được, status, kết quả success và duration. Hai endpoint keygen không ghi history; không lưu plaintext, ciphertext, key, cipher array, metadata lossless hoặc trace. Đây là textbook RSA không OAEP, không dùng cho dữ liệu thật và không thể xác định đáng tin cậy một kết quả giải mã trông hợp lệ có dùng sai khóa hay không.
 
 ## Capabilities
 
@@ -27,12 +27,15 @@ Backend hiện chưa có RSA trong khi hai tài liệu tham chiếu ngày 2026-1
 ### Modified Capabilities
 
 - `app-runtime`: giữ trần hạ tầng 64 MiB nhưng các request RSA bị guard từ chối phải dùng exact RSA error envelope bốn trường; hành vi của mọi route cũ không đổi.
+- `operation-history`: ghi success/error metadata cho `/api/rsa/encrypt` và `/api/rsa/decrypt`, gồm multipart `.txt` trên route encrypt; keygen và mọi payload/key/trace vẫn bị loại.
+- `history-api`: chấp nhận `cipher=rsa` và trả các row RSA bằng response schema hiện hữu.
+- `database-infrastructure`: thêm migration tương thích chỉ nới CHECK `cipher` của bảng hiện hữu để nhận `rsa`.
 
 ## Impact
 
 - Code tương lai: thêm core/schema/router RSA, đăng ký router ở `app/main.py`, mở rộng request-size guard chỉ để nhận diện envelope RSA, thêm message/exception RSA mà không sửa contract cũ.
 - API: thêm bốn POST endpoint dưới `/api/rsa`; `/api/rsa/encrypt` quảng bá cả `application/json` và `multipart/form-data`; không thêm route generalized hoặc versioned.
-- Persistence: không migration, không thêm `rsa` vào `CIPHERS`, history filter hoặc bảng route ghi lịch sử.
+- Persistence: thêm `rsa` vào registry/filter/route history hiện hữu và migration Alembic `0004` chỉ nới CHECK `cipher`; không thêm bảng, cột hoặc hệ thống lưu nội dung/khóa riêng.
 - Dependency: không cần dependency runtime mới; random generation dùng nguồn ngẫu nhiên an toàn của thư viện chuẩn.
 - Tài liệu tương lai: README, consumer guide và helper FE cần mô tả RSA, warning giáo dục, metadata lossless và selected-block trace.
 
@@ -41,7 +44,7 @@ Backend hiện chưa có RSA trong khi hai tài liệu tham chiếu ngày 2026-1
 - UI/FE implementation; authentication, authorization hoặc session.
 - OAEP, PKCS#1 v1.5 encryption padding, chữ ký số, PEM/DER/JWK, certificate, key import/export và hybrid encryption.
 - Khóa production 2048 bit trở lên, bảo vệ side-channel, CRT optimization hoặc cam kết bảo mật dữ liệu thật.
-- Ciphertext file upload/download, hex/base64, lưu server-side hoặc lịch sử database.
+- Ciphertext file upload/download, hex/base64, hoặc lưu server-side plaintext/ciphertext/key/trace; history chỉ chứa metadata chuẩn đã được quyết định bổ sung.
 - Tự động phát hiện sai private key khi output vẫn là Unicode/UTF-8 hợp lệ.
 - Thay đổi route, thuật toán, response, error envelope, history hoặc deployment của bảy cipher hiện hữu.
 
@@ -51,6 +54,7 @@ Backend hiện chưa có RSA trong khi hai tài liệu tham chiếu ngày 2026-1
 2. `scope_rsa_BE.pdf` là tham chiếu cho phạm vi BE-01…BE-07, bốn endpoint, thuật toán chia block, bảng lỗi và TC-01…TC-13.
 3. `rsa-giai-thich.html` là tham chiếu cho workflow, công thức, vector, bảng Euclid và bảng square-and-multiply.
 4. Main specs/runtime hiện tại là nguồn cho tính tương thích của API cũ, status HTTP, strict request precedent, guard 64 MiB, OpenAPI, statelessness và ranh giới history.
+5. Quyết định chủ sở hữu mở rộng scope ngày 2026-10-06 cho RSA transform history metadata supersede riêng các câu “RSA không history” đã được chấp nhận trước đó.
 
 Hai tài liệu RSA là tài liệu tham chiếu phải được bám theo, không phải nguồn bất biến có quyền ghi đè quyết định chủ sở hữu. Mọi khác biệt có chủ đích phải truy vết về Q tương ứng.
 
@@ -74,6 +78,14 @@ Hai tài liệu RSA là tài liệu tham chiếu phải được bám theo, khô
 | Q14 | Operand tối đa `2^128-1`; manual `p,q <= 10^12`; collection cap number=1, char=10.000, block=40.000; crypto value là decimal string, control value nhỏ là JSON integer; raw guard phải chặn normalization bypass. |
 | Q15 | RSA error luôn đúng `{success:false,code,message,field}`; `field` luôn có mặt; strict unknown/duplicate/inapplicable; lexical number dùng `NOT_INTEGER`; không đổi API cũ. |
 
+### Quyết định mở rộng history của chủ sở hữu ngày 2026-10-06
+
+| # | Quyết định |
+|---|---|
+| Q16 | Bổ sung history metadata chuẩn, best-effort cho success/error của `/api/rsa/encrypt` và `/api/rsa/decrypt`, gồm encrypt multipart `.txt`; cho phép `GET /api/history?cipher=rsa`. Hai keygen route tiếp tục bị loại. Chỉ dùng các cột metadata hiện hữu; tuyệt đối không persist plaintext, ciphertext, `p/q/e/d`, private/public key, `data`, cipher array, `textMetadata`, `originalUtf8ByteLength`, filename/file content, IP/user-agent hoặc per-bit/Euclid trace. Thêm migration tương thích cho CHECK hiện hữu; DB chưa upgrade được phép bỏ lỡ row RSA nhưng không được làm hỏng response transform. |
+
+Q1–Q15 và toàn bộ bằng chứng hoàn thành trước đó vẫn được giữ nguyên. Q16 chỉ supersede quyết định cũ “RSA transform không tham gia history/database”; stateless cipher package, exact bốn route/response/error/trace/file/limit/round-trip contract và keygen no-history không đổi.
+
 ### Khác biệt đã được chấp nhận
 
 | Tài liệu tham chiếu nói | Contract change này | Căn cứ |
@@ -86,4 +98,3 @@ Hai tài liệu RSA là tài liệu tham chiếu phải được bám theo, khô
 | Output format còn mở decimal/hex/base64 | Chỉ decimal string canonical | Q10 |
 | Random key size là câu hỏi mở | Chỉ exact modulus 16/32/64/128 bit | Q1, Q14; PDF BE-03 |
 | Không nêu operand/list ceiling tổng quát | Operand 128 bit và collection cap cố định | Q14 |
-

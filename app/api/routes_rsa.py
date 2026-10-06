@@ -8,6 +8,7 @@ from fastapi import APIRouter, Request
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.api.history_recorder import note_history
 from app.api.request_size_guard import MultipartCompletionGuard
 from app.api.rsa_schemas import (
     FileEncryptRequest,
@@ -323,6 +324,7 @@ async def _multipart_encrypt(request: Request) -> dict[str, Any]:
         raise error(413, "FILE_INVALID", messages.RSA_FILE_TOO_LARGE, "file")
     if not raw:
         raise error(422, "EMPTY_INPUT", messages.RSA_EMPTY_INPUT, "file")
+    note_history(request, input_length=len(raw))
     try:
         text = raw.decode("utf-8", errors="strict")
     except UnicodeDecodeError as exc:
@@ -359,7 +361,10 @@ async def encrypt(request: Request) -> dict[str, Any]:
     if media_type != "application/json":
         raise error(415, "UNSUPPORTED_MEDIA_TYPE", messages.RSA_UNSUPPORTED_MEDIA_TYPE)
     payload = decode_json(await request.body(), request.headers.get("content-type"))
-    return await run_in_threadpool(_encrypt, validate_encrypt(payload))
+    validated = validate_encrypt(payload)
+    if isinstance(validated, TextEncryptRequest):
+        note_history(request, input_length=len(validated.data))
+    return await run_in_threadpool(_encrypt, validated)
 
 
 @router.post(
@@ -372,4 +377,8 @@ async def encrypt(request: Request) -> dict[str, Any]:
 )
 async def decrypt(request: Request) -> dict[str, Any]:
     payload = decode_json(await request.body(), request.headers.get("content-type"))
-    return await run_in_threadpool(_decrypt, validate_decrypt(payload))
+    validated = validate_decrypt(payload)
+    result = await run_in_threadpool(_decrypt, validated)
+    if isinstance(validated, TextDecryptRequest):
+        note_history(request, output_length=len(result["plaintext"]))
+    return result

@@ -294,9 +294,13 @@ def test_openapi_has_exact_four_rsa_posts_and_contract_shapes(client: TestClient
     assert set(error_schema["required"]) == {"success", "code", "message", "field"}
 
 
-def test_rsa_routes_are_outside_history_whitelist_and_stateless(client: TestClient) -> None:
-    for path in ("/api/rsa/keys", "/api/rsa/keys/random", "/api/rsa/encrypt", "/api/rsa/decrypt"):
+def test_only_rsa_transforms_are_in_history_whitelist_and_crypto_stays_stateless(
+    client: TestClient,
+) -> None:
+    for path in ("/api/rsa/keys", "/api/rsa/keys/random"):
         assert match_cipher_route("POST", path) is None
+    assert match_cipher_route("POST", "/api/rsa/encrypt") is not None
+    assert match_cipher_route("POST", "/api/rsa/decrypt") is not None
     payload = {"e": "17", "n": "3233", "inputType": "number", "data": "65"}
     assert (
         client.post("/api/rsa/encrypt", json=payload).json()

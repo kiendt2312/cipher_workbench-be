@@ -220,8 +220,9 @@ thể tạo plaintext hợp lệ quan sát được.
   `U+FEFF`. Block decrypt phải nhận lại `originalUtf8ByteLength` do encrypt trả.
 - Transform luôn trả toàn bộ blocks/result. `traceBlockIndex` tùy chọn trả bảng
   square-and-multiply đầy đủ cho đúng một block; keygen luôn trả full Euclid table.
-- RSA stateless, không ghi history/database. File chỉ là plaintext `.txt` để encrypt,
-  tối đa 1.000.000 byte và 10.000 code point; không upload/download ciphertext.
+- RSA stateless về nội dung/khóa. Hai route transform ghi history **metadata** chuẩn
+  theo best-effort khi có DB; hai route keygen không ghi. File chỉ là plaintext `.txt`
+  để encrypt, tối đa 1.000.000 byte và 10.000 code point; không upload/download ciphertext.
 
 ```json
 POST /api/rsa/keys
@@ -286,8 +287,8 @@ thêm `trace`. Lỗi DES dùng envelope hai trường `{success,message}` như n
 điển, không có `code`. Chi tiết ở §3.3 và §4.1.
 
 RSA chỉ có đúng bốn POST route trên, không có `/file`, `/trace`, download hay history
-route riêng. `/encrypt` là route duy nhất nhận cả JSON và multipart; mọi response RSA
-kể cả file encrypt đều là JSON.
+route riêng; metadata transform được đọc qua `GET /api/history` chung. `/encrypt` là
+route duy nhất nhận cả JSON và multipart; mọi response RSA kể cả file encrypt đều là JSON.
 
 ### 3.1 Text JSON
 
@@ -661,7 +662,7 @@ uv sync --frozen
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-Không đặt `DATABASE_URL` thì app chạy không có database: 22 POST route cipher hoạt
+Không đặt `DATABASE_URL` thì app chạy không có database: 26 POST route cipher hoạt
 động bình thường, `/api/health` báo `database: "disabled"` và `/api/history` trả
 503. Muốn chạy app bằng uv (có `--reload`) nhưng dùng PostgreSQL của
 docker-compose, chỉ bật service `db`; nó mở cổng `127.0.0.1:${DB_HOST_PORT}`
@@ -750,16 +751,32 @@ chỉ thay đổi qua migration Alembic trong `alembic/versions/`.
 Bảng `cipher_operations` chỉ lưu metadata: cipher, operation, nguồn text/file,
 response mode, độ dài input/output (code point cho text, byte UTF-8 cho file),
 HTTP status, thành công hay lỗi và thời gian xử lý. Không lưu plaintext,
-ciphertext, key, tên file, nội dung file, IP hay user agent. Ghi lịch sử là
+ciphertext, key, tên file, nội dung file, IP hay user agent. Với RSA, bảng cũng không
+lưu `p/q/e/d`, public/private key, `data`, cipher array, `textMetadata`,
+`originalUtf8ByteLength` hoặc trace Euclid/per-bit. Ghi lịch sử là
 best-effort: DB lỗi hoặc chậm quá 500 ms thì bản ghi bị bỏ qua, response cipher
 không đổi.
 
-Có 20 route biến đổi được ghi: encrypt/decrypt/file của năm cipher cổ điển và DES,
-cùng encrypt/decrypt của Hill. Hai route khóa Hill và `/api/des/trace` không được ghi.
-Với DES không lưu khóa, IV, `mode`, `inputFormat`/`outputFormat` hay warnings. Migration
-`0003_allow_des_cipher_operations.py` nới CHECK `cipher` để nhận `des`; DB cũ cần
-`alembic upgrade head` trước khi bản ghi DES được lưu, và `GET /api/history` nhận
-`cipher=des`.
+Có 22 route biến đổi được ghi: encrypt/decrypt/file của năm cipher cổ điển và DES,
+encrypt/decrypt của Hill, cùng hai transform RSA. RSA encrypt JSON có `source=text`,
+encrypt multipart `.txt` có `source=file`, decrypt có `source=text`; `responseMode`
+luôn null. JSON RSA text encrypt chỉ ghi `inputLength` code point, text decrypt chỉ
+ghi `outputLength` code point, multipart chỉ ghi `inputLength` raw byte; phía cipher
+array và number để length null. Hai route khóa Hill/RSA và `/api/des/trace` không ghi.
+
+Migration `0003_allow_des_cipher_operations.py` nới CHECK cho `des`; migration
+`0004_allow_rsa_cipher_operations.py` tiếp tục nới cùng CHECK cho `rsa`. Khi deploy,
+chạy `alembic upgrade head` **trước** khi khởi động code mới. Nếu app mới chạy trên
+schema `0003`, CHECK cũ từ chối row RSA nhưng recorder best-effort vẫn giữ nguyên
+response encrypt/decrypt; các row RSA trong khoảng đó bị mất. Không chạy migration
+trực tiếp trên DB production/dev dùng chung nếu chưa có quy trình deploy riêng.
+PostgreSQL kiểm tra các row hiện hữu khi tạo CHECK mới và thao tác ALTER có thể chặn
+ghi trong lúc chạy; lên lịch migrate ở cửa sổ ít tải phù hợp với kích thước bảng.
+
+Rollback history RSA: dừng app mới, quyết định cách lưu/xuất hoặc xóa các row
+`cipher='rsa'`, rồi mới chạy `alembic downgrade 0003` và deploy code cũ. Downgrade
+cố ý thất bại nếu còn row RSA, nên không âm thầm xóa metadata. Không có plaintext,
+ciphertext hay key RSA cần cleanup vì chúng chưa bao giờ được persist.
 
 Project không có authentication, nên việc đọc lịch sử được khóa bằng cấu hình:
 
@@ -827,7 +844,7 @@ app/
 │   ├── engine.py                   # async engine, session factory, ping
 │   └── models.py                   # bảng cipher_operations
 ├── history/
-│   ├── routes.py                   # 20 route biến đổi được ghi lịch sử
+│   ├── routes.py                   # 22 route biến đổi được ghi lịch sử
 │   ├── cursor.py                   # cursor phân trang opaque
 │   └── store.py                    # ghi/đọc cipher_operations
 └── errors/

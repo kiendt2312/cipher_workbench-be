@@ -10,6 +10,7 @@ import pytest
 
 from app import config
 from app.db.engine import create_database, ping
+from app.db.models import CIPHERS
 from app.errors.exceptions import InvalidHistoryCursorError
 from app.history.cursor import Cursor, decode_cursor, encode_cursor
 from app.history.routes import CIPHER_ROUTES, match_cipher_route
@@ -43,20 +44,51 @@ def test_engine_is_lazy_and_ping_reports_unreachable_database() -> None:
     assert asyncio.run(check()) is False
 
 
-def test_exactly_twenty_cipher_routes_are_recorded() -> None:
-    assert len(CIPHER_ROUTES) == 20
+def test_exactly_twenty_two_cipher_routes_are_recorded() -> None:
+    assert len(CIPHER_ROUTES) == 22
+    assert CIPHERS[-1] == "rsa"
     assert "/api/hill/encrypt" in CIPHER_ROUTES
     assert "/api/hill/decrypt" in CIPHER_ROUTES
     assert "/api/hill/file" not in CIPHER_ROUTES
     assert "/api/hill/key/analyze" not in CIPHER_ROUTES
     assert {"/api/des/encrypt", "/api/des/decrypt", "/api/des/file"} <= CIPHER_ROUTES.keys()
     assert "/api/des/trace" not in CIPHER_ROUTES
+    assert {"/api/rsa/encrypt", "/api/rsa/decrypt"} <= CIPHER_ROUTES.keys()
+    assert "/api/rsa/keys" not in CIPHER_ROUTES
+    assert "/api/rsa/keys/random" not in CIPHER_ROUTES
     route = match_cipher_route("POST", "/api/affine/file")
     assert route is not None
     assert (route.cipher, route.source, route.operation) == ("affine", "file", None)
     route = match_cipher_route("POST", "/api/playfair/decrypt")
     assert route is not None
     assert (route.cipher, route.source, route.operation) == ("playfair", "text", "decrypt")
+
+
+def test_rsa_encrypt_source_follows_media_type() -> None:
+    json_route = match_cipher_route("POST", "/api/rsa/encrypt", "application/json")
+    file_route = match_cipher_route(
+        "POST", "/api/rsa/encrypt", "multipart/form-data; boundary=example"
+    )
+    decrypt_route = match_cipher_route("POST", "/api/rsa/decrypt", "application/json")
+
+    assert json_route is not None
+    assert file_route is not None
+    assert decrypt_route is not None
+    assert (json_route.cipher, json_route.source, json_route.operation) == (
+        "rsa",
+        "text",
+        "encrypt",
+    )
+    assert (file_route.cipher, file_route.source, file_route.operation) == (
+        "rsa",
+        "file",
+        "encrypt",
+    )
+    assert (decrypt_route.cipher, decrypt_route.source, decrypt_route.operation) == (
+        "rsa",
+        "text",
+        "decrypt",
+    )
 
 
 @pytest.mark.parametrize(
@@ -70,6 +102,8 @@ def test_exactly_twenty_cipher_routes_are_recorded() -> None:
         ("GET", "/api/caesar/encrypt"),
         ("POST", "/api/caesar/encrypt/"),
         ("POST", "/api/rot13/encrypt"),
+        ("POST", "/api/rsa/keys"),
+        ("POST", "/api/rsa/keys/random"),
     ],
 )
 def test_non_cipher_requests_are_not_recorded(method: str, path: str) -> None:

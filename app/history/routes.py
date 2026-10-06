@@ -27,11 +27,25 @@ CIPHER_ROUTES: dict[str, CipherRoute] = {
     path: route
     for cipher in CIPHERS
     for path, route in _routes_for(cipher).items()
-    if cipher != "hill" or route.source == "text"
+    if cipher != "rsa" and (cipher != "hill" or route.source == "text")
 }
+CIPHER_ROUTES.update(
+    {
+        "/api/rsa/encrypt": CipherRoute("rsa", "text", "encrypt"),
+        "/api/rsa/decrypt": CipherRoute("rsa", "text", "decrypt"),
+    }
+)
 
 
-def match_cipher_route(method: str, path: str) -> CipherRoute | None:
+def match_cipher_route(
+    method: str, path: str, content_type: str | None = None
+) -> CipherRoute | None:
     """Return the recorded route for a cipher ``POST``, or ``None`` for anything else."""
 
-    return CIPHER_ROUTES.get(path) if method == "POST" else None
+    route = CIPHER_ROUTES.get(path) if method == "POST" else None
+    if route is None:
+        return None
+    media_type = (content_type or "").partition(";")[0].strip().lower()
+    if path == "/api/rsa/encrypt" and media_type == "multipart/form-data":
+        return CipherRoute("rsa", "file", "encrypt")
+    return route

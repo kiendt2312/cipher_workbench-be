@@ -52,8 +52,18 @@ class OperationHistoryRecorder:
         self.app = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        content_type = next(
+            (
+                value.decode("latin-1")
+                for name, value in scope.get("headers", [])
+                if name.lower() == b"content-type"
+            ),
+            None,
+        )
         route = (
-            match_cipher_route(scope["method"], scope["path"]) if scope["type"] == "http" else None
+            match_cipher_route(scope["method"], scope["path"], content_type)
+            if scope["type"] == "http"
+            else None
         )
         database = app_database(scope["app"])
         if route is None or database is None:

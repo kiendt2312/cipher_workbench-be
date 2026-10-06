@@ -118,7 +118,7 @@ Block encrypt SHALL trả `originalUtf8ByteLength` bằng số byte của UTF-8 
 
 ### Requirement: Giới hạn collection và plaintext ở API
 
-Text `data` JSON và nội dung file đã decode SHALL có từ 1 đến 10.000 Unicode code point. Number cipher SHALL đúng một item; char cipher SHALL có 1–10.000 item; block cipher SHALL có 1–40.000 item. Hệ thống SHALL kiểm tra collection cap trước modular exponentiation. Sau block decrypt, plaintext vượt 10.000 code point SHALL bị từ chối dù số cipher item hợp lệ. Không request transform nào SHALL tạo history hoặc lưu cipher package server-side. (Truy vết: PDF RSA BE-06; quyết định chủ sở hữu Q2, Q7, Q8, Q13, Q14)
+Text `data` JSON và nội dung file đã decode SHALL có từ 1 đến 10.000 Unicode code point. Number cipher SHALL đúng một item; char cipher SHALL có 1–10.000 item; block cipher SHALL có 1–40.000 item. Hệ thống SHALL kiểm tra collection cap trước modular exponentiation. Sau block decrypt, plaintext vượt 10.000 code point SHALL bị từ chối dù số cipher item hợp lệ. Transform SHALL không lưu cipher package server-side; chỉ history metadata chuẩn theo `operation-history` được phép. (Truy vết: PDF RSA BE-06; quyết định chủ sở hữu Q2, Q7, Q8, Q13, Q14, Q16)
 
 #### Scenario: Text data 10.001 code point
 
@@ -130,8 +130,8 @@ Text `data` JSON và nội dung file đã decode SHALL có từ 1 đến 10.000 
 - **WHEN** decrypt block nhận 40.001 cipher item
 - **THEN** HTTP 422 `INPUT_TOO_LARGE` với `field="cipher"` trước khi parse từng item
 
-#### Scenario: Transform không ghi history
+#### Scenario: Transform chỉ ghi metadata history
 
 - **WHEN** database đang bật và bất kỳ transform RSA nào thành công hoặc thất bại
-- **THEN** không có bản ghi `cipher_operations` mới
-
+- **THEN** có đúng một bản ghi `cipher_operations` theo `operation-history`
+- **AND** không có plaintext, ciphertext, key, cipher array, length metadata hoặc trace trong row

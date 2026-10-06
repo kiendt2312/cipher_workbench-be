@@ -11,7 +11,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api import history_recorder, routes_text
+from app.api import history_recorder, routes_rsa, routes_text
 from app.errors import messages
 from app.history.store import OperationEntry
 from app.main import app
@@ -108,25 +108,189 @@ def test_des_records_transforms_but_not_trace(client: TestClient, recorded) -> N
     [
         ("/api/rsa/keys", {"json": {"p": "17", "q": "11", "e": "7"}}),
         ("/api/rsa/keys/random", {"json": {"bits": 16}}),
-        (
-            "/api/rsa/encrypt",
-            {"json": {"e": "17", "n": "3233", "inputType": "number", "data": "65"}},
-        ),
-        (
-            "/api/rsa/decrypt",
-            {"json": {"d": "23", "n": "187", "inputType": "number", "cipher": ["11"]}},
-        ),
-        (
-            "/api/rsa/encrypt",
-            {"json": {"e": "7", "n": "187", "inputType": "number", "data": "200"}},
-        ),
     ],
 )
-def test_rsa_success_and_error_routes_never_record_history(
+def test_rsa_key_routes_never_record_history(
     client: TestClient, recorded: list[OperationEntry], path: str, kwargs: dict
 ) -> None:
     client.post(path, **kwargs)
     assert recorded == []
+
+
+@pytest.mark.parametrize(
+    ("path", "payload", "status", "operation"),
+    [
+        (
+            "/api/rsa/encrypt",
+            {"e": "17", "n": "3233", "inputType": "number", "data": "65"},
+            200,
+            "encrypt",
+        ),
+        (
+            "/api/rsa/decrypt",
+            {"d": "23", "n": "187", "inputType": "number", "cipher": ["11"]},
+            200,
+            "decrypt",
+        ),
+        (
+            "/api/rsa/encrypt",
+            {"e": "7", "n": "187", "inputType": "number", "data": "200"},
+            422,
+            "encrypt",
+        ),
+    ],
+)
+def test_rsa_number_success_and_error_record_only_standard_metadata(
+    client: TestClient,
+    recorded: list[OperationEntry],
+    path: str,
+    payload: dict,
+    status: int,
+    operation: str,
+) -> None:
+    response = client.post(path, json=payload)
+
+    assert response.status_code == status
+    assert len(recorded) == 1
+    entry = recorded[0]
+    assert (entry.cipher, entry.source, entry.operation) == ("rsa", "text", operation)
+    assert (entry.http_status, entry.succeeded) == (status, status == 200)
+    assert (entry.input_length, entry.output_length, entry.response_mode) == (None, None, None)
+
+
+def test_rsa_text_lengths_cover_only_plaintext_side(
+    client: TestClient, recorded: list[OperationEntry]
+) -> None:
+    encrypted = client.post(
+        "/api/rsa/encrypt",
+        json={
+            "e": "3",
+            "n": "67591",
+            "inputType": "text",
+            "mode": "block",
+            "data": "Hi!",
+            "traceBlockIndex": 0,
+        },
+    )
+    decrypted = client.post(
+        "/api/rsa/decrypt",
+        json={
+            "d": "44715",
+            "n": "67591",
+            "inputType": "text",
+            "mode": "block",
+            "cipher": ["37222", "6468"],
+            "originalUtf8ByteLength": 3,
+            "traceBlockIndex": 0,
+        },
+    )
+
+    assert encrypted.status_code == decrypted.status_code == 200
+    assert len(recorded) == 2
+    encrypt_entry, decrypt_entry = recorded
+    assert (encrypt_entry.input_length, encrypt_entry.output_length) == (3, None)
+    assert (decrypt_entry.input_length, decrypt_entry.output_length) == (None, 3)
+    assert set(encrypt_entry.__dict__) == {
+        "cipher",
+        "source",
+        "operation",
+        "response_mode",
+        "input_length",
+        "output_length",
+        "http_status",
+        "succeeded",
+        "duration_ms",
+    }
+
+
+def test_rsa_multipart_records_raw_input_bytes_only(
+    client: TestClient, recorded: list[OperationEntry]
+) -> None:
+    raw = b"\xef\xbb\xbfA"
+    response = client.post(
+        "/api/rsa/encrypt",
+        data={"e": "3", "n": "67591", "mode": "block", "traceBlockIndex": "0"},
+        files={"file": ("secret-name.txt", raw, "text/plain")},
+    )
+
+    assert response.status_code == 200
+    assert len(recorded) == 1
+    entry = recorded[0]
+    assert (entry.cipher, entry.source, entry.operation) == ("rsa", "file", "encrypt")
+    assert (entry.input_length, entry.output_length, entry.response_mode) == (4, None, None)
+    dumped = repr(entry)
+    assert "secret-name" not in dumped
+    assert "67591" not in dumped
+    assert "traceBlockIndex" not in dumped
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "status"),
+    [
+        (
+            {
+                "data": {"e": "3", "n": "67591", "mode": "block"},
+                "files": {"file": ("secret.bin", b"secret", "application/octet-stream")},
+            },
+            415,
+        ),
+        (
+            {
+                "content": b"{}",
+                "headers": {
+                    "content-type": "multipart/form-data; boundary=x",
+                    "content-length": str(64 * 1024 * 1024 + 1),
+                },
+            },
+            413,
+        ),
+    ],
+)
+def test_rsa_multipart_failures_are_recorded_as_file_source(
+    client: TestClient,
+    recorded: list[OperationEntry],
+    kwargs: dict,
+    status: int,
+) -> None:
+    response = client.post("/api/rsa/encrypt", **kwargs)
+
+    assert response.status_code == status
+    assert len(recorded) == 1
+    entry = recorded[0]
+    assert (entry.cipher, entry.source, entry.operation) == ("rsa", "file", "encrypt")
+    assert (entry.http_status, entry.succeeded, entry.output_length) == (status, False, None)
+
+
+def test_rsa_unexpected_error_is_recorded_without_leaking_payload(
+    client: TestClient,
+    recorded: list[OperationEntry],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def broken_encrypt(*args: object) -> dict:
+        raise RuntimeError("private marker 2753")
+
+    monkeypatch.setattr(routes_rsa, "_encrypt", broken_encrypt)
+    response = client.post(
+        "/api/rsa/encrypt",
+        json={
+            "e": "3",
+            "n": "67591",
+            "inputType": "text",
+            "mode": "block",
+            "data": "sensitive plaintext",
+        },
+    )
+
+    assert response.status_code == 500
+    for _ in range(100):
+        if recorded:
+            break
+        time.sleep(0.01)
+    assert len(recorded) == 1
+    entry = recorded[0]
+    assert (entry.http_status, entry.succeeded, entry.input_length) == (500, False, 19)
+    assert "sensitive plaintext" not in repr(entry)
+    assert "2753" not in repr(entry)
 
 
 @pytest.mark.parametrize(
@@ -399,6 +563,38 @@ def test_hill_response_is_unchanged_when_recording_fails(
     assert "Could not record cipher operation history" in caplog.text
     assert "HELP" not in caplog.text
     assert "DPLE" not in caplog.text
+
+
+def test_rsa_response_is_unchanged_when_recording_fails(
+    client: TestClient,
+    recorded: list[OperationEntry],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async def failing_record(database: object, entry: OperationEntry) -> None:
+        raise ConnectionError(f"cannot reach {FAKE_URL}")
+
+    payload = {
+        "e": "3",
+        "n": "67591",
+        "inputType": "text",
+        "mode": "block",
+        "data": "private marker",
+    }
+    expected = client.post("/api/rsa/encrypt", json=payload)
+    assert len(recorded) == 1
+    monkeypatch.setattr(history_recorder, "record_operation", failing_record)
+    with caplog.at_level(logging.WARNING):
+        response = client.post("/api/rsa/encrypt", json=payload)
+
+    assert response.status_code == 200
+    assert response.status_code == expected.status_code
+    assert response.headers["content-type"] == expected.headers["content-type"]
+    assert response.json() == expected.json()
+    assert "Could not record cipher operation history" in caplog.text
+    assert "private marker" not in caplog.text
+    assert "67591" not in caplog.text
+    assert "topsecret" not in caplog.text
 
 
 def test_slow_recording_is_abandoned(

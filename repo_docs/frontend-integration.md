@@ -67,7 +67,8 @@ POST analyze, không có `/api/hill/file`. DES có đủ encrypt/decrypt/file v�
 `/api/des/trace`. `action` là `encrypt`/`decrypt`; `response_mode` là `content`
 (mặc định) hoặc `file` và dùng cho năm cipher cũ và DES.
 
-RSA chỉ dùng bốn route exact ở bảng, không có route file/trace/history khác. File RSA
+RSA chỉ dùng bốn route exact ở bảng, không có route file/trace/history riêng. Hai
+transform xuất hiện trong `GET /api/history` chung; keygen không xuất hiện. File RSA
 chỉ là plaintext `.txt` gửi thẳng tới `/api/rsa/encrypt`; response luôn JSON.
 
 ### A.3 Khóa theo cipher
@@ -308,6 +309,25 @@ Khi **giải mã** Playfair hoặc Hill, `result` luôn là **bản thô toán h
   bản lọc và toggle. Có thể tô các ô đó trong "Xem từng bước".
 
 ## 0. Thay đổi gần đây
+
+### 0.0d RSA transform có server history (`2026-10-06`)
+
+`POST /api/rsa/encrypt` và `/api/rsa/decrypt` giờ ghi metadata success/error theo
+best-effort và có thể lọc bằng `GET /api/history?cipher=rsa`. Encrypt JSON là
+`source=text`, encrypt multipart `.txt` là `source=file`, decrypt là `source=text`;
+`responseMode` luôn null. Hai keygen route vẫn không ghi.
+
+Không có content/key/package trong DB: không lưu plaintext, ciphertext, `p/q/e/d`,
+public/private key, `data`, cipher array, `textMetadata`, `originalUtf8ByteLength`,
+filename/file content, IP/user-agent hoặc trace. Number transform để hai length null;
+text encrypt chỉ có input code-point length, text decrypt chỉ có output code-point
+length, multipart chỉ có input raw-byte length.
+
+Backend phải chạy `alembic upgrade head` (migration `0004`) trước app mới. Nếu code
+mới tạm chạy trên schema `0003`, RSA vẫn trả response bình thường nhưng row history
+có thể bị bỏ lỡ. Downgrade về `0003` yêu cầu operator xử lý row `cipher=rsa` trước;
+migration không tự xóa dữ liệu. Việc tạo lại CHECK kiểm tra row hiện hữu và có thể
+chặn ghi trong lúc ALTER, nên operator cần chọn cửa sổ migrate phù hợp.
 
 ### 0.0c Lọc ký tự đệm Playfair/Hill (`2026-10-02`)
 
@@ -596,13 +616,15 @@ chỉ lưu metadata thao tác, đọc qua `GET /api/history` (mục 16).
 | Columnar | `POST /api/columnar/encrypt` | `POST /api/columnar/decrypt` | `POST /api/columnar/file` |
 | Hill | `POST /api/hill/encrypt` | `POST /api/hill/decrypt` | Không có |
 | DES | `POST /api/des/encrypt` | `POST /api/des/decrypt` | `POST /api/des/file` |
+| RSA | `POST /api/rsa/encrypt` | `POST /api/rsa/decrypt` | Multipart plaintext dùng chính `/api/rsa/encrypt` |
 
-Text endpoints nhận `application/json` hoặc `application/*+json`. File endpoints
-nhận `multipart/form-data` và có cùng hai response mode: `content` hoặc `file`.
+Text endpoints nhận `application/json` hoặc `application/*+json`. Các file endpoint
+truyền thống nhận `multipart/form-data` với response mode `content|file`; RSA multipart
+dùng chính `/api/rsa/encrypt`, luôn trả JSON và không có `response_mode`.
 
-Ngoài 20 route biến đổi trên, Hill có `POST /api/hill/key/analyze` và
-`GET /api/hill/key/random?m=2|3|4`; DES có `POST /api/des/trace`. Backend còn có hai
-route đọc dùng chung:
+Ngoài 22 route biến đổi được history matcher ghi nhận, Hill có
+`POST /api/hill/key/analyze` và `GET /api/hill/key/random?m=2|3|4`; DES có
+`POST /api/des/trace`; RSA có hai route keygen. Backend còn có hai route đọc dùng chung:
 `GET /api/health` và `GET /api/history` (mục 16).
 
 Contract wire riêng của ba route Columnar:
@@ -2106,11 +2128,11 @@ change. Không thêm `/v1`, endpoint, field hoặc behavior mới chỉ bằng c
 
 ## 16. Health và lịch sử thao tác
 
-Backend có thể chạy kèm PostgreSQL. Khi bật, mỗi request tới 20 route biến đổi được
+Backend có thể chạy kèm PostgreSQL. Khi bật, mỗi request tới 22 route biến đổi được
 ghi lại dưới dạng **metadata**. Backend không lưu text, key, IV, tên file, nội dung file
-hay kết quả. Hai route khóa Hill và `/api/des/trace` không được ghi lịch sử; DES
-encrypt/decrypt/file được ghi (kể cả request lỗi) với `cipher="des"`, không lưu
-`mode`, `inputFormat`/`outputFormat` hay warnings. Contract của năm cipher cũ không đổi.
+hay kết quả. Hai route khóa Hill, hai route khóa RSA và `/api/des/trace` không được ghi.
+Hai RSA transform được ghi kể cả request lỗi, nhưng không lưu key/data/cipher array,
+metadata lossless hoặc trace. Contract của các route hiện hữu không đổi.
 
 ### 16.1 Chạy backend có PostgreSQL khi dev FE
 
@@ -2132,6 +2154,9 @@ curl -s http://localhost:8080/api/health
   không bật flag (mặc định), `/api/history` trả 404 trước khi kiểm tra DB.
 - Tạo dữ liệu mẫu: gọi vài request encrypt/decrypt bất kỳ qua `/docs` hoặc `curl`, mỗi
   request sinh một dòng lịch sử.
+- Deploy backend mới theo thứ tự migrate-first: chạy `alembic upgrade head` tới `0004`,
+  rồi mới restart app. Schema `0003` không làm hỏng RSA response nhưng sẽ bỏ lỡ row
+  RSA; downgrade cần xử lý row `cipher=rsa` trước khi chạy `alembic downgrade 0003`.
 
 ### 16.2 `GET /api/health`
 
@@ -2162,7 +2187,7 @@ Query (tất cả tùy chọn):
 |---|---|---|
 | `limit` | số nguyên `1`–`100` | `20` |
 | `cursor` | chuỗi opaque lấy từ `nextCursor` của trang trước | trang đầu |
-| `cipher` | `caesar`, `vigenere`, `playfair`, `affine`, `columnar`, `hill`, `des` | tất cả |
+| `cipher` | `caesar`, `vigenere`, `playfair`, `affine`, `columnar`, `hill`, `des`, `rsa` | tất cả |
 | `operation` | `encrypt`, `decrypt` | tất cả |
 
 Kết quả sắp mới nhất trước. `nextCursor` là `null` ở trang cuối. FE phải coi cursor
@@ -2194,12 +2219,14 @@ là chuỗi opaque, gửi lại nguyên văn và không tự dựng.
 
 Ý nghĩa các trường:
 
-- `source`: `text` cho route JSON, `file` cho route multipart. DES có cả hai, nên
-  `cipher=des` trả cả item `text` lẫn `file`.
+- `source`: `text` cho route JSON, `file` cho route multipart. DES và RSA encrypt có
+  thể có cả hai; RSA decrypt chỉ có `text`.
 - `operation`: `null` khi request lỗi trước lúc backend đọc được `action` của file.
-- `responseMode`: `content` hoặc `file` cho route file; luôn `null` cho route text.
+- `responseMode`: `content` hoặc `file` cho route file truyền thống; RSA luôn `null`.
 - `inputLength`/`outputLength`: số Unicode code point với text, số byte UTF-8 với
   file (tính cả BOM nếu file gửi lên có BOM); `null` khi request lỗi trước lúc đo được.
+  Riêng RSA: number để cả hai null; text encrypt chỉ input length; text decrypt chỉ
+  output length; multipart encrypt chỉ input raw-byte length vì phía còn lại là cipher array.
 - `httpStatus`/`succeeded`: status backend đã trả; `succeeded` đúng khi status 2xx.
   Request lỗi (413/415/422/500) cũng có trong lịch sử.
 
@@ -2207,7 +2234,7 @@ là chuỗi opaque, gửi lại nguyên văn và không tự dựng.
 type HistoryItem = {
   id: number;
   createdAt: string; // ISO 8601
-  cipher: "caesar" | "vigenere" | "playfair" | "affine" | "columnar" | "hill" | "des";
+  cipher: "caesar" | "vigenere" | "playfair" | "affine" | "columnar" | "hill" | "des" | "rsa";
   operation: "encrypt" | "decrypt" | null;
   source: "text" | "file";
   responseMode: "content" | "file" | null;
@@ -2236,7 +2263,7 @@ async function fetchHistory(params: {
 ```
 
 ```bash
-curl -s 'http://localhost:8080/api/history?limit=5&cipher=playfair'
+curl -s 'http://localhost:8080/api/history?limit=5&cipher=rsa'
 ```
 
 Lỗi dùng envelope chung `{"success": false, "message": …}`:
