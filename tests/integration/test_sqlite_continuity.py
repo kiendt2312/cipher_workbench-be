@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import time
 from pathlib import Path
 
@@ -249,6 +250,65 @@ def test_live_backup_lock_contention_is_bounded_and_leaves_no_destination(tmp_pa
 
     assert elapsed < 0.5
     assert not destination.exists()
+
+
+def test_cli_live_backup_aborts_when_lock_starts_after_preflight(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source = _import(tmp_path / "runtime.sqlite3", [_row(1)])
+    destination = tmp_path / "late-lock-backup.sqlite3"
+    with sqlite3.connect(source.path) as connection:
+        connection.execute("CREATE TABLE backup_padding(value BLOB NOT NULL)")
+        connection.executemany(
+            "INSERT INTO backup_padding(value) VALUES (?)",
+            [(b"x" * 65_536,) for _ in range(500)],
+        )
+        connection.commit()
+
+    lock_acquired = threading.Event()
+    release_lock = threading.Event()
+    lock_errors: list[Exception] = []
+
+    def hold_lock_after_destination_appears() -> None:
+        deadline = time.monotonic() + 2.0
+        while not destination.exists() and time.monotonic() < deadline:
+            time.sleep(0.001)
+        if not destination.exists():
+            lock_errors.append(RuntimeError("backup candidate was not created"))
+            return
+        locker = sqlite3.connect(source.path, timeout=0)
+        try:
+            while time.monotonic() < deadline:
+                try:
+                    locker.execute("BEGIN EXCLUSIVE")
+                except sqlite3.OperationalError:
+                    time.sleep(0.001)
+                else:
+                    lock_acquired.set()
+                    release_lock.wait(0.75)
+                    return
+            lock_errors.append(RuntimeError("exclusive lock was not acquired"))
+        finally:
+            locker.rollback()
+            locker.close()
+
+    locker_thread = threading.Thread(target=hold_lock_after_destination_appears, daemon=True)
+    locker_thread.start()
+    started = time.monotonic()
+    try:
+        result = main(["backup", "--source", str(source.path), "--destination", str(destination)])
+    finally:
+        release_lock.set()
+        locker_thread.join(timeout=1.0)
+    elapsed = time.monotonic() - started
+
+    assert result == 2
+    assert not locker_thread.is_alive()
+    assert lock_acquired.is_set()
+    assert not lock_errors
+    assert elapsed < 0.5
+    assert not destination.exists()
+    assert capsys.readouterr().err.strip() == "history continuity command failed"
 
 
 def test_cli_live_backup_accepts_advanced_runtime_without_old_digest(
@@ -641,15 +701,15 @@ def test_existing_sqlite_baseline_can_be_verified_with_injected_manifest(tmp_pat
         connection.executescript(
             """
             CREATE TABLE cipher_operations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id INTEGER PRIMARY KEY AUTOINCREMENT CHECK(id > 0),
                 created_at INTEGER NOT NULL,
                 cipher TEXT NOT NULL CHECK(cipher IN
                     ('caesar', 'vigenere', 'playfair', 'affine', 'columnar', 'hill', 'des', 'rsa')),
-                operation TEXT,
+                operation TEXT CHECK(operation IN ('encrypt', 'decrypt')),
                 source TEXT NOT NULL CHECK(source IN ('text', 'file')),
-                response_mode TEXT,
-                input_length INTEGER,
-                output_length INTEGER,
+                response_mode TEXT CHECK(response_mode IN ('content', 'file')),
+                input_length INTEGER CHECK(input_length >= 0),
+                output_length INTEGER CHECK(output_length >= 0),
                 http_status INTEGER NOT NULL,
                 succeeded INTEGER NOT NULL CHECK(succeeded IN (0, 1)),
                 duration_ms INTEGER NOT NULL CHECK(duration_ms >= 0)

@@ -2201,7 +2201,7 @@ curl -s http://localhost:8080/api/health
 
 | `database` | HTTP | Ý nghĩa |
 |---|---|---|
-| `ok` | 200 | DB trả lời `SELECT 1` trong 1 giây |
+| `ok` | 200 | DB vượt qua kiểm tra revision, schema và khả năng đọc bảng trong 1 giây |
 | `disabled` | 200 | Backend chạy không có DB; không ghi lịch sử |
 | `unavailable` | 503 | Đã cấu hình DB nhưng không kết nối được |
 

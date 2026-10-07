@@ -1,6 +1,6 @@
 # Tasks
 
-> 46 checkbox này theo dõi implementation và disposable engineering proof; chỉ
+> 50 checkbox này theo dõi implementation và disposable engineering proof; chỉ
 > được đóng khi có bằng chứng tương ứng. Rollout/cutover/retirement thật
 > được thực hiện sau ủy quyền operational riêng và ghi tại
 > `docs/sqlite-history-local-rollout-20261007.md`; không dùng evidence operational
@@ -75,3 +75,10 @@
 - [x] 8.3 Chạy OpenSpec 1.13.2 strict cho change và toàn repo, rồi OpenSpec 1.14.1 như kiểm tra bổ sung; **xong khi:** change không có error/warning mới, mọi warning cũ được tách rõ và không broad-rewrite RSA/main specs ngoài scope.
 - [x] 8.4 Thực hiện review độc lập về data-loss/privacy/concurrency/rollback và xử lý finding trong scope; **xong khi:** không còn finding mức chặn, counterevidence và residual risk được ghi trong handback.
 - [x] 8.5 Chuẩn bị rollout/retirement evidence package nhưng không deploy/cutover/delete; **xong khi:** artifact liệt kê actual image SQLite version, source-measure command, backup/restore rehearsal, manifest mẫu không nhạy cảm, exact retirement targets còn chờ, FE proxy/CORS input còn chờ và operational authorization gate.
+
+## 9. Corrective review 2026-10-08
+
+- [x] 9.1 Đồng bộ mô tả health database trong frontend contract với schema-readiness probe đã được chấp nhận, không thêm `SELECT 1` dư thừa; **xong khi:** tài liệu mô tả đúng revision/schema/table-readiness, giữ nguyên public status/shape và giới hạn một giây.
+- [x] 9.2 Làm staging verifier fail-closed khi `alembic_version` thiếu, sai, rỗng hoặc có nhiều revision; **xong khi:** negative tests chứng minh mọi trạng thái revision không đúng duy nhất `sqlite_0001` đều chặn verify/publish, còn staging hợp lệ vẫn qua.
+- [x] 9.3 Kiểm tra chính xác baseline schema đã chấp nhận cho nullability, CHECK constraints và chiều index, không tạo framework schema tổng quát; **xong khi:** fixture schema yếu từng qua verifier nay bị từ chối và schema do migration/importer tạo vẫn qua.
+- [x] 9.4 Thêm deadline end-to-end cho SQLite Online Backup theo timeout contract hiện hữu; **xong khi:** lock xuất hiện sau preflight bị abort trong budget, không publish backup dở dang, còn backup/restore hợp lệ và contention tests hiện hữu vẫn xanh.

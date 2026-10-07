@@ -17,6 +17,7 @@ from app.history.continuity import (
     HistoryRow,
     IdentityState,
     InvalidHistoryRow,
+    Manifest,
     PublicationError,
     UnsupportedSequenceState,
     VerificationError,
@@ -56,6 +57,69 @@ def _row(
         http_status=200,
         succeeded=True,
         duration_ms=2,
+    )
+
+
+def _create_baseline_fixture(
+    path: Path,
+    *,
+    nullable_source: bool = False,
+    omit_id_check: bool = False,
+    descending_indexes: bool = True,
+    weakened_check: str | None = None,
+) -> Manifest:
+    source_nullability = "" if nullable_source else " NOT NULL"
+    if omit_id_check:
+        id_check = ""
+    elif weakened_check == "id":
+        id_check = " CHECK (id > 0 OR 1=1)"
+    else:
+        id_check = " CHECK (id > 0)"
+    input_check = (
+        "CHECK(input_length >= 0 OR 1=1)"
+        if weakened_check == "input_length"
+        else "CHECK(input_length >= 0)"
+    )
+    direction = "DESC" if descending_indexes else "ASC"
+    row = _row(1)
+    with sqlite3.connect(path) as connection:
+        connection.executescript(
+            f"""
+            CREATE TABLE cipher_operations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT{id_check},
+                created_at INTEGER NOT NULL,
+                cipher TEXT NOT NULL CHECK(cipher IN
+                    ('caesar', 'vigenere', 'playfair', 'affine', 'columnar', 'hill', 'des', 'rsa')),
+                operation TEXT CHECK(operation IN ('encrypt', 'decrypt')),
+                source TEXT{source_nullability} CHECK(source IN ('text', 'file')),
+                response_mode TEXT CHECK(response_mode IN ('content', 'file')),
+                input_length INTEGER {input_check},
+                output_length INTEGER CHECK(output_length >= 0),
+                http_status INTEGER NOT NULL,
+                succeeded INTEGER NOT NULL CHECK(succeeded IN (0, 1)),
+                duration_ms INTEGER NOT NULL CHECK(duration_ms >= 0)
+            );
+            CREATE INDEX ix_cipher_operations_created_at_id
+                ON cipher_operations (created_at {direction}, id {direction});
+            CREATE INDEX ix_cipher_operations_cipher_created_at
+                ON cipher_operations (cipher, created_at {direction}, id {direction});
+            CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL);
+            INSERT INTO alembic_version(version_num) VALUES ('sqlite_0001');
+            """
+        )
+        connection.execute(
+            "INSERT INTO cipher_operations "
+            "(id, created_at, cipher, operation, source, response_mode, input_length, "
+            "output_length, http_status, succeeded, duration_ms) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            row.as_sql_values(),
+        )
+    return Manifest.from_rows(
+        [row],
+        IdentityState(1, True, 1),
+        source_revision="postgres-0004",
+        schema_revision="sqlite_0001",
+        snapshot_epoch_us=123,
     )
 
 
@@ -293,6 +357,97 @@ def test_verify_detects_row_mutation_and_manifest_mismatch(tmp_path: Path) -> No
 
     with pytest.raises(VerificationError):
         verify_staging(result.path, expected_manifest_digest=result.manifest.digest)
+
+
+@pytest.mark.parametrize("revision_state", ("missing", "empty", "wrong", "multiple"))
+def test_verify_and_publish_require_one_matching_alembic_revision(
+    tmp_path: Path, revision_state: str
+) -> None:
+    result = import_staging(
+        tmp_path / "staging.sqlite3",
+        [_row(1)],
+        IdentityState(1, True, 1),
+        source_revision="postgres-0004",
+        schema_revision="sqlite_0001",
+        snapshot_epoch_us=123,
+    )
+    with sqlite3.connect(result.path) as connection:
+        if revision_state == "missing":
+            connection.execute("DROP TABLE alembic_version")
+        elif revision_state == "empty":
+            connection.execute("DELETE FROM alembic_version")
+        elif revision_state == "wrong":
+            connection.execute("UPDATE alembic_version SET version_num = 'sqlite_wrong'")
+        else:
+            connection.execute("INSERT INTO alembic_version(version_num) VALUES ('sqlite_0001')")
+        connection.commit()
+
+    with pytest.raises(VerificationError):
+        verify_staging(result.path, expected_manifest_digest=result.manifest.digest)
+
+    with pytest.raises(VerificationError):
+        publish_first(
+            result.path,
+            tmp_path / "runtime.sqlite3",
+            expected_manifest_digest=result.manifest.digest,
+            app_stopped=True,
+        )
+    assert result.path.exists()
+
+
+@pytest.mark.parametrize(
+    ("variant", "options"),
+    (
+        ("nullability", {"nullable_source": True}),
+        ("check", {"omit_id_check": True}),
+        ("index_direction", {"descending_indexes": False}),
+    ),
+)
+def test_verify_and_publish_reject_sqlite_baseline_drift(
+    tmp_path: Path, variant: str, options: dict[str, bool]
+) -> None:
+    staging = tmp_path / f"{variant}.sqlite3"
+    manifest = _create_baseline_fixture(staging, **options)
+
+    with pytest.raises(VerificationError):
+        verify_staging(
+            staging,
+            expected_manifest=manifest,
+            expected_manifest_digest=manifest.digest,
+        )
+
+    with pytest.raises(VerificationError):
+        publish_first(
+            staging,
+            tmp_path / "runtime.sqlite3",
+            expected_manifest_digest=manifest.digest,
+            app_stopped=True,
+        )
+    assert staging.exists()
+
+
+@pytest.mark.parametrize("weakened_check", ("id", "input_length"))
+def test_verify_and_publish_reject_logically_weakened_checks(
+    tmp_path: Path, weakened_check: str
+) -> None:
+    staging = tmp_path / f"weakened-{weakened_check}.sqlite3"
+    manifest = _create_baseline_fixture(staging, weakened_check=weakened_check)
+
+    with pytest.raises(VerificationError):
+        verify_staging(
+            staging,
+            expected_manifest=manifest,
+            expected_manifest_digest=manifest.digest,
+        )
+
+    with pytest.raises(VerificationError):
+        publish_first(
+            staging,
+            tmp_path / "runtime.sqlite3",
+            expected_manifest_digest=manifest.digest,
+            app_stopped=True,
+        )
+    assert staging.exists()
 
 
 def test_first_publish_requires_stopped_app_and_never_overwrites_runtime(tmp_path: Path) -> None:

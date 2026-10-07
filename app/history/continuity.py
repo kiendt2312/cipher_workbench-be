@@ -21,6 +21,7 @@ import json
 import os
 import sqlite3
 import sys
+import time
 from collections.abc import Iterable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
@@ -1000,19 +1001,22 @@ def _write_manifest_metadata(connection: sqlite3.Connection, manifest: Manifest)
 
 
 def _check_revision_presence(connection: sqlite3.Connection, manifest: Manifest) -> None:
-    """Check an existing Alembic revision table when it is available."""
+    """Require exactly one Alembic revision matching the manifest."""
 
     if manifest.schema_revision is None:
-        return
+        raise VerificationError("SQLite schema revision evidence is missing")
     table_exists = connection.execute(
         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'alembic_version'"
     ).fetchone()
     if table_exists is None:
-        return
-    revisions = {
-        row[0] for row in connection.execute("SELECT version_num FROM alembic_version").fetchall()
-    }
-    if manifest.schema_revision not in revisions:
+        raise VerificationError("SQLite revision table is missing")
+    revisions = connection.execute("SELECT version_num FROM alembic_version").fetchall()
+    if (
+        len(revisions) != 1
+        or type(revisions[0][0]) is not str
+        or not revisions[0][0]
+        or revisions[0][0] != manifest.schema_revision
+    ):
         raise VerificationError("SQLite revision does not match the injected manifest")
 
 
@@ -1058,9 +1062,26 @@ def _check_schema(connection: sqlite3.Connection) -> None:
     }
     if [row[1] for row in columns] != list(HISTORY_COLUMNS):
         raise VerificationError("history schema columns do not match the eleven-field contract")
+    expected_nullability = {
+        "id": False,
+        "created_at": True,
+        "cipher": True,
+        "operation": False,
+        "source": True,
+        "response_mode": False,
+        "input_length": False,
+        "output_length": False,
+        "http_status": True,
+        "succeeded": True,
+        "duration_ms": True,
+    }
     for row in columns:
-        _, name, type_name, _not_null, _default, primary_key = row
-        if type_name.upper() != expected_types[name] or (name == "id" and primary_key != 1):
+        _, name, type_name, not_null, _default, primary_key = row
+        if (
+            type_name.upper() != expected_types[name]
+            or bool(not_null) != expected_nullability[name]
+            or (name == "id" and primary_key != 1)
+        ):
             raise VerificationError("history schema column type or primary key is invalid")
     if meta_exists and [row[1] for row in meta_columns] != ["key", "value"]:
         raise VerificationError("continuity metadata schema is invalid")
@@ -1072,19 +1093,91 @@ def _check_schema(connection: sqlite3.Connection) -> None:
     if not expected_indexes <= names:
         raise VerificationError("history schema indexes are incomplete")
     expected_index_columns = {
-        "ix_cipher_operations_created_at_id": ("created_at", "id"),
-        "ix_cipher_operations_cipher_created_at": ("cipher", "created_at", "id"),
+        "ix_cipher_operations_created_at_id": (
+            ("created_at", True),
+            ("id", True),
+        ),
+        "ix_cipher_operations_cipher_created_at": (
+            ("cipher", False),
+            ("created_at", True),
+            ("id", True),
+        ),
     }
     for index_name, expected in expected_index_columns.items():
-        rows = connection.execute(f'PRAGMA index_info("{index_name}")').fetchall()
-        if tuple(row[2] for row in sorted(rows, key=lambda row: row[0])) != expected:
+        index_definition = next(row for row in index_rows if row[1] == index_name)
+        if index_definition[2:] != (0, "c", 0):
+            raise VerificationError("history schema index definition is invalid")
+        rows = connection.execute(f'PRAGMA index_xinfo("{index_name}")').fetchall()
+        key_columns = [row for row in rows if row[5] == 1]
+        actual = tuple(
+            (row[2], bool(row[3])) for row in sorted(key_columns, key=lambda row: row[0])
+        )
+        if actual != expected:
             raise VerificationError("history schema index columns are invalid")
     if not sql_row or not isinstance(sql_row[0], str):
         raise VerificationError("history table definition is missing")
-    definition = sql_row[0].upper()
-    for marker in ("AUTOINCREMENT", "RSA", "CHECK", "SUCCEEDED", "DURATION_MS"):
-        if marker not in definition:
-            raise VerificationError("history table constraints are incomplete")
+    definition = " ".join(sql_row[0].upper().split())
+    # Only the two shipped schema forms below are accepted; this is not a general SQL parser.
+    cipher_values = (
+        "CIPHER IN ('CAESAR', 'VIGENERE', 'PLAYFAIR', 'AFFINE', 'COLUMNAR', 'HILL', 'DES', 'RSA')"
+    )
+    plain_checks = (
+        cipher_values,
+        "OPERATION IN ('ENCRYPT', 'DECRYPT')",
+        "SOURCE IN ('TEXT', 'FILE')",
+        "RESPONSE_MODE IN ('CONTENT', 'FILE')",
+        "INPUT_LENGTH >= 0",
+        "OUTPUT_LENGTH >= 0",
+        "SUCCEEDED IN (0, 1)",
+        "DURATION_MS >= 0",
+        "ID > 0",
+    )
+    importer_checks = (
+        "TYPEOF(ID) = 'INTEGER' AND ID >= 1 AND ID <= 9223372036854775807",
+        "TYPEOF(CREATED_AT) = 'INTEGER'",
+        f"TYPEOF(CIPHER) = 'TEXT' AND {cipher_values}",
+        "OPERATION IS NULL OR (TYPEOF(OPERATION) = 'TEXT' AND OPERATION IN ('ENCRYPT', 'DECRYPT'))",
+        "TYPEOF(SOURCE) = 'TEXT' AND SOURCE IN ('TEXT', 'FILE')",
+        "RESPONSE_MODE IS NULL OR (TYPEOF(RESPONSE_MODE) = 'TEXT' AND "
+        "RESPONSE_MODE IN ('CONTENT', 'FILE'))",
+        "INPUT_LENGTH IS NULL OR (TYPEOF(INPUT_LENGTH) = 'INTEGER' AND INPUT_LENGTH >= 0)",
+        "OUTPUT_LENGTH IS NULL OR (TYPEOF(OUTPUT_LENGTH) = 'INTEGER' AND OUTPUT_LENGTH >= 0)",
+        "TYPEOF(HTTP_STATUS) = 'INTEGER'",
+        "TYPEOF(SUCCEEDED) = 'INTEGER' AND SUCCEEDED IN (0, 1)",
+        "TYPEOF(DURATION_MS) = 'INTEGER' AND DURATION_MS >= 0",
+    )
+    accepted_check_signatures = {
+        tuple(sorted(plain_checks)),
+        tuple(sorted(importer_checks)),
+    }
+    actual_checks: list[str] = []
+    cursor = 0
+    while True:
+        marker = definition.find("CHECK", cursor)
+        if marker == -1:
+            break
+        opening = marker + len("CHECK")
+        while opening < len(definition) and definition[opening].isspace():
+            opening += 1
+        if opening >= len(definition) or definition[opening] != "(":
+            raise VerificationError("history table constraints are malformed")
+        depth = 0
+        for index in range(opening, len(definition)):
+            if definition[index] == "(":
+                depth += 1
+            elif definition[index] == ")":
+                depth -= 1
+                if depth == 0:
+                    actual_checks.append(definition[opening + 1 : index].strip())
+                    cursor = index + 1
+                    break
+        else:
+            raise VerificationError("history table constraints are malformed")
+    if (
+        "AUTOINCREMENT" not in definition
+        or tuple(sorted(actual_checks)) not in accepted_check_signatures
+    ):
+        raise VerificationError("history table constraints are incomplete")
 
 
 def _rows_from_connection(connection: sqlite3.Connection) -> tuple[HistoryRow, ...]:
@@ -1423,6 +1516,14 @@ def backup_sqlite_live(
 
     if timeout <= 0:
         raise ValueError("backup timeout must be positive")
+    deadline = time.monotonic() + timeout
+
+    def remaining_backup_time() -> float:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise VerificationError("SQLite backup exceeded its timeout")
+        return remaining
+
     source = _path(source_path)
     destination = _path(destination_path)
     _ensure_existing_file(source)
@@ -1434,18 +1535,24 @@ def backup_sqlite_live(
     destination_created = False
     destination_manifest: Manifest | None = None
     try:
-        source_connection = _connect(source, read_only=True, timeout=timeout)
+        source_connection = _connect(source, read_only=True, timeout=remaining_backup_time())
         _check_pragma(source_connection, "quick_check")
+        remaining_backup_time()
         _check_pragma(source_connection, "integrity_check")
+        remaining_backup_time()
         _check_schema(source_connection)
+        remaining_backup_time()
         source_provenance, schema_provenance, persisted_manifest = _snapshot_provenance(
             source_connection,
             fallback_manifest=expected_manifest,
             source_revision=source_revision,
             schema_revision=schema_revision,
         )
+        remaining_backup_time()
         source_rows = _rows_from_connection(source_connection)
+        remaining_backup_time()
         source_sequence = _read_sqlite_sequence(source_connection)
+        remaining_backup_time()
         if expected_manifest_digest is not None:
             guard_manifest = persisted_manifest or expected_manifest
             if guard_manifest is None:
@@ -1465,20 +1572,46 @@ def backup_sqlite_live(
                 raise VerificationError("optional pre-backup manifest guard failed")
         _ensure_new_file(destination)
         destination_created = True
-        destination_connection = _connect(destination, timeout=timeout)
-        source_connection.backup(destination_connection, pages=64, sleep=min(0.05, timeout / 2))
+        destination_connection = _connect(destination, timeout=remaining_backup_time())
+        remaining = remaining_backup_time()
+        busy_timeout_ms = max(0, int(remaining * 1000))
+        source_connection.execute(f"PRAGMA busy_timeout = {busy_timeout_ms}")
+        destination_connection.execute(f"PRAGMA busy_timeout = {busy_timeout_ms}")
+
+        def backup_progress(_status: int, _remaining_pages: int, _total_pages: int) -> None:
+            remaining_backup_time()
+
+        try:
+            source_connection.backup(
+                destination_connection,
+                pages=1,
+                progress=backup_progress,
+                sleep=min(0.01, remaining),
+            )
+        except sqlite3.Error as exc:
+            if time.monotonic() >= deadline:
+                raise VerificationError("SQLite backup exceeded its timeout") from exc
+            raise
+        remaining_backup_time()
         destination_connection.commit()
+        remaining_backup_time()
         _check_pragma(destination_connection, "quick_check")
+        remaining_backup_time()
         _check_pragma(destination_connection, "integrity_check")
+        remaining_backup_time()
         _check_schema(destination_connection)
+        remaining_backup_time()
         destination_rows = _rows_from_connection(destination_connection)
+        remaining_backup_time()
         destination_sequence = _read_sqlite_sequence(destination_connection)
+        remaining_backup_time()
         destination_source, destination_schema, _ = _snapshot_provenance(
             destination_connection,
             fallback_manifest=expected_manifest,
             source_revision=source_provenance,
             schema_revision=schema_provenance,
         )
+        remaining_backup_time()
         destination_manifest = Manifest.from_sqlite_snapshot(
             destination_rows,
             destination_sequence,
@@ -1488,7 +1621,9 @@ def backup_sqlite_live(
         )
         _set_sqlite_sequence(destination_connection, destination_sequence)
         _write_manifest_metadata(destination_connection, destination_manifest)
+        remaining_backup_time()
         destination_connection.commit()
+        remaining_backup_time()
     except Exception:
         if destination_connection is not None:
             destination_connection.rollback()
@@ -1504,11 +1639,13 @@ def backup_sqlite_live(
     if destination_manifest is None:
         raise VerificationError("backup manifest was not generated")
     try:
+        remaining_backup_time()
         verified = verify_staging(
             destination,
             expected_manifest=destination_manifest,
             expected_manifest_digest=destination_manifest.digest,
         )
+        remaining_backup_time()
     except Exception:
         if destination_created:
             with suppress(OSError):
