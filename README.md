@@ -20,7 +20,8 @@ consumer contract chi tiết cho cả 27 endpoint cipher, health và lịch sử
 Ứng dụng chạy trong một tiến trình FastAPI trên cổng `8000`. Runtime phục vụ API
 và OpenAPI; không có authentication hay session, và không lưu
 input, key, tên file, nội dung file hay kết quả sau request. Khi đặt `DATABASE_URL`,
-app ghi thêm **metadata** của mỗi request cipher vào PostgreSQL (xem mục 9.1).
+app ghi thêm **metadata** của mỗi request cipher vào SQLite cục bộ trên backend
+(xem mục 9.1).
 
 ```text
 JSON text hoặc multipart .txt
@@ -664,20 +665,17 @@ uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 Không đặt `DATABASE_URL` thì app chạy không có database: 26 POST route cipher hoạt
 động bình thường, `/api/health` báo `database: "disabled"` và `/api/history` trả
-503. Muốn chạy app bằng uv (có `--reload`) nhưng dùng PostgreSQL của
-docker-compose, chỉ bật service `db`; nó mở cổng `127.0.0.1:${DB_HOST_PORT}`
-(mặc định `5433`):
+503. Muốn chạy app bằng uv (có `--reload`) với SQLite, tạo file bằng migration
+SQLite trước rồi trỏ `DATABASE_URL` tới absolute local path; app không tự tạo file:
 
 ```bash
-docker compose up -d db
-set -a && . ./.env && set +a
-export DATABASE_URL="postgresql+asyncpg://$POSTGRES_USER:$POSTGRES_PASSWORD@127.0.0.1:${DB_HOST_PORT:-5433}/$POSTGRES_DB"
-uv run alembic upgrade head
+export DATABASE_URL="sqlite+aiosqlite:////tmp/cipher-history.sqlite3"
+uv run alembic -c alembic_sqlite.ini upgrade head
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 Nếu service `app` của compose cũng đang chạy thì dừng nó trước
-(`docker compose stop app`) để giải phóng cổng `8000`.
+(`docker compose stop app`) để giải phóng cổng host `${APP_HOST_PORT:-8080}`.
 
 Sau khi server khởi động, đối chiếu runtime tại `/docs` hoặc `/openapi.json` thay
 vì duy trì một bản OpenAPI sao chép trong README.
@@ -691,8 +689,11 @@ uv run ruff check .
 uv run ruff format --check .
 ```
 
-Test đánh dấu `db` cần PostgreSQL thật và tự bỏ qua khi không có
-`TEST_DATABASE_URL`. Chạy đầy đủ với một container tạm:
+Các test runtime SQLite dùng file tạm. Test legacy transfer đánh dấu `db` vẫn cần
+PostgreSQL disposable chỉ kiểm legacy migration/source và tự bỏ qua khi không có
+`TEST_DATABASE_URL`; app runtime PostgreSQL đã retire và được thay bằng các test
+SQLite disposable. Không trỏ biến
+này tới database người dùng.
 
 ```bash
 docker run -d --name cipher-test-db -e POSTGRES_USER=cipher -e POSTGRES_PASSWORD=cipher \
@@ -726,27 +727,26 @@ curl -sS -o /dev/null -w '%{http_code}\n' http://localhost:8000/docs
 curl -sS -o /dev/null -w '%{http_code}\n' http://localhost:8000/openapi.json
 ```
 
-### 9.1 docker-compose với PostgreSQL
+### 9.1 docker-compose với SQLite local trên backend
 
-`docker-compose.yml` dựng ba service:
-
-- `db`: PostgreSQL 17, dữ liệu nằm trong volume `pgdata`, có healthcheck;
-- `migrate`: chạy `alembic upgrade head` một lần sau khi `db` healthy;
-- `app`: chạy sau khi `migrate` thành công; trong container vẫn là cổng `8000`,
-  máy host truy cập qua `http://localhost:${APP_HOST_PORT}` (mặc định `8080`).
+`docker-compose.yml` chạy migration SQLite một lần rồi khởi động đúng một process
+`app`; hai service dùng cùng named volume local ở `/data`. Stack mặc định không
+khởi động PostgreSQL. Frontend ở máy khác vẫn chỉ gọi HTTP API.
 
 ```bash
-cp .env.example .env   # đổi POSTGRES_PASSWORD và DATABASE_URL cho khớp
+cp .env.example .env
 docker compose up --build
 curl -s http://localhost:8080/api/health
 # {"success":true,"result":{"app":"ok","database":"ok","history":"enabled"}}
 curl -s 'http://localhost:8080/api/history?limit=5'
 docker compose down        # giữ dữ liệu
-docker compose down -v     # xóa luôn volume dữ liệu
 ```
 
 `.env` bị gitignore và dockerignore. App không tự tạo bảng khi khởi động; schema
-chỉ thay đổi qua migration Alembic trong `alembic/versions/`.
+chỉ thay đổi qua migration SQLite riêng. Không dùng `docker compose down -v`: named
+volume là dữ liệu history, còn PostgreSQL legacy chỉ được retire theo checklist
+project-scoped sau backup/restore/reconciliation. Xem
+[`docs/sqlite-history-runbook.md`](docs/sqlite-history-runbook.md).
 
 Bảng `cipher_operations` chỉ lưu metadata: cipher, operation, nguồn text/file,
 response mode, độ dài input/output (code point cho text, byte UTF-8 cho file),
@@ -764,19 +764,10 @@ luôn null. JSON RSA text encrypt chỉ ghi `inputLength` code point, text decry
 ghi `outputLength` code point, multipart chỉ ghi `inputLength` raw byte; phía cipher
 array và number để length null. Hai route khóa Hill/RSA và `/api/des/trace` không ghi.
 
-Migration `0003_allow_des_cipher_operations.py` nới CHECK cho `des`; migration
-`0004_allow_rsa_cipher_operations.py` tiếp tục nới cùng CHECK cho `rsa`. Khi deploy,
-chạy `alembic upgrade head` **trước** khi khởi động code mới. Nếu app mới chạy trên
-schema `0003`, CHECK cũ từ chối row RSA nhưng recorder best-effort vẫn giữ nguyên
-response encrypt/decrypt; các row RSA trong khoảng đó bị mất. Không chạy migration
-trực tiếp trên DB production/dev dùng chung nếu chưa có quy trình deploy riêng.
-PostgreSQL kiểm tra các row hiện hữu khi tạo CHECK mới và thao tác ALTER có thể chặn
-ghi trong lúc chạy; lên lịch migrate ở cửa sổ ít tải phù hợp với kích thước bảng.
-
-Rollback history RSA: dừng app mới, quyết định cách lưu/xuất hoặc xóa các row
-`cipher='rsa'`, rồi mới chạy `alembic downgrade 0003` và deploy code cũ. Downgrade
-cố ý thất bại nếu còn row RSA, nên không âm thầm xóa metadata. Không có plaintext,
-ciphertext hay key RSA cần cleanup vì chúng chưa bao giờ được persist.
+SQLite dùng baseline riêng ở effective schema có đủ `des` và `rsa`; không chạy hoặc
+stamp chuỗi PostgreSQL `0001`–`0004` trên file SQLite. PostgreSQL legacy chỉ được đọc
+trong transfer/reconciliation. Cutover và rollback/retirement theo runbook, không
+dùng destructive SQLite downgrade làm production rollback.
 
 Project không có authentication, nên việc đọc lịch sử được khóa bằng cấu hình:
 
@@ -855,12 +846,14 @@ app/
     ├── exceptions.py               # lỗi ứng dụng có status
     └── handlers.py                 # JSON envelope và log an toàn
 
-alembic/                            # migration schema (alembic upgrade head)
-docker-compose.yml                  # db + migrate + app
+alembic/                            # chuỗi migration PostgreSQL legacy 0001-0004
+alembic_sqlite/                     # baseline/migration SQLite riêng
+alembic_sqlite.ini                  # uv run alembic -c ... upgrade head
+docker-compose.yml                  # migrate + one-process app + local data volume
 
 tests/
 ├── unit/                            # core, validation, file helpers, layering
-└── integration/                     # HTTP/OpenAPI, guards, lịch sử/PostgreSQL
+└── integration/                     # HTTP/OpenAPI, guards, SQLite/continuity
 ```
 
 Các core là module thuần, không phụ thuộc FastAPI/file transport. HTTP adapters

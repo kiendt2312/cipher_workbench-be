@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 from datetime import UTC, datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
@@ -27,13 +28,17 @@ def test_database_url_is_disabled_when_unset_or_blank(
     assert config.database_url() is None
 
 
-def test_database_url_is_read_and_trimmed(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("DATABASE_URL", " postgresql+asyncpg://u:p@h/db ")
-    assert config.database_url() == "postgresql+asyncpg://u:p@h/db"
+def test_database_url_is_read_and_trimmed(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    path = tmp_path / "history.sqlite3"
+    raw = f" sqlite+aiosqlite:////{path.as_posix().lstrip('/')} "
+    monkeypatch.setenv("DATABASE_URL", raw)
+    assert config.database_url() == f"sqlite+aiosqlite:////{path.as_posix().lstrip('/')}"
 
 
-def test_engine_is_lazy_and_ping_reports_unreachable_database() -> None:
-    database = create_database("postgresql+asyncpg://nobody:secret@127.0.0.1:1/none")
+def test_engine_is_lazy_and_ping_reports_missing_database(tmp_path: Path) -> None:
+    path = tmp_path / "missing.sqlite3"
+    url = f"sqlite+aiosqlite:////{path.as_posix().lstrip('/')}"
+    database = create_database(url)
 
     async def check() -> bool:
         try:
@@ -42,6 +47,7 @@ def test_engine_is_lazy_and_ping_reports_unreachable_database() -> None:
             await database.engine.dispose()
 
     assert asyncio.run(check()) is False
+    assert not path.exists()
 
 
 def test_exactly_twenty_two_cipher_routes_are_recorded() -> None:

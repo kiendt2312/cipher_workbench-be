@@ -5,18 +5,15 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlalchemy import (
-    BigInteger,
-    Boolean,
     CheckConstraint,
-    DateTime,
-    Identity,
     Index,
     Integer,
-    SmallInteger,
     Text,
-    func,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+from app.db.types import Boolean01, EpochMicrosecondUTC
 
 CIPHERS = ("caesar", "vigenere", "playfair", "affine", "columnar", "hill", "des", "rsa")
 OPERATIONS = ("encrypt", "decrypt")
@@ -45,21 +42,30 @@ class CipherOperation(Base):
         ),
         CheckConstraint("input_length >= 0", name="ck_cipher_operations_input_length"),
         CheckConstraint("output_length >= 0", name="ck_cipher_operations_output_length"),
+        CheckConstraint("succeeded IN (0, 1)", name="ck_cipher_operations_succeeded"),
         CheckConstraint("duration_ms >= 0", name="ck_cipher_operations_duration_ms"),
-        Index("ix_cipher_operations_created_at_id", "created_at", "id"),
-        Index("ix_cipher_operations_cipher_created_at", "cipher", "created_at"),
+        CheckConstraint("id > 0", name="ck_cipher_operations_id_positive"),
+        Index(
+            "ix_cipher_operations_created_at_id",
+            text("created_at DESC"),
+            text("id DESC"),
+        ),
+        Index(
+            "ix_cipher_operations_cipher_created_at",
+            "cipher",
+            text("created_at DESC"),
+            text("id DESC"),
+        ),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(EpochMicrosecondUTC(), nullable=False)
     cipher: Mapped[str] = mapped_column(Text, nullable=False)
     operation: Mapped[str | None] = mapped_column(Text)
     source: Mapped[str] = mapped_column(Text, nullable=False)
     response_mode: Mapped[str | None] = mapped_column(Text)
     input_length: Mapped[int | None] = mapped_column(Integer)
     output_length: Mapped[int | None] = mapped_column(Integer)
-    http_status: Mapped[int] = mapped_column(SmallInteger, nullable=False)
-    succeeded: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    http_status: Mapped[int] = mapped_column(Integer, nullable=False)
+    succeeded: Mapped[bool] = mapped_column(Boolean01(), nullable=False)
     duration_ms: Mapped[int] = mapped_column(Integer, nullable=False)

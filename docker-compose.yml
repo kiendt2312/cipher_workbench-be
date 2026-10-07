@@ -1,29 +1,12 @@
 services:
-  db:
-    image: postgres:17
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-    ports:
-      # Localhost only, so `uv run uvicorn` on the host can use this database.
-      - "127.0.0.1:${DB_HOST_PORT:-5433}:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
-      interval: 2s
-      timeout: 3s
-      retries: 30
-
   migrate:
     build: .
-    command: ["alembic", "upgrade", "head"]
+    command: ["alembic", "-c", "alembic_sqlite.ini", "upgrade", "head"]
     environment:
       DATABASE_URL: ${DATABASE_URL}
-    depends_on:
-      db:
-        condition: service_healthy
+    volumes:
+      - history-data:/data
+    restart: "no"
 
   app:
     build: .
@@ -34,9 +17,11 @@ services:
       HISTORY_API_ENABLED: ${HISTORY_API_ENABLED:-false}
       HISTORY_RETENTION_DAYS: ${HISTORY_RETENTION_DAYS:-30}
       CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-}
+    volumes:
+      - history-data:/data
     depends_on:
       migrate:
         condition: service_completed_successfully
 
 volumes:
-  pgdata:
+  history-data:

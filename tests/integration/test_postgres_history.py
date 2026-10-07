@@ -11,6 +11,9 @@ from tests.conftest import _run_alembic, run_sql
 from tests.integration.history_cases import SENSITIVE_VALUES, cipher_requests
 
 pytestmark = pytest.mark.db
+postgres_runtime_retired = pytest.mark.skip(
+    reason="application runtime is SQLite-only; equivalent runtime contracts use disposable SQLite"
+)
 
 EXPECTED_COLUMNS = {
     "id",
@@ -119,6 +122,7 @@ def test_downgrade_removes_table_and_upgrade_restores_it(db_url: str) -> None:
     assert run_sql(db_url, exists) == [(1,)]
 
 
+@postgres_runtime_retired
 def test_every_cipher_route_is_recorded_without_user_content(db_url: str) -> None:
     cases = cipher_requests()
     with TestClient(app) as client:
@@ -135,6 +139,7 @@ def test_every_cipher_route_is_recorded_without_user_content(db_url: str) -> Non
         assert value.lower() not in dumped.lower()
 
 
+@postgres_runtime_retired
 def test_failed_request_is_stored(db_url: str) -> None:
     with TestClient(app) as client:
         client.post("/api/vigenere/encrypt", json={"text": "hi", "key": "LE MON"})
@@ -144,6 +149,7 @@ def test_failed_request_is_stored(db_url: str) -> None:
     ) == [("encrypt", 422, False, None)]
 
 
+@postgres_runtime_retired
 def test_history_pages_newest_first_without_overlap(db_url: str) -> None:
     _insert_rows(db_url, 25)
     with TestClient(app) as client:
@@ -174,6 +180,7 @@ def test_history_pages_newest_first_without_overlap(db_url: str) -> None:
     }
 
 
+@postgres_runtime_retired
 def test_history_limit_and_filters(db_url: str) -> None:
     _insert_rows(db_url, 3, cipher="playfair", operation="decrypt")
     _insert_rows(db_url, 4, cipher="playfair", operation="encrypt")
@@ -190,6 +197,7 @@ def test_history_limit_and_filters(db_url: str) -> None:
     assert limited["nextCursor"] is not None
 
 
+@postgres_runtime_retired
 def test_history_filter_returns_only_hill_text_rows(db_url: str) -> None:
     with TestClient(app) as client:
         client.post("/api/caesar/encrypt", json={"text": "Hi", "key": 1})
@@ -243,6 +251,7 @@ def test_rsa_rows_must_be_removed_before_migration_downgrade(db_url: str) -> Non
         _run_alembic(db_url, "upgrade", "head")
 
 
+@postgres_runtime_retired
 def test_rsa_response_survives_pre_migration_schema(
     db_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -272,6 +281,7 @@ def test_rsa_response_survives_pre_migration_schema(
         _run_alembic(db_url, "upgrade", "head")
 
 
+@postgres_runtime_retired
 def test_history_filter_returns_des_text_and_file_rows(db_url: str) -> None:
     with TestClient(app) as client:
         client.post("/api/caesar/encrypt", json={"text": "Hi", "key": 1})
@@ -290,6 +300,7 @@ def test_history_filter_returns_des_text_and_file_rows(db_url: str) -> None:
     ]
 
 
+@postgres_runtime_retired
 def test_rsa_history_filter_returns_json_and_file_metadata_without_payload(db_url: str) -> None:
     marker = "RSA-SENSITIVE-PLAINTEXT"
     filename = "rsa-private-marker.txt"
@@ -334,6 +345,7 @@ def test_rsa_history_filter_returns_json_and_file_metadata_without_payload(db_ur
         assert sensitive.lower() not in dumped.lower()
 
 
+@postgres_runtime_retired
 def test_health_reports_ok(db_url: str) -> None:
     with TestClient(app) as client:
         response = client.get("/api/health")
@@ -352,6 +364,7 @@ def _insert_aged(url: str, days_old: list[int]) -> None:
         )
 
 
+@postgres_runtime_retired
 def test_purge_removes_only_expired_rows(db_url: str) -> None:
     import asyncio
 
@@ -375,6 +388,7 @@ def test_purge_removes_only_expired_rows(db_url: str) -> None:
     assert run_sql(db_url, "SELECT count(*) FROM cipher_operations") == remaining == [(2,)]
 
 
+@postgres_runtime_retired
 def test_purge_command_reports_deleted_rows(db_url: str) -> None:
     import os
     import subprocess

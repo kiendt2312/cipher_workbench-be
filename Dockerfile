@@ -23,12 +23,16 @@ ENV PATH="/app/.venv/bin:$PATH"
 WORKDIR /app
 
 RUN groupadd --gid 10001 appuser \
-    && useradd --uid 10001 --gid 10001 --create-home appuser
+    && useradd --uid 10001 --gid 10001 --create-home appuser \
+    && mkdir -p /data \
+    && chown appuser:appuser /data
 
 COPY --from=builder --chown=appuser:appuser /app/.venv /app/.venv
 COPY --chown=appuser:appuser app ./app
 COPY --chown=appuser:appuser alembic ./alembic
+COPY --chown=appuser:appuser alembic_sqlite ./alembic_sqlite
 COPY --chown=appuser:appuser alembic.ini ./
+COPY --chown=appuser:appuser alembic_sqlite.ini ./
 
 USER appuser
 

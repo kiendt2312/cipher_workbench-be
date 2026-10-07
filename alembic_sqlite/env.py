@@ -1,13 +1,15 @@
-"""Alembic environment running migrations through the async engine."""
+"""Alembic environment for the separate SQLite history schema."""
+
+from __future__ import annotations
 
 import asyncio
-import os
 from logging.config import fileConfig
 
-from sqlalchemy.engine import Connection, make_url
+from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from alembic import context
+from app import config as app_config
 from app.db.models import Base
 
 if context.config.config_file_name is not None:
@@ -17,17 +19,9 @@ target_metadata = Base.metadata
 
 
 def _database_url() -> str:
-    # This root is legacy PostgreSQL-only.  Runtime DATABASE_URL is deliberately
-    # ignored so a SQLite app configuration cannot be mistaken for a source DB.
-    url = (context.config.get_main_option("sqlalchemy.url") or "").strip()
-    if not url:
-        url = os.environ.get("LEGACY_DATABASE_URL", "").strip()
-    try:
-        parsed = make_url(url)
-    except Exception:
-        raise RuntimeError("A valid legacy PostgreSQL URL is required") from None
-    if parsed.drivername != "postgresql+asyncpg" or not parsed.database:
-        raise RuntimeError("A valid legacy PostgreSQL URL is required")
+    url = app_config.database_url()
+    if url is None:
+        raise RuntimeError("DATABASE_URL must be set to run SQLite migrations")
     return url
 
 
@@ -44,6 +38,8 @@ def _run_sync_migrations(connection: Connection) -> None:
 
 
 async def run_migrations_online() -> None:
+    # This migration-only engine intentionally uses normal SQLite creation mode;
+    # the application engine uses mode=rw and therefore cannot create a file.
     engine = create_async_engine(_database_url())
     async with engine.connect() as connection:
         await connection.run_sync(_run_sync_migrations)

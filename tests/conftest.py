@@ -42,15 +42,8 @@ def test_database_url() -> str:
 
 def _run_alembic(url: str, command_name: str, revision: str) -> None:
     alembic_config = AlembicConfig(str(PROJECT_ROOT / "alembic.ini"))
-    previous = os.environ.get("DATABASE_URL")
-    os.environ["DATABASE_URL"] = url
-    try:
-        getattr(alembic_command, command_name)(alembic_config, revision)
-    finally:
-        if previous is None:
-            os.environ.pop("DATABASE_URL", None)
-        else:
-            os.environ["DATABASE_URL"] = previous
+    alembic_config.set_main_option("sqlalchemy.url", url)
+    getattr(alembic_command, command_name)(alembic_config, revision)
 
 
 def run_sql(url: str, statement: str) -> list[tuple]:
@@ -69,10 +62,8 @@ def run_sql(url: str, statement: str) -> list[tuple]:
 
 
 @pytest.fixture
-def db_url(test_database_url: str, monkeypatch: pytest.MonkeyPatch) -> str:
-    """Point the app at an empty ``cipher_operations`` table for one test."""
+def db_url(test_database_url: str) -> str:
+    """Return an empty legacy PostgreSQL database for migration/source tests."""
 
     run_sql(test_database_url, "TRUNCATE cipher_operations RESTART IDENTITY")
-    monkeypatch.setenv("DATABASE_URL", test_database_url)
-    monkeypatch.setenv("HISTORY_API_ENABLED", "true")
     return test_database_url

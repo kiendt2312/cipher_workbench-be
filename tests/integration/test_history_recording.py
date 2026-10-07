@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sqlite3
 import time
 from collections.abc import Iterator
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -17,7 +19,7 @@ from app.history.store import OperationEntry
 from app.main import app
 from tests.integration.history_cases import cipher_requests
 
-FAKE_URL = "postgresql+asyncpg://nobody:topsecret@127.0.0.1:1/none"
+SENSITIVE_URL = "sqlite+aiosqlite:////tmp/missing-history.sqlite3"
 
 
 @pytest.fixture
@@ -32,8 +34,10 @@ def recorded(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[OperationEntry]]:
 
 
 @pytest.fixture
-def client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
-    monkeypatch.setenv("DATABASE_URL", FAKE_URL)
+def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[TestClient]:
+    database_path = tmp_path / "missing-history.sqlite3"
+    database_url = f"sqlite+aiosqlite:////{database_path.as_posix().lstrip('/')}"
+    monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("HISTORY_API_ENABLED", "true")
     with TestClient(app, raise_server_exceptions=False) as test_client:
         yield test_client
@@ -535,7 +539,7 @@ def test_recording_failure_leaves_response_untouched(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     async def failing_record(database: object, entry: OperationEntry) -> None:
-        raise ConnectionError(f"cannot reach {FAKE_URL}")
+        raise ConnectionError(f"cannot reach {SENSITIVE_URL}")
 
     monkeypatch.setattr(history_recorder, "record_operation", failing_record)
     with caplog.at_level(logging.WARNING):
@@ -548,11 +552,32 @@ def test_recording_failure_leaves_response_untouched(
     assert "Hi" not in caplog.text
 
 
+def test_simulated_disk_full_is_best_effort_bounded_and_redacted(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    async def disk_full(database: object, entry: OperationEntry) -> None:
+        raise sqlite3.OperationalError(f"database or disk is full: {SENSITIVE_URL}")
+
+    monkeypatch.setattr(history_recorder, "record_operation", disk_full)
+    started = time.monotonic()
+    with caplog.at_level(logging.WARNING):
+        response = client.post("/api/caesar/encrypt", json={"text": "Hi", "key": 1})
+    elapsed = time.monotonic() - started
+
+    assert elapsed < 0.5
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/json"
+    assert response.json() == {"success": True, "result": "Ij"}
+    assert "Could not record cipher operation history" in caplog.text
+    assert "disk is full" not in caplog.text
+    assert "topsecret" not in caplog.text
+
+
 def test_hill_response_is_unchanged_when_recording_fails(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     async def failing_record(database: object, entry: OperationEntry) -> None:
-        raise ConnectionError(f"cannot reach {FAKE_URL}")
+        raise ConnectionError(f"cannot reach {SENSITIVE_URL}")
 
     monkeypatch.setattr(history_recorder, "record_operation", failing_record)
     with caplog.at_level(logging.WARNING):
@@ -572,7 +597,7 @@ def test_rsa_response_is_unchanged_when_recording_fails(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     async def failing_record(database: object, entry: OperationEntry) -> None:
-        raise ConnectionError(f"cannot reach {FAKE_URL}")
+        raise ConnectionError(f"cannot reach {SENSITIVE_URL}")
 
     payload = {
         "e": "3",

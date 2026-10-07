@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
 from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 
-from sqlalchemy import select, tuple_
+from sqlalchemy import and_, or_, select
 
 from app.db.engine import Database
 from app.db.models import CipherOperation
@@ -28,8 +30,15 @@ class OperationEntry:
 
 async def record_operation(database: Database, entry: OperationEntry) -> None:
     async with database.sessions() as session:
-        session.add(CipherOperation(**asdict(entry)))
-        await session.commit()
+        try:
+            session.add(CipherOperation(created_at=datetime.now(UTC), **asdict(entry)))
+            await session.commit()
+        except BaseException:
+            with suppress(BaseException):
+                await session.rollback()
+            with suppress(BaseException):
+                await session.invalidate()
+            raise
 
 
 async def list_operations(
@@ -47,7 +56,13 @@ async def list_operations(
     )
     if cursor is not None:
         query = query.where(
-            tuple_(CipherOperation.created_at, CipherOperation.id) < (cursor.created_at, cursor.id)
+            or_(
+                CipherOperation.created_at < cursor.created_at,
+                and_(
+                    CipherOperation.created_at == cursor.created_at,
+                    CipherOperation.id < cursor.id,
+                ),
+            )
         )
     if cipher is not None:
         query = query.where(CipherOperation.cipher == cipher)
@@ -55,7 +70,14 @@ async def list_operations(
         query = query.where(CipherOperation.operation == operation)
 
     async with database.sessions() as session:
-        rows = list((await session.scalars(query.limit(limit + 1))).all())
+        try:
+            rows = list((await session.scalars(query.limit(limit + 1))).all())
+        except BaseException:
+            with suppress(BaseException):
+                await session.rollback()
+            with suppress(BaseException):
+                await session.invalidate()
+            raise
 
     if len(rows) <= limit:
         return rows, None

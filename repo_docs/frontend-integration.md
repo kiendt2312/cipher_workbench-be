@@ -8,7 +8,7 @@ Phần RSA có contract triển khai chi tiết tại
 
 - Cập nhật: `2026-10-06`. Backend có 26 POST route cipher (gồm bốn route RSA), một GET sinh khóa Hill,
   `GET /api/health`,
-  `GET /api/history` (tùy chọn, cần PostgreSQL).
+  `GET /api/history` (tùy chọn, dùng SQLite cục bộ trên backend).
 - **Người mới:** đọc mục **A. Bắt đầu nhanh** (khoảng 10 phút) rồi dùng file
   [`examples/cipher-api.ts`](examples/cipher-api.ts). Các mục 1–17 là tra cứu chi tiết.
 - **Đã tích hợp trước đây:** đọc mục **0. Thay đổi gần đây**.
@@ -21,8 +21,8 @@ Phần RSA có contract triển khai chi tiết tại
 
 ```bash
 # Trong repo backend, cần Docker
-cp .env.example .env          # lần đầu; đổi POSTGRES_PASSWORD và DATABASE_URL cho khớp
-docker compose up -d --build  # PostgreSQL + migration + app
+cp .env.example .env
+docker compose up -d --build  # SQLite migration + one-process app
 curl -s http://localhost:8080/api/health
 # {"success":true,"result":{"app":"ok","database":"ok","history":"enabled"}}
 ```
@@ -338,11 +338,9 @@ filename/file content, IP/user-agent hoặc trace. Number transform để hai le
 text encrypt chỉ có input code-point length, text decrypt chỉ có output code-point
 length, multipart chỉ có input raw-byte length.
 
-Backend phải chạy `alembic upgrade head` (migration `0004`) trước app mới. Nếu code
-mới tạm chạy trên schema `0003`, RSA vẫn trả response bình thường nhưng row history
-có thể bị bỏ lỡ. Downgrade về `0003` yêu cầu operator xử lý row `cipher=rsa` trước;
-migration không tự xóa dữ liệu. Việc tạo lại CHECK kiểm tra row hiện hữu và có thể
-chặn ghi trong lúc ALTER, nên operator cần chọn cửa sổ migrate phù hợp.
+Đoạn migration `0003` → `0004` dưới đây là lịch sử của PostgreSQL legacy. Runtime
+SQLite hiện dùng baseline riêng đã có RSA; không chạy hoặc stamp các revision này
+trên file SQLite. Transfer tooling vẫn kiểm tra nguồn PostgreSQL ở effective `0004`.
 
 ### 0.0c Lọc ký tự đệm Playfair/Hill (`2026-10-02`)
 
@@ -408,9 +406,9 @@ không đổi.
 8. Màn hình minh họa từng bước dùng `/api/des/trace` theo bảng ánh xạ ở mục 4.7
    (sinh khóa, IP, 16 vòng, hàm f, IP⁻¹); FE chỉ định dạng, không tự tính DES.
 
-**Phía backend khi deploy:** chạy `alembic upgrade head` (migration `0003`) trước khi
-bật bản mới, nếu không lịch sử `cipher=des` sẽ không được ghi (response cipher không
-bị ảnh hưởng).
+**Lịch sử backend:** PostgreSQL từng cần migration `0003` trước khi bật DES. Runtime
+SQLite hiện dùng baseline riêng đã chứa DES; thông tin này không phải lệnh deploy
+SQLite.
 
 ### 0.0a CORS tùy chọn cho FE khác origin (`2026-09-29`)
 
@@ -470,14 +468,14 @@ Project không có đăng nhập, nên:
    `database: "ok"`; xử lý thêm 404 từ `/api/history` (mục 16.3).
 2. Làm lịch sử cá nhân trên trình duyệt theo mục 17 nếu cần tính năng "xem lại".
 
-### 0.2 PostgreSQL, health và lịch sử thao tác (`2026-09-28`)
+### 0.2 PostgreSQL, health và lịch sử thao tác (`2026-09-28`, lịch sử)
 
 **Endpoint mới:** `GET /api/health` và `GET /api/history`. 15 route cipher giữ
 nguyên request, response, status và message.
 
 **Hành vi mới:**
 
-- Backend có thể chạy kèm PostgreSQL. Khi có DB, mỗi request cipher (kể cả request
+- Backend ban đầu có thể chạy kèm PostgreSQL. Khi có DB, mỗi request cipher (kể cả request
   lỗi) được ghi lại dưới dạng metadata: cipher, operation, text/file, độ dài, status,
   thời gian xử lý. Không lưu text, key, tên file, nội dung file hay kết quả.
 - Khi chạy bằng docker-compose, backend ở `http://localhost:8080`. Khi chạy bằng
@@ -562,7 +560,7 @@ FastAPI :8000 (compose publish ra host :8080)
   │
   ├── JSON preview/error hoặc text/plain attachment
   │
-  └── PostgreSQL (tùy chọn): bảng cipher_operations ← /api/history, /api/health
+  └── SQLite local trên BE (tùy chọn): cipher_operations ← /api/history, /api/health
 ```
 
 Backend chỉ phục vụ API, `/docs` và `/openapi.json`; không có UI. Trong container và khi chạy bằng uv, app
@@ -574,7 +572,7 @@ Khi chạy FE dev server riêng, cấu hình dev proxy tới cổng backend đan
 
 | Cách chạy backend | Proxy target |
 |---|---|
-| `docker compose up` (có PostgreSQL) | `http://localhost:8080` |
+| `docker compose up` (SQLite local) | `http://localhost:8080` |
 | `uv run uvicorn app.main:app --port 8000` | `http://localhost:8000` |
 
 ```text
@@ -617,7 +615,7 @@ Các giới hạn trên không tạo contract mới và không thu hẹp behavio
 Health check nằm ở `GET /api/health` (mục 16.2), không phải `/health`.
 
 Không copy OpenAPI thành một YAML tĩnh khác trong FE vì bản sao sẽ dễ trôi lệch.
-Backend không lưu input, key, file, result hay session. Khi có PostgreSQL, backend
+Backend không lưu input, key, file, result hay session. Khi có SQLite, backend
 chỉ lưu metadata thao tác, đọc qua `GET /api/history` (mục 16).
 
 ## 3. Danh mục cipher endpoint hiện tại
@@ -2165,35 +2163,35 @@ change. Không thêm `/v1`, endpoint, field hoặc behavior mới chỉ bằng c
 
 ## 16. Health và lịch sử thao tác
 
-Backend có thể chạy kèm PostgreSQL. Khi bật, mỗi request tới 22 route biến đổi được
+Backend có thể chạy với SQLite cục bộ trên máy BE. Khi bật, mỗi request tới 22 route biến đổi được
 ghi lại dưới dạng **metadata**. Backend không lưu text, key, IV, tên file, nội dung file
 hay kết quả. Hai route khóa Hill, hai route khóa RSA và `/api/des/trace` không được ghi.
 Hai RSA transform được ghi kể cả request lỗi, nhưng không lưu key/data/cipher array,
 metadata lossless hoặc trace. Contract của các route hiện hữu không đổi.
 
-### 16.1 Chạy backend có PostgreSQL khi dev FE
+### 16.1 Chạy backend có SQLite khi dev FE
 
 Cần Docker. Trong thư mục repo backend:
 
 ```bash
-cp .env.example .env          # lần đầu; đổi POSTGRES_PASSWORD và DATABASE_URL cho khớp
-docker compose up -d --build  # db + migrate + app
+cp .env.example .env
+docker compose up -d --build  # migrate + one-process app, cùng SQLite volume
 curl -s http://localhost:8080/api/health
 # {"success":true,"result":{"app":"ok","database":"ok","history":"enabled"}}
 ```
 
 - Backend ở `http://localhost:8080`; proxy `/api` của FE dev server về đây.
-- Dữ liệu lịch sử được giữ qua các lần khởi động lại. `docker compose down -v` xóa sạch
-  dữ liệu khi cần làm lại từ đầu.
+- Dữ liệu lịch sử được giữ qua các lần khởi động lại trong named volume local. Không
+  dùng `docker compose down -v`; backup ngoài volume và restore rehearsal mới là
+  bằng chứng phục hồi.
 - Muốn thử màn hình lịch sử khi không có DB: chạy backend bằng
   `HISTORY_API_ENABLED=true uv run uvicorn app.main:app --port 8000` mà không đặt
   `DATABASE_URL`; khi đó `database` là `disabled` và `/api/history` trả 503. Nếu
   không bật flag (mặc định), `/api/history` trả 404 trước khi kiểm tra DB.
 - Tạo dữ liệu mẫu: gọi vài request encrypt/decrypt bất kỳ qua `/docs` hoặc `curl`, mỗi
   request sinh một dòng lịch sử.
-- Deploy backend mới theo thứ tự migrate-first: chạy `alembic upgrade head` tới `0004`,
-  rồi mới restart app. Schema `0003` không làm hỏng RSA response nhưng sẽ bỏ lỡ row
-  RSA; downgrade cần xử lý row `cipher=rsa` trước khi chạy `alembic downgrade 0003`.
+- Deploy backend mới theo thứ tự SQLite migrate-first rồi mới restart đúng một app
+  process. Không chạy hoặc stamp migration PostgreSQL `0001`–`0004` trên SQLite.
 
 ### 16.2 `GET /api/health`
 
@@ -2426,7 +2424,7 @@ xóa lịch sử đã lưu không.
 
 | | Lịch sử cá nhân (mục 17) | Lịch sử server (mục 16) |
 |---|---|---|
-| Nơi lưu | `localStorage` trên máy người dùng | PostgreSQL trên server |
+| Nơi lưu | `localStorage` trên máy người dùng | SQLite cục bộ trên backend |
 | Ai xem được | Người dùng trên đúng trình duyệt đó | Ai gọi được `/api/history` khi cờ bật |
 | Nội dung | Input, key, kết quả | Chỉ metadata, không có nội dung |
 | Thời hạn | Đến khi người dùng xóa (tối đa 50 mục) | Mặc định 30 ngày; cấu hình 1–3650 ngày |

@@ -19,8 +19,12 @@ from app.errors import messages
 from app.history import retention
 from app.main import app
 
-FAKE_URL = "postgresql+asyncpg://nobody:topsecret@127.0.0.1:1/none"
+SENSITIVE_URL = "sqlite+aiosqlite:////tmp/missing-history.sqlite3"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _missing_sqlite_url(path: Path) -> str:
+    return f"sqlite+aiosqlite:////{path.as_posix().lstrip('/')}"
 
 
 @pytest.mark.parametrize("value", ["true", "TRUE", " yes ", "1", "on"])
@@ -92,7 +96,7 @@ def test_health_reports_history_disabled(client_flag_off: TestClient) -> None:
     }
 
 
-def test_disabled_flag_still_records(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_disabled_flag_still_records(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     from app.api import history_recorder
 
     recorded: list[object] = []
@@ -101,14 +105,16 @@ def test_disabled_flag_still_records(monkeypatch: pytest.MonkeyPatch) -> None:
         recorded.append(entry)
 
     monkeypatch.setattr(history_recorder, "record_operation", fake_record)
-    monkeypatch.setenv("DATABASE_URL", FAKE_URL)
+    monkeypatch.setenv("DATABASE_URL", _missing_sqlite_url(tmp_path / "missing.sqlite3"))
     monkeypatch.delenv("HISTORY_API_ENABLED", raising=False)
     with TestClient(app) as client:
         client.post("/api/caesar/encrypt", json={"text": "Hi", "key": 1})
     assert len(recorded) == 1
 
 
-def test_purge_task_runs_with_database_and_is_cancelled(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_purge_task_runs_with_database_and_is_cancelled(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     calls: list[int] = []
     cancelled = asyncio.Event()
 
@@ -121,7 +127,7 @@ def test_purge_task_runs_with_database_and_is_cancelled(monkeypatch: pytest.Monk
             raise
 
     monkeypatch.setattr(app_main, "purge_periodically", fake_purge_periodically)
-    monkeypatch.setenv("DATABASE_URL", FAKE_URL)
+    monkeypatch.setenv("DATABASE_URL", _missing_sqlite_url(tmp_path / "missing.sqlite3"))
     monkeypatch.setenv("HISTORY_RETENTION_DAYS", "7")
     with TestClient(app) as client:
         client.get("/api/health")
@@ -149,7 +155,7 @@ def test_purge_loop_survives_failures(
 
     async def failing_purge(database: object, days: int) -> int:
         attempts.append(days)
-        raise ConnectionError(f"cannot reach {FAKE_URL}")
+        raise ConnectionError(f"cannot reach {SENSITIVE_URL}")
 
     monkeypatch.setattr(retention, "purge_expired", failing_purge)
 
@@ -181,9 +187,9 @@ def test_purge_command_requires_database_url() -> None:
     assert "DATABASE_URL must be set" in result.stderr
 
 
-def test_purge_command_failure_prints_no_connection_details() -> None:
+def test_purge_command_failure_prints_no_connection_details(tmp_path: Path) -> None:
     env = dict(os.environ)
-    env["DATABASE_URL"] = "postgresql+asyncpg://nobody:topsecret@127.0.0.1:1/none"
+    env["DATABASE_URL"] = _missing_sqlite_url(tmp_path / "missing.sqlite3")
     result = subprocess.run(
         [sys.executable, "-m", "app.history.retention"],
         cwd=PROJECT_ROOT,
@@ -194,7 +200,7 @@ def test_purge_command_failure_prints_no_connection_details() -> None:
     )
     assert result.returncode == 1
     assert result.stderr.strip() == "Could not purge history rows"
-    assert "topsecret" not in result.stdout + result.stderr
+    assert str(tmp_path) not in result.stdout + result.stderr
 
 
 @pytest.mark.parametrize(("flag", "warned"), [("true", True), ("false", False), (None, False)])
