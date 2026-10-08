@@ -48,12 +48,6 @@ router = APIRouter(prefix="/api/dh", tags=["Diffie-Hellman (giáo dục)"])
 _ERRORS: dict[int | str, dict[str, Any]] = {
     status: {"model": DhErrorResponse} for status in (413, 415, 422, 500)
 }
-EDUCATIONAL_WARNING = {
-    "code": "EDUCATIONAL_PRIVATE_KEYS",
-    "message": (
-        "Chỉ dùng để học: response có khóa riêng; hệ thống thật không được gửi hoặc lưu khóa riêng."
-    ),
-}
 DH_CAPACITY_LIMIT = 4
 _DH_LIMITER = BoundedSemaphore(DH_CAPACITY_LIMIT)
 
@@ -117,7 +111,7 @@ async def _json(request: Request) -> dict[str, Any]:
 async def params(request: Request) -> dict[str, Any]:
     payload = await _json(request)
     fields(payload, allowed=("q", "alpha"), required=("q",))
-    q = decimal(payload["q"], "q")
+    q = decimal(payload["q"], "q", manual_q=True)
     await _run_dh(dh.validate_q, q, manual=True)
     alpha = decimal(payload["alpha"], "alpha") if "alpha" in payload else None
     result = await _run_dh(dh.validate_parameters, q, alpha, manual=True)
@@ -188,8 +182,9 @@ async def shared_secret_route(request: Request) -> dict[str, Any]:
     responses=_ERRORS,
     openapi_extra=json_request_schema(ExchangeRequest),
     description=(
-        "Mô phỏng hai phía DH và cố ý trả privateKeyA/privateKeyB cho mục đích giáo dục; "
-        "không dùng response này trong hệ thống thật."
+        "Tính exchange DH hai phía và trả private/public/shared keys cùng trace số học. "
+        "Response có warning vì private keys chỉ được công khai để minh họa/đối chiếu; "
+        "hệ thống thực tế phải giữ private key tại bên sở hữu và xác thực public key."
     ),
 )
 async def exchange_route(request: Request) -> dict[str, Any]:
@@ -213,7 +208,6 @@ async def exchange_route(request: Request) -> dict[str, Any]:
         private_key_b=private_b,
     )
     body = result.as_dict()
-    body["warning"] = EDUCATIONAL_WARNING
     return {"success": True, **body}
 
 

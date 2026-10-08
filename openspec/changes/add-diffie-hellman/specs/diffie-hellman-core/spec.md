@@ -84,6 +84,14 @@ Exchange SHALL tạo hoặc nhận hai private key, tính hai public key và hai
 - **WHEN** exchange nhận `q="23", alpha="5", privateKeyA="4", privateKeyB="3"`
 - **THEN** trả private keys `"4","3"`, public keys `"4","10"`, shared keys đều `"18"` và `match=true`
 
+### Requirement: Dữ liệu DH standalone là kết quả phép tính
+Mọi parameter, key, shared secret, match và trace SHALL được tính từ input bằng số học DH đã đặc tả; implementation MUST NOT thay bằng fixture hard-code, mock hoặc sample-only output. DH standalone không phụ thuộc Caesar. (Truy vết: Tài liệu thuật toán DH §§3–7; quyết định chủ sở hữu follow-up về feature standalone và dữ liệu thật)
+
+#### Scenario: Output thay đổi theo private key
+- **WHEN** cùng `q="23", alpha="5"` được dùng với hai private key hợp lệ khác nhau
+- **THEN** public key và trace phản ánh từng phép lũy thừa modulo tương ứng
+- **AND** không cần gọi Caesar để nhận kết quả DH
+
 ### Requirement: Dẫn xuất độ dịch Caesar
 DH Caesar SHALL tính `shift=K mod 26` và gọi cùng hành vi Caesar core hiện hữu; `shift` trả dưới dạng decimal string. Nếu shift bằng 0, kết quả vẫn thành công và có warning `SHIFT_ZERO`. (Truy vết: Tài liệu thuật toán DH §§10–12; Scope DH BE-06, TC-11–TC-12; `caesar-core`; quyết định chủ sở hữu DH Q7)
 

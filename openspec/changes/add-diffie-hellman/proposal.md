@@ -2,7 +2,7 @@
 
 ## Why
 
-Backend hiện chưa có luồng Diffie–Hellman giáo dục để kiểm tra/sinh tham số, tạo khóa, tính bí mật chung và dùng bí mật đó làm độ dịch Caesar. Change này đặc tả sáu API thống nhất với hai tài liệu DH ngày 2026-10-08 và các contract FastAPI/RSA/Caesar/history hiện hành trước khi có bất kỳ implementation nào.
+Backend cần cung cấp Diffie–Hellman như một feature độc lập ngang cấp Caesar: kiểm tra/sinh tham số, tạo khóa, tính bí mật chung, so khớp hai phía và trả trace số học thực. Change này đặc tả sáu API thống nhất với hai tài liệu DH ngày 2026-10-08 và các contract FastAPI/RSA/Caesar/history hiện hành; endpoint DH–Caesar là integration dùng shared key của feature DH, không biến DH thành một mode của Caesar.
 
 ## What Changes
 
@@ -11,8 +11,8 @@ Backend hiện chưa có luồng Diffie–Hellman giáo dục để kiểm tra/s
 - Trả đại lượng mật mã và `shift` bằng decimal string; giữ control/index/bit là JSON integer và boolean là JSON boolean.
 - `/params` manual giữ trần `q <= 10^12`; tham số sinh 16/32/64/128 bit dùng được end-to-end ở các endpoint sau, được kiểm tra độc lập, không provenance token hay server state.
 - Khi thiếu `alpha`, `/params` chỉ trả gợi ý và không tự chọn; khi `alpha` được gửi nhưng sai, trả lỗi kèm gợi ý, không silent substitution.
-- `/exchange` trả cả `privateKeyA` và `privateKeyB` để minh họa, kèm cảnh báo rõ đây không phải hành vi dùng cho hệ thống thật.
-- `/caesar` nhận JSON text hoặc multipart `.txt`, luôn trả JSON; dùng đúng Caesar hiện hành, giới hạn file chính xác 5 MiB, UTF-8/BOM, không attachment hay `response_mode`.
+- `/exchange` trả cả `privateKeyA` và `privateKeyB` để minh họa và đối chiếu phép tính thật, kèm cảnh báo không gửi/lưu khóa riêng ngoài bên sở hữu và phải xác thực khóa công khai để chống MITM trong hệ thống thực tế.
+- `/caesar` là integration riêng nhận JSON text hoặc multipart `.txt`, luôn trả JSON; nó tính DH shared key thật rồi dùng đúng Caesar hiện hành với `K mod 26`, giới hạn file chính xác 5 MiB, UTF-8/BOM, không attachment hay `response_mode`. Các route Caesar standalone giữ nguyên.
 - Dùng error envelope `{success:false,code,message,field}` và status 422/413/415/500 theo precedent RSA/repository thay cho quy tắc HTTP 400 trong tài liệu scope.
 - Chỉ ghi metadata history cho `/api/dh/caesar`; không ghi năm endpoint DH còn lại và không bao giờ lưu tham số, khóa, nội dung, file, trace hoặc warning.
 - Không thay đổi contract Caesar, RSA hoặc các cipher hiện hữu.

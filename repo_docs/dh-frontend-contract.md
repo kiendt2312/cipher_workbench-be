@@ -1,12 +1,16 @@
-# Supporting reference — Diffie–Hellman giáo dục
+# Supporting reference — Diffie–Hellman standalone và integration Caesar
 
 Tài liệu này giữ phần tra cứu DH theo feature. Contract canonical, self-contained
 và có quyền cao hơn cho FE là [`frontend-integration.md`](frontend-integration.md),
 đặc biệt mục 19. Không suy ra endpoint hoặc field ngoài contract canonical.
 
-> **Cảnh báo sản phẩm bắt buộc:** DH ở đây dùng để học số học trao đổi khóa. Không
-> có xác thực chống MITM, ECDH, KDF, mã hóa production hoặc lưu khóa server-side.
-> `/exchange` cố ý trả khóa riêng để minh họa; UI phải luôn hiển thị warning đi kèm.
+DH là feature standalone ngang cấp Caesar. Năm endpoint params/key/exchange trả dữ
+liệu số học DH được tính thật; `/api/dh/caesar` là integration riêng dùng shared key,
+không biến DH thành Caesar mode và không thay đổi Caesar standalone.
+
+> **Giới hạn an toàn bắt buộc:** Contract này không có xác thực chống MITM, ECDH,
+> KDF, nhóm production hoặc lưu khóa server-side. `/exchange` cố ý trả khóa riêng để
+> minh họa/đối chiếu phép tính; client phải luôn hiển thị warning đi kèm.
 
 ## 1. Tóm tắt bắt buộc
 
@@ -239,7 +243,7 @@ Request exact là `ExchangeRequest`. Bỏ một hoặc cả hai private key
 ```json
 {
   "code":"EDUCATIONAL_PRIVATE_KEYS",
-  "message":"Chỉ dùng để học: response có khóa riêng; hệ thống thật không được gửi hoặc lưu khóa riêng."
+  "message":"Response trả khóa riêng để minh họa và đối chiếu phép tính. Trong hệ thống thực tế, khóa riêng không được gửi hoặc lưu ngoài bên sở hữu; khóa công khai phải được xác thực để chống tấn công người đứng giữa (MITM)."
 }
 ```
 

@@ -215,12 +215,13 @@ def fields(payload: dict[str, Any], *, allowed: tuple[str, ...], required: tuple
             raise _invalid(name)
 
 
-def decimal(raw: Any, field: str) -> int:
+def decimal(raw: Any, field: str, *, manual_q: bool = False) -> int:
     if type(raw) is not str or DECIMAL.fullmatch(raw) is None:
         raise error(422, "NOT_INTEGER", messages.DH_NOT_INTEGER, field)
     value = int(raw)
     if field == "q" and value.bit_length() > 128:
-        raise error(422, "Q_OUT_OF_RANGE", messages.DH_Q_OUT_OF_RANGE_128, field)
+        message = messages.DH_Q_OUT_OF_RANGE_MANUAL if manual_q else messages.DH_Q_OUT_OF_RANGE_128
+        raise error(422, "Q_OUT_OF_RANGE", message, field)
     return value
 
 

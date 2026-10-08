@@ -144,8 +144,10 @@ POST /api/dh/caesar
 
 trả `sharedKey:"160"`, `shift:"4"`, `result:"Lipps Asvph"`. `/exchange` cố ý trả
 `privateKeyA/privateKeyB` và warning `EDUCATIONAL_PRIVATE_KEYS`; UI phải hiển thị
-cảnh báo đây chỉ là minh họa. Không quảng bá DH này cho production: không có ECDH,
-KDF, xác thực MITM, key storage, attachment hoặc endpoint history riêng. Chỉ metadata
+cảnh báo về việc private key chỉ được công khai để minh họa/đối chiếu phép tính,
+không rời bên sở hữu trong hệ thống thực tế, và public key phải được xác thực. Không
+quảng bá DH này cho production: không có ECDH, KDF, xác thực MITM, key storage,
+attachment hoặc endpoint history riêng. Chỉ metadata
 của `/api/dh/caesar` xuất hiện trong history chung.
 
 ### A.4 API client dùng ngay
@@ -3469,6 +3471,11 @@ cách sửa tài liệu.
 Phần này được nhúng trực tiếp để guide chung tự chứa đủ contract DH. File
 `dh-frontend-contract.md` chỉ là supporting reference của cùng snapshot.
 
+DH là feature standalone ngang cấp Caesar. Năm endpoint params/key/exchange trả
+parameters, private/public keys, shared secrets, match và trace từ số học DH thực;
+không phải mock hay sample-only output. `/api/dh/caesar` là integration thứ sáu tính
+shared key DH rồi dùng `K mod 26`; nó không thay thế hoặc thay đổi Caesar standalone.
+
 - Có đúng sáu endpoint DH, tất cả là `POST` dưới `/api/dh`.
 - Mọi đại lượng mật mã và `shift` là **decimal string ASCII canonical**: `"0"` hoặc
   `[1-9][0-9]*`. Không gửi JSON number, dấu, khoảng trắng, Unicode digit hay leading zero.
@@ -3698,7 +3705,7 @@ Request exact là `ExchangeRequest`. Bỏ một hoặc cả hai private key
 ```json
 {
   "code":"EDUCATIONAL_PRIVATE_KEYS",
-  "message":"Chỉ dùng để học: response có khóa riêng; hệ thống thật không được gửi hoặc lưu khóa riêng."
+  "message":"Response trả khóa riêng để minh họa và đối chiếu phép tính. Trong hệ thống thực tế, khóa riêng không được gửi hoặc lưu ngoài bên sở hữu; khóa công khai phải được xác thực để chống tấn công người đứng giữa (MITM)."
 }
 ```
 
@@ -3885,6 +3892,13 @@ Field cũ hoặc `include_trace` gửi tới schema strict mới bị 422 `INVAL
 URL cũ không match router. Product choice bổ sung adapter legacy nằm ngoài contract
 này và chưa được phê duyệt. FE phải migrate sang camelCase/exact routes nếu dùng
 checkpoint hiện tại.
+
+Nếu UI chỉ hiện thông báo generic `Dữ liệu phản hồi không hợp lệ`, chưa đủ bằng chứng
+để kết luận phép tính DH sai. Trước tiên đối chiếu URL/method/status, raw JSON body và
+`Content-Type` với đúng response type của endpoint ở mục 3–8; đặc biệt kiểm tra client
+không còn parse field snake_case/schema cũ, không coi `warning` của HTTP 200 là error,
+và không yêu cầu trace tối đa 20 rows. Backend không trả message generic đó trong
+success DH. Không log private keys hoặc shared secret khi thu thập chẩn đoán.
 
 ### 19.13 Ma trận envelope chung nhưng không đồng nhất hóa feature
 

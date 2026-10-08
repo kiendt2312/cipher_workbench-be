@@ -243,13 +243,16 @@ POST /api/rsa/decrypt
 Lỗi RSA có đúng `{success:false,code,message,field}` với status 413/415/422/500;
 field lạ, trùng hoặc không áp dụng đều bị từ chối.
 
-### 2.8 Diffie–Hellman giáo dục
+### 2.8 Diffie–Hellman standalone và integration Caesar
 
-DH minh họa sinh/kiểm tra tham số, cặp khóa, shared secret, trao đổi hai phía và
-dùng `K mod 26` làm khóa Caesar. Tất cả đại lượng mật mã là decimal string; `bits`
-và index/bit của trace là JSON integer. Đây không phải giao thức DH production:
+DH là feature độc lập ngang cấp Caesar: năm endpoint đầu sinh/kiểm tra tham số,
+tạo cặp khóa, tính shared secret, trao đổi hai phía và trả trace từ phép tính thật.
+Endpoint thứ sáu `/api/dh/caesar` là integration dùng `K mod 26` với Caesar core;
+nó không thay thế hay thay đổi ba endpoint Caesar standalone. Tất cả đại lượng mật
+mã là decimal string; `bits` và index/bit của trace là JSON integer. Đây không phải giao thức DH production:
 không có ECDH, KDF, xác thực chống MITM hoặc lưu khóa server-side. `/exchange` cố ý
-trả private key kèm cảnh báo giáo dục. Trace lũy thừa modulo chạy từ bit trái sang phải.
+trả private key để minh họa/đối chiếu phép tính và kèm cảnh báo về sở hữu private key,
+xác thực public key. Trace lũy thừa modulo chạy từ bit trái sang phải.
 
 `/params` thủ công giới hạn `q ≤ 10^12`; các endpoint downstream tự kiểm tra q đến
 128 bit và không dùng provenance/state. Nếu bỏ `alpha`, `/params` chỉ trả
@@ -295,8 +298,8 @@ tài nguyên dù đã bounded và chạy ngoài event loop; xem
 | DH | `POST /api/dh/params/random` | JSON | Sinh safe-prime group 16/32/64/128 bit |
 | DH | `POST /api/dh/keypair` | JSON | Sinh hoặc kiểm tra private key và trả public key/trace |
 | DH | `POST /api/dh/shared-secret` | JSON | Tính shared secret và trace |
-| DH | `POST /api/dh/exchange` | JSON | Minh họa cả hai phía, cố ý trả private keys giáo dục |
-| DH | `POST /api/dh/caesar` | JSON hoặc multipart | Caesar bằng `K mod 26`; file `.txt` luôn trả JSON |
+| DH standalone | `POST /api/dh/exchange` | JSON | Tính cả hai phía, trả private/public/shared keys, match và traces |
+| DH–Caesar integration | `POST /api/dh/caesar` | JSON hoặc multipart | Tính K thật rồi Caesar bằng `K mod 26`; file `.txt` luôn trả JSON |
 
 Consumer đang dùng allowlist 12 route phải mở lên đúng ba path Columnar trên để
 thành 15 route; không có route generalized hoặc versioned mới. OpenAPI gắn cả ba

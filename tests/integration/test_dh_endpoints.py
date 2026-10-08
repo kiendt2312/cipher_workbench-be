@@ -47,6 +47,17 @@ def test_params_missing_alpha_is_suggestion_only(client: TestClient) -> None:
     }
 
 
+def test_params_oversized_q_keeps_manual_range_message(client: TestClient) -> None:
+    response = client.post("/api/dh/params", json={"q": str(1 << 128)})
+    assert response.status_code == 422
+    assert response.json() == {
+        "success": False,
+        "code": "Q_OUT_OF_RANGE",
+        "message": "q phải từ 5 đến 10¹², hoặc dùng sinh tham số ngẫu nhiên.",
+        "field": "q",
+    }
+
+
 @pytest.mark.parametrize("bits", [16, 32, 64, 128])
 def test_random_params_all_bit_sizes_are_composable(client: TestClient, bits: int) -> None:
     response = client.post("/api/dh/params/random", json={"bits": bits})
@@ -100,10 +111,20 @@ def test_exchange_exposes_educational_private_keys(client: TestClient) -> None:
     assert body["warning"] == {
         "code": "EDUCATIONAL_PRIVATE_KEYS",
         "message": (
-            "Chỉ dùng để học: response có khóa riêng; hệ thống thật không được gửi "
-            "hoặc lưu khóa riêng."
+            "Response trả khóa riêng để minh họa và đối chiếu phép tính. Trong hệ thống thực tế, "
+            "khóa riêng không được gửi hoặc lưu ngoài bên sở hữu; khóa công khai phải được xác "
+            "thực để chống tấn công người đứng giữa (MITM)."
         ),
     }
+    # These values come from the request arithmetic, not a canned demonstration payload.
+    assert (body["publicKeyA"], body["publicKeyB"]) == ("40", "248")
+    for group, output in (
+        ("publicKeyA", "publicKeyA"),
+        ("publicKeyB", "publicKeyB"),
+        ("sharedKeyA", "sharedKeyA"),
+        ("sharedKeyB", "sharedKeyB"),
+    ):
+        assert body["steps"][group][-1]["result"] == body[output]
 
 
 def test_caesar_json_tc11_and_shift_zero(client: TestClient) -> None:

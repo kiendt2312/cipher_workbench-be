@@ -61,3 +61,26 @@ trên SQLite.
 Các deviation D1–D8 được khóa trong `openspec/changes/add-diffie-hellman/design.md`
 và được phủ chéo bởi `test_dh_endpoints.py`, `test_dh_resources.py`,
 `test_history_recording.py`, `test_sqlite_history.py` và `test_sqlite_continuity.py`.
+
+## Follow-up: DH standalone và integration Caesar
+
+Đối chiếu lại đầy đủ hai tài liệu owner xác nhận năm endpoint params/key/exchange là
+workflow DH standalone: output gồm tham số, private/public keys, shared secrets,
+`match` và trace lũy thừa modulo được tính từ input. `/api/dh/caesar` là integration
+thứ sáu dùng `K mod 26`; các route Caesar standalone không đổi.
+
+Warning `/exchange` giữ code `EDUCATIONAL_PRIVATE_KEYS` và private keys theo D3,
+nhưng message không còn dùng câu “Chỉ dùng để học”. Message mới nói rõ response trả
+khóa riêng để minh họa/đối chiếu phép tính thật, đồng thời giữ giới hạn nguồn: private
+key không rời bên sở hữu và public key phải được xác thực để chống MITM trong hệ thống
+thực tế. Integration test đối chiếu output `q=353, alpha=3, X_A=97, X_B=233` với
+`Y_A=40`, `Y_B=248`, `K_A=K_B=160` và result cuối của từng trace.
+
+Validation follow-up ngày 2026-10-08:
+
+- Targeted DH: 64 passed (`--cov-fail-under=0`; coverage tổng cục bộ không dùng làm gate).
+- Full suite: 1.614 passed, 20 skipped, coverage 90,30%.
+- Ruff check/format, compileall, OpenSpec strict và `git diff --check`: tất cả exit 0.
+- Audit follow-up sửa precedence message cho `/params` q đồng thời vượt 128 bit:
+  vẫn trả 422 `Q_OUT_OF_RANGE`, field `q` và message manual `5..10¹²`; downstream
+  giữ message 128-bit. Exchange test đối chiếu result cuối của đủ bốn grouped traces.

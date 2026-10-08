@@ -34,6 +34,7 @@ DH SHALL dùng đúng codes/messages động dưới đây và HTTP 422: `NOT_IN
 #### Scenario: q manual ngoài miền
 - **WHEN** `/params` nhận q ngoài `5..10^12`
 - **THEN** trả `Q_OUT_OF_RANGE`, message `q phải từ 5 đến 10¹², hoặc dùng sinh tham số ngẫu nhiên.`, field `q`
+- **AND** message này vẫn áp dụng khi q đồng thời vượt 128 bit
 
 #### Scenario: q downstream vượt 128 bit
 - **WHEN** keypair, shared-secret, exchange hoặc caesar nhận q lớn hơn `2^128-1`

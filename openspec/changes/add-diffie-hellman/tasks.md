@@ -57,6 +57,14 @@
 - [x] 7.3 Chạy disposable SQLite migration/continuity rehearsal qua RSA/DH upgrade+downgrade/data preservation; **xong khi** evidence xác nhận SQLite head/registries đồng bộ và không revision PostgreSQL nào chạy trên SQLite.
 - [x] 7.4 Chạy `npx -y @fission-ai/openspec@1.14.1 validate add-diffie-hellman --strict` (hoặc installed compatible CLI đã pin/verify) và `git diff --check`; verify cả hai exit 0 trên final implementation state.
 
+## 8. Standalone DH Reconciliation Follow-up
+
+- [x] 8.1 Reconcile proposal/design/specs với hai nguồn owner để ghi rõ DH standalone ngang cấp Caesar, DH–Caesar là integration và mọi parameter/key/shared/match/trace là phép tính thật; không đổi D1–D8 hay sáu wire schemas.
+- [x] 8.2 Đồng bộ warning `EDUCATIONAL_PRIVATE_KEYS` trong core/HTTP/OpenAPI và test: bỏ wording `Chỉ dùng để học`, giữ kết quả thành công, private keys công khai theo D3 và cảnh báo chính xác về sở hữu khóa riêng/xác thực public key chống MITM.
+- [x] 8.3 Cập nhật README, canonical all-feature contract và supporting DH contract để phân biệt workflow DH standalone, integration DH–Caesar, Caesar standalone; thêm hướng dẫn chẩn đoán generic FE response error mà không suy diễn lỗi số học hay thêm legacy adapter.
+- [x] 8.4 Chạy targeted/full regression, Ruff/format, compile, strict OpenSpec và contract/OpenAPI checks; lưu evidence follow-up và chỉ đánh dấu tasks khi có kết quả.
+- [x] 8.5 Resolve audit: `/params` q vượt 128 bit vẫn dùng manual-range message; đủ bốn grouped trace terminal assertions và wording contract canonical đồng bộ warning mới.
+
 ## Workflow follow-up
 
 - Sau khi implementation/review được chủ sở hữu chấp nhận ở lượt riêng, archive change bằng workflow `openspec-archive-change` và verify main specs đã nhận đầy đủ delta.

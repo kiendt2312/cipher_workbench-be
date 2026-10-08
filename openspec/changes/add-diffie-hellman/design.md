@@ -17,7 +17,8 @@ Các quyết định chủ sở hữu sau grilling có quyền cao hơn khi hai 
 
 - Tách core số học thuần khỏi HTTP adapter; mọi CPU-heavy primality/factorization/generation chạy ngoài event loop.
 - Giữ exact six-route contract, strict schemas, deterministic error precedence và full educational traces.
-- Reuse Caesar transform/file semantics mà không thay đổi public Caesar routes.
+- Cung cấp DH standalone với dữ liệu số học được tính thật: parameters, private/public keys, shared secrets, match và full traces.
+- Reuse Caesar transform/file semantics trong một integration riêng mà không thay đổi public Caesar routes hoặc hạ DH thành Caesar mode.
 - Thêm history DH theo migration SQLite tuyến tính, bảo toàn dữ liệu và tương thích active change SQLite/RSA.
 
 **Non-Goals:**
@@ -50,7 +51,7 @@ Dùng nguồn random mật mã của Python cho p/q/private keys. Core nhận ca
 
 DH có decoder/schema riêng theo RSA precedent: phát hiện malformed JSON, duplicate/unknown/inapplicable fields trước domain work; cryptographic numbers chỉ nhận ASCII canonical decimal strings không dấu/space/leading zero ngoại trừ `"0"`. Control `bits` và trace row `index/bit` là JSON integer thật. Output crypto strings được canonicalize.
 
-Success responses thêm `success:true`; error luôn bốn field. `/params` thiếu alpha dùng `alpha:null`, checks rỗng, suggestion string; supplied invalid alpha không trả success body. Warning là object `{code,message}` để máy và UI cùng dùng; exchange warning dùng code `EDUCATIONAL_PRIVATE_KEYS`.
+Success responses thêm `success:true`; error luôn bốn field. `/params` thiếu alpha dùng `alpha:null`, checks rỗng, suggestion string; supplied invalid alpha không trả success body. Warning là object `{code,message}` để máy và UI cùng dùng; exchange warning dùng code `EDUCATIONAL_PRIVATE_KEYS`. Message không mô tả response là dữ liệu mẫu: nó nói rõ private/public/shared keys và traces là kết quả số học thật, đồng thời cảnh báo private key không rời bên sở hữu và public key phải được xác thực để chống MITM trong hệ thống thực tế.
 
 ### 5. Trace schema DH
 
@@ -74,7 +75,7 @@ JSON input/output length là Unicode code points. Multipart input là raw byte c
 
 Mỗi requirement/scenario dẫn chiếu Tài liệu thuật toán DH, Scope DH, accepted owner decision hoặc existing capability. Khi conflict: accepted owner decisions > hai nguồn DH > existing feature precedent cho phần không được nguồn DH định nghĩa; không sửa nguồn gốc.
 
-Decision record được owner xác nhận ngày 2026-10-08: D1 generated q composable; D2 missing alpha suggestion-only; D3 exchange trả private keys; D4 manual cap chỉ `/params`, downstream 128 bit stateless; D5 exact 5 MiB + Caesar UTF-8/BOM; D6 status/envelope theo RSA/repo; D7 crypto strings, controls native; D8 history chỉ DH Caesar. Cùng confirmation giữ trace trái→phải, JSON-only Caesar và sáu endpoint/exclusions.
+Decision record được owner xác nhận ngày 2026-10-08: D1 generated q composable; D2 missing alpha suggestion-only; D3 exchange trả private keys; D4 manual cap chỉ `/params`, downstream 128 bit stateless; D5 exact 5 MiB + Caesar UTF-8/BOM; D6 status/envelope theo RSA/repo; D7 crypto strings, controls native; D8 history chỉ DH Caesar. Cùng confirmation giữ trace trái→phải, JSON-only Caesar và sáu endpoint/exclusions. Follow-up cùng ngày xác nhận DH là feature standalone ngang cấp Caesar, còn `/api/dh/caesar` là integration; không thay đổi D1–D8 hay thêm compatibility route.
 
 | TC | Requirement/scenario chính | Nguồn |
 | --- | --- | --- |

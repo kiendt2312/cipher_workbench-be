@@ -13,6 +13,14 @@
 - **WHEN** đọc `/openapi.json`
 - **THEN** có đúng sáu POST operation DH nêu trên với JSON schemas và response schemas tương ứng
 
+### Requirement: DH standalone và integration Caesar tách biệt
+Năm operation params/key/exchange SHALL tạo thành workflow DH standalone với dữ liệu số học được tính thật. `/caesar` SHALL là integration tiêu thụ DH shared key; các route Caesar standalone MUST không đổi. (Truy vết: Tài liệu thuật toán DH §§3–6,11–12; Scope DH §API; quyết định chủ sở hữu follow-up standalone/integration)
+
+#### Scenario: Standalone exchange không phụ thuộc Caesar
+- **WHEN** client hoàn tất params, keypair, shared-secret và exchange mà không gọi `/api/dh/caesar`
+- **THEN** client nhận parameters, private/public keys, shared secrets, match và traces đầy đủ
+- **AND** các route `/api/caesar/*` vẫn giữ contract hiện hữu
+
 ### Requirement: Quy ước type và schema nghiêm ngặt
 Mọi đại lượng mật mã `q,alpha,p,privateKey,publicKey,sharedKey,factors`, operand/result check và `shift` SHALL là canonical decimal string. `bits`, trace index/bit SHALL là JSON integer; `success,match` SHALL là boolean. Request/response MUST từ chối field lạ. (Truy vết: Tài liệu thuật toán DH §10; Scope DH §API; quyết định chủ sở hữu DH Q7; strict RSA precedent)
 
@@ -57,16 +65,24 @@ Mọi đại lượng mật mã `q,alpha,p,privateKey,publicKey,sharedKey,factor
 - **WHEN** gửi `q="353", privateKey="97", otherPublicKey="248"`
 - **THEN** HTTP 200 trả `sharedKey="160"` và trace kết thúc ở `"160"`
 
-### Requirement: Exchange API trả khóa riêng giáo dục
-`/exchange` SHALL nhận `q,alpha,privateKeyA?,privateKeyB?`, sinh khóa bị thiếu và trả cả private/public/shared keys, `match`, cùng grouped steps cho bốn modPow. Response SHALL có warning giáo dục rằng private key không được trả trong hệ thống thật. (Truy vết: Scope DH luồng, BE-06, §API; quyết định chủ sở hữu DH Q3)
+### Requirement: Exchange API trả khóa riêng để đối chiếu
+`/exchange` SHALL nhận `q,alpha,privateKeyA?,privateKeyB?`, sinh khóa bị thiếu và trả cả private/public/shared keys, `match`, cùng grouped steps cho bốn modPow. Response SHALL cảnh báo về sở hữu private key và xác thực public key trong hệ thống thực tế. (Truy vết: Scope DH luồng, BE-06, §API; quyết định chủ sở hữu DH Q3)
 
 #### Scenario: Exchange sinh cả hai khóa
 - **WHEN** gửi q/alpha hợp lệ và bỏ hai private key
 - **THEN** HTTP 200 trả `privateKeyA`, `privateKeyB`, hai public keys, hai shared keys, `match=true`, grouped steps và educational warning
-- **AND** warning đúng bằng `{"code":"EDUCATIONAL_PRIVATE_KEYS","message":"Chỉ dùng để học: response có khóa riêng; hệ thống thật không được gửi hoặc lưu khóa riêng."}`
+- **AND** warning đúng bằng `{"code":"EDUCATIONAL_PRIVATE_KEYS","message":"Response trả khóa riêng để minh họa và đối chiếu phép tính. Trong hệ thống thực tế, khóa riêng không được gửi hoặc lưu ngoài bên sở hữu; khóa công khai phải được xác thực để chống tấn công người đứng giữa (MITM)."}`
+
+### Requirement: Exchange trả kết quả số học thực
+Các private/public/shared keys, `match` và grouped trace của `/exchange` SHALL được tính từ request, không phải mock, fixture hard-code hoặc sample-only output. (Truy vết: Tài liệu thuật toán DH §§2,4–7; quyết định chủ sở hữu follow-up về dữ liệu thật)
+
+#### Scenario: Trace đối chiếu được output
+- **WHEN** exchange nhận `q="353", alpha="3", privateKeyA="97", privateKeyB="233"`
+- **THEN** public keys là `"40","248"`, shared keys đều `"160"`, `match=true`
+- **AND** result cuối của bốn grouped traces bằng output tương ứng
 
 ### Requirement: DH Caesar JSON
-`/caesar` với `application/json` SHALL nhận đúng `q,privateKey,otherPublicKey,action,data`, trong đó action là `encrypt|decrypt`, và luôn trả JSON `success,sharedKey,shift,result,warning?`. Không có attachment hoặc `response_mode`. (Truy vết: Tài liệu thuật toán DH §11; Scope DH BE-06 và §API, TC-11–TC-12; quyết định chủ sở hữu DH)
+`/caesar` với `application/json` SHALL nhận đúng `q,privateKey,otherPublicKey,action,data`, trong đó action là `encrypt|decrypt`, tính shared key DH thật rồi dùng `K mod 26` với Caesar core, và luôn trả JSON `success,sharedKey,shift,result,warning?`. Đây là integration DH–Caesar; Caesar standalone và năm DH operation standalone MUST giữ contract riêng. Không có attachment hoặc `response_mode`. (Truy vết: Tài liệu thuật toán DH §11; Scope DH BE-06 và §API, TC-11–TC-12; quyết định chủ sở hữu DH)
 
 #### Scenario: Encrypt JSON TC-11
 - **WHEN** gửi q `"353"`, privateKey `"97"`, otherPublicKey `"248"`, action `encrypt`, data `Hello World`

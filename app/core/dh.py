@@ -950,7 +950,9 @@ calculate_shared_secret = shared_secret
 EDUCATIONAL_PRIVATE_KEYS_WARNING = {
     "code": "EDUCATIONAL_PRIVATE_KEYS",
     "message": (
-        "Chỉ dùng để học: response có khóa riêng; hệ thống thật không được gửi hoặc lưu khóa riêng."
+        "Response trả khóa riêng để minh họa và đối chiếu phép tính. Trong hệ thống thực tế, "
+        "khóa riêng không được gửi hoặc lưu ngoài bên sở hữu; khóa công khai phải được xác thực "
+        "để chống tấn công người đứng giữa (MITM)."
     ),
 }
 
