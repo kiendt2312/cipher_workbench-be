@@ -121,6 +121,88 @@ def test_rsa_key_routes_never_record_history(
     assert recorded == []
 
 
+def test_only_dh_caesar_records_private_metadata(
+    client: TestClient, recorded: list[OperationEntry]
+) -> None:
+    client.post("/api/dh/params", json={"q": "23"})
+    client.post("/api/dh/keypair", json={"q": "23", "alpha": "5", "privateKey": "6"})
+    response = client.post(
+        "/api/dh/caesar",
+        json={
+            "q": "353",
+            "privateKey": "97",
+            "otherPublicKey": "248",
+            "action": "encrypt",
+            "data": "Hello World",
+        },
+    )
+    assert response.status_code == 200
+    assert len(recorded) == 1
+    entry = recorded[0]
+    assert (entry.cipher, entry.source, entry.operation) == ("dh", "text", "encrypt")
+    assert (entry.input_length, entry.output_length, entry.response_mode) == (11, 11, None)
+    assert set(entry.__dict__) == {
+        "cipher",
+        "source",
+        "operation",
+        "response_mode",
+        "input_length",
+        "output_length",
+        "http_status",
+        "succeeded",
+        "duration_ms",
+    }
+
+
+def test_dh_file_bom_history_uses_raw_and_output_bytes(
+    client: TestClient, recorded: list[OperationEntry]
+) -> None:
+    response = client.post(
+        "/api/dh/caesar",
+        data={
+            "q": "353",
+            "privateKey": "97",
+            "otherPublicKey": "248",
+            "action": "encrypt",
+        },
+        files={"file": ("secret.txt", b"\xef\xbb\xbf\xc3\xa9")},
+    )
+    assert response.status_code == 200
+    entry = recorded[0]
+    assert (entry.cipher, entry.source, entry.operation) == ("dh", "file", "encrypt")
+    assert (entry.input_length, entry.output_length, entry.response_mode) == (5, 5, None)
+
+
+def test_dh_caesar_errors_record_status_and_validated_operation(
+    client: TestClient, recorded: list[OperationEntry]
+) -> None:
+    empty = client.post(
+        "/api/dh/caesar",
+        json={
+            "q": "23",
+            "privateKey": "6",
+            "otherPublicKey": "8",
+            "action": "decrypt",
+            "data": "",
+        },
+    )
+    unsupported = client.post(
+        "/api/dh/caesar", content=b"x", headers={"content-type": "text/plain"}
+    )
+    assert (empty.status_code, unsupported.status_code) == (422, 415)
+    assert len(recorded) == 2
+    assert (recorded[0].operation, recorded[0].http_status, recorded[0].succeeded) == (
+        "decrypt",
+        422,
+        False,
+    )
+    assert (recorded[1].source, recorded[1].operation, recorded[1].http_status) == (
+        "text",
+        None,
+        415,
+    )
+
+
 @pytest.mark.parametrize(
     ("path", "payload", "status", "operation"),
     [
@@ -550,6 +632,32 @@ def test_recording_failure_leaves_response_untouched(
     assert "Could not record cipher operation history" in caplog.text
     assert "topsecret" not in caplog.text
     assert "Hi" not in caplog.text
+
+
+def test_dh_recording_failure_leaves_response_untouched_and_redacted(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    payload = {
+        "q": "353",
+        "privateKey": "97",
+        "otherPublicKey": "248",
+        "action": "encrypt",
+        "data": "dh-private-marker",
+    }
+    expected = client.post("/api/dh/caesar", json=payload)
+
+    async def failing_record(database: object, entry: OperationEntry) -> None:
+        raise ConnectionError(f"cannot reach {SENSITIVE_URL}")
+
+    monkeypatch.setattr(history_recorder, "record_operation", failing_record)
+    with caplog.at_level(logging.WARNING):
+        response = client.post("/api/dh/caesar", json=payload)
+
+    assert response.status_code == expected.status_code == 200
+    assert response.json() == expected.json()
+    assert "Could not record cipher operation history" in caplog.text
+    for secret in ("dh-private-marker", "353", "97", "248", "topsecret"):
+        assert secret not in caplog.text
 
 
 def test_simulated_disk_full_is_best_effort_bounded_and_redacted(

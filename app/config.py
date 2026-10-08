@@ -14,7 +14,7 @@ PORT = 8000
 
 DATABASE_CONFIGURATION_ERROR = "DATABASE_URL must be an absolute local SQLite file URL"
 SQLITE_DRIVER = "sqlite+aiosqlite"
-SQLITE_SCHEMA_REVISION = "sqlite_0001"
+SQLITE_SCHEMA_REVISION = "sqlite_0002"
 
 _REMOTE_FILESYSTEMS = {
     "9p",

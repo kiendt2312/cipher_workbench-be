@@ -27,12 +27,13 @@ CIPHER_ROUTES: dict[str, CipherRoute] = {
     path: route
     for cipher in CIPHERS
     for path, route in _routes_for(cipher).items()
-    if cipher != "rsa" and (cipher != "hill" or route.source == "text")
+    if cipher not in {"dh", "rsa"} and (cipher != "hill" or route.source == "text")
 }
 CIPHER_ROUTES.update(
     {
         "/api/rsa/encrypt": CipherRoute("rsa", "text", "encrypt"),
         "/api/rsa/decrypt": CipherRoute("rsa", "text", "decrypt"),
+        "/api/dh/caesar": CipherRoute("dh", "text", None),
     }
 )
 
@@ -46,6 +47,10 @@ def match_cipher_route(
     if route is None:
         return None
     media_type = (content_type or "").partition(";")[0].strip().lower()
+    if path == "/api/dh/caesar":
+        if media_type == "multipart/form-data":
+            return CipherRoute("dh", "file", None)
+        return CipherRoute("dh", "text", None)
     if path == "/api/rsa/encrypt" and media_type == "multipart/form-data":
         return CipherRoute("rsa", "file", "encrypt")
     return route

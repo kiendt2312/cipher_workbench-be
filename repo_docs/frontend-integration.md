@@ -1,12 +1,14 @@
-# Handoff tích hợp Frontend — tám hệ mã
+# Handoff tích hợp Frontend — chín hệ mã
 
 Tài liệu này là **điểm vào consumer contract cho Frontend** khi tích hợp với backend
 cipher. Nội dung độc lập framework: FE có thể dùng React, Vue, Svelte hoặc JavaScript
 thuần, nhưng hành vi API và trạng thái quan sát được phải giữ đúng contract dưới đây.
-Phần RSA có contract triển khai chi tiết tại
-[`rsa-frontend-contract.md`](rsa-frontend-contract.md); mục A.9 chỉ là quick start.
+Phần RSA và DH có contract triển khai chi tiết lần lượt tại
+[`rsa-frontend-contract.md`](rsa-frontend-contract.md) và
+[`dh-frontend-contract.md`](dh-frontend-contract.md); các mục quick start dưới đây
+không thay thế hai wire contract đó.
 
-- Cập nhật: `2026-10-06`. Backend có 26 POST route cipher (gồm bốn route RSA), một GET sinh khóa Hill,
+- Cập nhật: `2026-10-08`. Backend có 32 POST route cipher (gồm bốn route RSA và sáu route DH), một GET sinh khóa Hill,
   `GET /api/health`,
   `GET /api/history` (tùy chọn, dùng SQLite cục bộ trên backend).
 - **Người mới:** đọc mục **A. Bắt đầu nhanh** (khoảng 10 phút) rồi dùng file
@@ -62,6 +64,12 @@ Swagger để thử API: <http://localhost:8080/docs>.
 | POST | `/api/rsa/keys/random` | JSON integer `bits=16|32|64|128` | Key material gồm `p,q` |
 | POST | `/api/rsa/encrypt` | JSON number/text hoặc multipart plaintext | Full blocks/cipher + optional selected trace |
 | POST | `/api/rsa/decrypt` | JSON cipher package | Full blocks/plaintext + optional selected trace |
+| POST | `/api/dh/params` | JSON `q,alpha?` decimal string | Kiểm tham số; thiếu alpha chỉ trả suggestion |
+| POST | `/api/dh/params/random` | JSON integer `bits=16|32|64|128` | Safe-prime q/p, alpha và checks |
+| POST | `/api/dh/keypair` | JSON `q,alpha,privateKey?` | Private/public key và left-to-right trace |
+| POST | `/api/dh/shared-secret` | JSON `q,privateKey,otherPublicKey` | Shared key và trace |
+| POST | `/api/dh/exchange` | JSON `q,alpha,privateKeyA?,privateKeyB?` | Hai phía và warning private-key giáo dục |
+| POST | `/api/dh/caesar` | JSON hoặc multipart `.txt` | Luôn JSON `{success,sharedKey,shift,result,warning?}` |
 
 `{legacy}` là một trong `caesar`, `vigenere`, `playfair`, `affine`, `columnar`.
 Năm cipher này có đủ text/file (15 POST route); Hill chỉ có hai POST transform và một
@@ -96,6 +104,33 @@ Bốn điều hay sai nhất:
    `Content-Disposition`.
 4. RSA là ngoại lệ file/number: crypto integer luôn giữ dưới dạng decimal string;
    multipart chỉ encrypt plaintext và luôn trả JSON, không có `response_mode`.
+5. DH cũng giữ mọi crypto integer (kể cả `shift`) dưới dạng decimal string. Chỉ
+   `bits` và trace index/bit là number. `/api/dh/caesar` nhận `.txt` UTF-8 tối đa
+   đúng 5 MiB nhưng luôn trả JSON, không có attachment hoặc `response_mode`.
+
+DH quick example:
+
+Wire contract đầy đủ — exact request/response types, trace/check schemas, lỗi, flow
+A/B và multipart — nằm tại [`dh-frontend-contract.md`](dh-frontend-contract.md).
+
+```http
+POST /api/dh/params
+{"q":"23"}
+```
+
+Response giữ `alpha:null`, `primitiveRootChecks:[]`, `suggestedAlpha:"5"`; suggestion
+không được hiểu là server đã chọn alpha. Một Caesar request hoàn chỉnh:
+
+```http
+POST /api/dh/caesar
+{"q":"353","privateKey":"97","otherPublicKey":"248","action":"encrypt","data":"Hello World"}
+```
+
+trả `sharedKey:"160"`, `shift:"4"`, `result:"Lipps Asvph"`. `/exchange` cố ý trả
+`privateKeyA/privateKeyB` và warning `EDUCATIONAL_PRIVATE_KEYS`; UI phải hiển thị
+cảnh báo đây chỉ là minh họa. Không quảng bá DH này cho production: không có ECDH,
+KDF, xác thực MITM, key storage, attachment hoặc endpoint history riêng. Chỉ metadata
+của `/api/dh/caesar` xuất hiện trong history chung.
 
 ### A.4 API client dùng ngay
 

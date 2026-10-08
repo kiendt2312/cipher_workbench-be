@@ -10,7 +10,12 @@ import pytest
 from starlette.types import Message, Receive, Scope, Send
 
 from app import config
-from app.api.request_size_guard import FILE_ROUTE_PATHS, MultipartCompletionGuard, RequestSizeGuard
+from app.api.request_size_guard import (
+    DH_MULTIPART_MAX_BODY_BYTES,
+    FILE_ROUTE_PATHS,
+    MultipartCompletionGuard,
+    RequestSizeGuard,
+)
 from app.errors import messages
 from app.main import app
 
@@ -96,6 +101,26 @@ def test_over_ceiling_is_rejected_before_downstream_or_body_receive() -> None:
         ensure_ascii=False,
         separators=(",", ":"),
     ).encode("utf-8")
+
+
+def test_global_ceiling_precedes_dh_multipart_file_ceiling() -> None:
+    events, receive_calls = _run_asgi(
+        app,
+        [
+            (b"content-type", b"multipart/form-data; boundary=unused"),
+            (b"content-length", str(config.MAX_REQUEST_BYTES + 1).encode("ascii")),
+        ],
+        "/api/dh/caesar",
+    )
+
+    assert receive_calls == 0
+    assert events[0]["status"] == 413
+    assert json.loads(_response_body(events)) == {
+        "success": False,
+        "code": "REQUEST_TOO_LARGE",
+        "message": messages.DH_REQUEST_TOO_LARGE,
+        "field": None,
+    }
 
 
 @pytest.mark.parametrize(
@@ -301,6 +326,93 @@ def test_rsa_nearby_path_keeps_baseline_two_field_guard_envelope() -> None:
         "/api/rsax/encrypt",
     )
     assert set(json.loads(_response_body(events))) == {"success", "message"}
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/dh/params",
+        "/api/dh/params/random",
+        "/api/dh/keypair",
+        "/api/dh/shared-secret",
+        "/api/dh/exchange",
+        "/api/dh/caesar",
+    ],
+)
+def test_dh_over_ceiling_uses_exact_four_field_envelope(path: str) -> None:
+    events, receive_calls = _run_asgi(
+        app,
+        [(b"content-length", str(config.MAX_REQUEST_BYTES + 1).encode("ascii"))],
+        path,
+    )
+    assert receive_calls == 0
+    assert events[0]["status"] == 413
+    assert json.loads(_response_body(events)) == {
+        "success": False,
+        "code": "REQUEST_TOO_LARGE",
+        "message": "Yêu cầu vượt quá dung lượng cho phép.",
+        "field": None,
+    }
+
+
+def test_dh_nearby_path_keeps_baseline_two_field_guard_envelope() -> None:
+    events, _ = _run_asgi(
+        app,
+        [(b"content-length", str(config.MAX_REQUEST_BYTES + 1).encode("ascii"))],
+        "/api/dhx/params",
+    )
+    assert set(json.loads(_response_body(events))) == {"success", "message"}
+
+
+def test_dh_multipart_total_body_cap_rejects_before_receive() -> None:
+    events, receive_calls = _run_asgi(
+        app,
+        [
+            (b"content-type", b"multipart/form-data; boundary=x"),
+            (b"content-length", str(DH_MULTIPART_MAX_BODY_BYTES + 1).encode("ascii")),
+        ],
+        "/api/dh/caesar",
+    )
+    assert receive_calls == 0
+    assert events[0]["status"] == 413
+    assert json.loads(_response_body(events)) == {
+        "success": False,
+        "code": "FILE_INVALID",
+        "message": "File vượt quá dung lượng tối đa 5 MB.",
+        "field": "file",
+    }
+
+
+def test_dh_multipart_chunked_body_is_bounded_during_receive() -> None:
+    events: list[Message] = []
+    chunks = iter(
+        [
+            {
+                "type": "http.request",
+                "body": b"x" * (DH_MULTIPART_MAX_BODY_BYTES + 1),
+                "more_body": False,
+            }
+        ]
+    )
+
+    async def receive() -> Message:
+        return next(chunks)
+
+    async def send(message: Message) -> None:
+        events.append(message)
+
+    asyncio.run(
+        app(
+            _scope(
+                [(b"content-type", b"multipart/form-data; boundary=x")],
+                "/api/dh/caesar",
+            ),
+            receive,
+            send,
+        )
+    )
+    assert events[0]["status"] == 413
+    assert json.loads(_response_body(events))["code"] == "FILE_INVALID"
 
 
 def test_multipart_completion_guard_ignores_routes_outside_exact_file_set() -> None:

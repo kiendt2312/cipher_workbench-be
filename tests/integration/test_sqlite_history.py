@@ -65,7 +65,7 @@ def migrated_sqlite(tmp_path: Path) -> tuple[Path, str]:
     return path, url
 
 
-def test_sqlite_baseline_has_exact_schema_and_is_repeatable(migrated_sqlite) -> None:
+def test_sqlite_history_has_exact_schema_and_is_repeatable(migrated_sqlite) -> None:
     path, url = migrated_sqlite
     with sqlite3.connect(path) as connection:
         table_info = list(connection.execute("PRAGMA table_info(cipher_operations)"))
@@ -80,7 +80,7 @@ def test_sqlite_baseline_has_exact_schema_and_is_repeatable(migrated_sqlite) -> 
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='cipher_operations'"
         ).fetchone()[0]
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "sqlite_0001",
+            "sqlite_0002",
         )
     assert columns == EXPECTED_COLUMNS
     assert not_null == {
@@ -101,7 +101,7 @@ def test_sqlite_baseline_has_exact_schema_and_is_repeatable(migrated_sqlite) -> 
         "ix_cipher_operations_cipher_created_at",
     }
     assert "INTEGER PRIMARY KEY AUTOINCREMENT" in table_sql
-    assert all(cipher in table_sql for cipher in ("caesar", "hill", "des", "rsa"))
+    assert all(cipher in table_sql for cipher in ("caesar", "hill", "des", "rsa", "dh"))
     for constraint in (
         "operation IN ('encrypt', 'decrypt')",
         "source IN ('text', 'file')",
@@ -131,6 +131,120 @@ def test_sqlite_baseline_has_exact_schema_and_is_repeatable(migrated_sqlite) -> 
         assert connection.execute("SELECT id FROM cipher_operations").fetchone() == (2,)
 
 
+def test_dh_migration_preserves_rows_indexes_sequence_and_guards_downgrade(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "dh-migration.sqlite3"
+    url = _url(path)
+    _migrate(url, "upgrade", "sqlite_0001")
+
+    with sqlite3.connect(path) as connection:
+        connection.executemany(
+            "INSERT INTO cipher_operations "
+            "(id, created_at, cipher, operation, source, http_status, succeeded, duration_ms) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                (4, 10, "caesar", "encrypt", "text", 200, 1, 1),
+                (9, 20, "rsa", "decrypt", "file", 422, 0, 2),
+            ],
+        )
+        connection.execute("UPDATE sqlite_sequence SET seq = 77 WHERE name = 'cipher_operations'")
+        connection.commit()
+
+    _migrate(url, "upgrade", "head")
+    with sqlite3.connect(path) as connection:
+        old_rows = connection.execute(
+            "SELECT id, created_at, cipher, operation, source, response_mode, input_length, "
+            "output_length, http_status, succeeded, duration_ms "
+            "FROM cipher_operations ORDER BY id"
+        ).fetchall()
+        old_indexes = connection.execute(
+            "SELECT name, sql FROM sqlite_master WHERE type = 'index' "
+            "AND name LIKE 'ix_cipher_operations_%' ORDER BY name"
+        ).fetchall()
+        old_columns = [row[1] for row in connection.execute("PRAGMA table_info(cipher_operations)")]
+        assert connection.execute(
+            "SELECT seq FROM sqlite_sequence WHERE name = 'cipher_operations'"
+        ).fetchone() == (77,)
+        assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
+            "sqlite_0002",
+        )
+        assert (
+            "'dh'"
+            in connection.execute(
+                "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'cipher_operations'"
+            ).fetchone()[0]
+        )
+        connection.execute(
+            "INSERT INTO cipher_operations "
+            "(created_at, cipher, operation, source, http_status, succeeded, duration_ms) "
+            "VALUES (30, 'dh', NULL, 'text', 200, 1, 3)"
+        )
+        connection.commit()
+        failed_downgrade_state = (
+            connection.execute("SELECT * FROM cipher_operations ORDER BY id").fetchall(),
+            connection.execute(
+                "SELECT name, sql FROM sqlite_master WHERE type = 'index' "
+                "AND name LIKE 'ix_cipher_operations_%' ORDER BY name"
+            ).fetchall(),
+            connection.execute(
+                "SELECT seq FROM sqlite_sequence WHERE name = 'cipher_operations'"
+            ).fetchone(),
+            connection.execute("SELECT version_num FROM alembic_version").fetchone(),
+        )
+
+    with pytest.raises(RuntimeError, match="DH rows"):
+        _migrate(url, "downgrade", "sqlite_0001")
+
+    with sqlite3.connect(path) as connection:
+        assert (
+            connection.execute("SELECT * FROM cipher_operations ORDER BY id").fetchall(),
+            connection.execute(
+                "SELECT name, sql FROM sqlite_master WHERE type = 'index' "
+                "AND name LIKE 'ix_cipher_operations_%' ORDER BY name"
+            ).fetchall(),
+            connection.execute(
+                "SELECT seq FROM sqlite_sequence WHERE name = 'cipher_operations'"
+            ).fetchone(),
+            connection.execute("SELECT version_num FROM alembic_version").fetchone(),
+        ) == failed_downgrade_state
+        connection.execute("DELETE FROM cipher_operations WHERE cipher = 'dh'")
+        connection.commit()
+
+    _migrate(url, "downgrade", "sqlite_0001")
+    with sqlite3.connect(path) as connection:
+        assert [row[1] for row in connection.execute("PRAGMA table_info(cipher_operations)")] == (
+            old_columns
+        )
+        assert (
+            connection.execute(
+                "SELECT id, created_at, cipher, operation, source, response_mode, input_length, "
+                "output_length, http_status, succeeded, duration_ms "
+                "FROM cipher_operations ORDER BY id"
+            ).fetchall()
+            == old_rows
+        )
+        assert (
+            connection.execute(
+                "SELECT name, sql FROM sqlite_master WHERE type = 'index' "
+                "AND name LIKE 'ix_cipher_operations_%' ORDER BY name"
+            ).fetchall()
+            == old_indexes
+        )
+        assert connection.execute(
+            "SELECT seq FROM sqlite_sequence WHERE name = 'cipher_operations'"
+        ).fetchone() == (78,)
+        assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
+            "sqlite_0001",
+        )
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                "INSERT INTO cipher_operations "
+                "(created_at, cipher, operation, source, http_status, succeeded, duration_ms) "
+                "VALUES (40, 'dh', NULL, 'text', 200, 1, 1)"
+            )
+
+
 def test_empty_sqlite_baseline_can_downgrade_and_reupgrade(tmp_path: Path) -> None:
     path = tmp_path / "migration-roundtrip.sqlite3"
     url = _url(path)
@@ -145,7 +259,7 @@ def test_empty_sqlite_baseline_can_downgrade_and_reupgrade(tmp_path: Path) -> No
     _migrate(url, "upgrade", "head")
     with sqlite3.connect(path) as connection:
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "sqlite_0001",
+            "sqlite_0002",
         )
         assert connection.execute(
             "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'cipher_operations'"

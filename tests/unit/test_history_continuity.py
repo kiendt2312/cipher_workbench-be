@@ -89,7 +89,8 @@ def _create_baseline_fixture(
                 id INTEGER PRIMARY KEY AUTOINCREMENT{id_check},
                 created_at INTEGER NOT NULL,
                 cipher TEXT NOT NULL CHECK(cipher IN
-                    ('caesar', 'vigenere', 'playfair', 'affine', 'columnar', 'hill', 'des', 'rsa')),
+                    ('caesar', 'vigenere', 'playfair', 'affine', 'columnar', 'hill', 'des',
+                     'rsa', 'dh')),
                 operation TEXT CHECK(operation IN ('encrypt', 'decrypt')),
                 source TEXT{source_nullability} CHECK(source IN ('text', 'file')),
                 response_mode TEXT CHECK(response_mode IN ('content', 'file')),
@@ -104,7 +105,7 @@ def _create_baseline_fixture(
             CREATE INDEX ix_cipher_operations_cipher_created_at
                 ON cipher_operations (cipher, created_at {direction}, id {direction});
             CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL);
-            INSERT INTO alembic_version(version_num) VALUES ('sqlite_0001');
+            INSERT INTO alembic_version(version_num) VALUES ('sqlite_0002');
             """
         )
         connection.execute(
@@ -118,7 +119,7 @@ def _create_baseline_fixture(
         [row],
         IdentityState(1, True, 1),
         source_revision="postgres-0004",
-        schema_revision="sqlite_0001",
+        schema_revision="sqlite_0002",
         snapshot_epoch_us=123,
     )
 
@@ -178,6 +179,25 @@ def test_mapping_normalization_preserves_datetime_precision_and_ignores_extra_pa
         1,
         0,
     )
+
+
+def test_dh_rows_are_supported_by_continuity_staging(tmp_path: Path) -> None:
+    result = import_staging(
+        tmp_path / "dh.sqlite3",
+        [_row(1, cipher="dh")],
+        IdentityState(1, True, 1),
+        source_revision="postgres-0004",
+        schema_revision="sqlite_0002",
+        snapshot_epoch_us=123,
+    )
+
+    with sqlite3.connect(result.path) as connection:
+        table_sql = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'cipher_operations'"
+        ).fetchone()[0]
+        assert "'dh'" in table_sql
+        assert connection.execute("SELECT cipher FROM cipher_operations").fetchone() == ("dh",)
+    assert result.verification.manifest.count == 1
 
 
 def test_epoch_codec_is_exact_and_rejects_naive_values() -> None:
@@ -243,9 +263,9 @@ def test_history_rows_and_identity_fail_closed_on_invalid_types_and_values() -> 
 
 def test_import_rejects_invalid_revision_and_snapshot_before_creating_file(tmp_path: Path) -> None:
     for source_revision, schema_revision, snapshot_epoch_us in (
-        ("", "sqlite_0001", 1),
+        ("", "sqlite_0002", 1),
         ("0004", "sqlite\n0001", 1),
-        ("0004", "sqlite_0001", "now"),
+        ("0004", "sqlite_0002", "now"),
     ):
         staging = tmp_path / f"invalid-{len(list(tmp_path.iterdir()))}.sqlite3"
         with pytest.raises((InvalidHistoryRow, ValueError)):
@@ -368,7 +388,7 @@ def test_verify_and_publish_require_one_matching_alembic_revision(
         [_row(1)],
         IdentityState(1, True, 1),
         source_revision="postgres-0004",
-        schema_revision="sqlite_0001",
+        schema_revision="sqlite_0002",
         snapshot_epoch_us=123,
     )
     with sqlite3.connect(result.path) as connection:
@@ -379,7 +399,7 @@ def test_verify_and_publish_require_one_matching_alembic_revision(
         elif revision_state == "wrong":
             connection.execute("UPDATE alembic_version SET version_num = 'sqlite_wrong'")
         else:
-            connection.execute("INSERT INTO alembic_version(version_num) VALUES ('sqlite_0001')")
+            connection.execute("INSERT INTO alembic_version(version_num) VALUES ('sqlite_0002')")
         connection.commit()
 
     with pytest.raises(VerificationError):

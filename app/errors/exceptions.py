@@ -36,6 +36,15 @@ class RsaError(AppError):
         super().__init__(status_code, message)
 
 
+class DhError(AppError):
+    """Diffie-Hellman public error carrying the four-field educational envelope."""
+
+    def __init__(self, status_code: int, code: str, message: str, field: str | None) -> None:
+        self.code = code
+        self.field = field
+        super().__init__(status_code, message)
+
+
 class EmptyTextError(AppError):
     def __init__(self) -> None:
         super().__init__(422, messages.TEXT_EMPTY)

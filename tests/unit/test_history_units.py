@@ -50,9 +50,9 @@ def test_engine_is_lazy_and_ping_reports_missing_database(tmp_path: Path) -> Non
     assert not path.exists()
 
 
-def test_exactly_twenty_two_cipher_routes_are_recorded() -> None:
-    assert len(CIPHER_ROUTES) == 22
-    assert CIPHERS[-1] == "rsa"
+def test_exactly_twenty_three_cipher_routes_are_recorded() -> None:
+    assert len(CIPHER_ROUTES) == 23
+    assert CIPHERS[-1] == "dh"
     assert "/api/hill/encrypt" in CIPHER_ROUTES
     assert "/api/hill/decrypt" in CIPHER_ROUTES
     assert "/api/hill/file" not in CIPHER_ROUTES
@@ -62,6 +62,15 @@ def test_exactly_twenty_two_cipher_routes_are_recorded() -> None:
     assert {"/api/rsa/encrypt", "/api/rsa/decrypt"} <= CIPHER_ROUTES.keys()
     assert "/api/rsa/keys" not in CIPHER_ROUTES
     assert "/api/rsa/keys/random" not in CIPHER_ROUTES
+    assert "/api/dh/caesar" in CIPHER_ROUTES
+    assert (
+        not {
+            "/api/dh/encrypt",
+            "/api/dh/decrypt",
+            "/api/dh/file",
+        }
+        & CIPHER_ROUTES.keys()
+    )
     route = match_cipher_route("POST", "/api/affine/file")
     assert route is not None
     assert (route.cipher, route.source, route.operation) == ("affine", "file", None)
@@ -94,6 +103,25 @@ def test_rsa_encrypt_source_follows_media_type() -> None:
         "rsa",
         "text",
         "decrypt",
+    )
+
+
+def test_dh_caesar_source_follows_media_type_without_resolving_operation() -> None:
+    json_route = match_cipher_route("POST", "/api/dh/caesar", "application/json")
+    file_route = match_cipher_route(
+        "POST", "/api/dh/caesar", "multipart/form-data; boundary=example"
+    )
+
+    assert json_route is not None
+    assert file_route is not None
+    assert (json_route.cipher, json_route.source, json_route.operation) == ("dh", "text", None)
+    assert (file_route.cipher, file_route.source, file_route.operation) == ("dh", "file", None)
+    unsupported_route = match_cipher_route("POST", "/api/dh/caesar", "text/plain")
+    assert unsupported_route is not None
+    assert (unsupported_route.cipher, unsupported_route.source, unsupported_route.operation) == (
+        "dh",
+        "text",
+        None,
     )
 
 

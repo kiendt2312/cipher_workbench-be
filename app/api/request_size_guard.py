@@ -9,6 +9,7 @@ from starlette.types import Message as ASGIMessage
 
 from app import config
 from app.errors import messages
+from app.errors.exceptions import DhError
 
 FILE_ROUTE_PATHS = frozenset(
     {
@@ -28,7 +29,19 @@ RSA_ROUTE_PATHS = frozenset(
         "/api/rsa/decrypt",
     }
 )
-MULTIPART_ROUTE_PATHS = FILE_ROUTE_PATHS | {"/api/rsa/encrypt"}
+DH_ROUTE_PATHS = frozenset(
+    {
+        "/api/dh/params",
+        "/api/dh/params/random",
+        "/api/dh/keypair",
+        "/api/dh/shared-secret",
+        "/api/dh/exchange",
+        "/api/dh/caesar",
+    }
+)
+MULTIPART_ROUTE_PATHS = FILE_ROUTE_PATHS | {"/api/rsa/encrypt", "/api/dh/caesar"}
+DH_MULTIPART_BODY_OVERHEAD_BYTES = 64 * 1024
+DH_MULTIPART_MAX_BODY_BYTES = config.MAX_FILE_BYTES + DH_MULTIPART_BODY_OVERHEAD_BYTES
 
 
 def _content_length(scope: Scope) -> bytes | None:
@@ -97,6 +110,15 @@ def _request_too_large_message(scope: Scope) -> str:
     return messages.REQUEST_TOO_LARGE
 
 
+def _is_dh_multipart(scope: Scope) -> bool:
+    content_type = _header(scope, b"content-type")
+    return bool(
+        scope.get("path") == "/api/dh/caesar"
+        and content_type
+        and content_type.partition(b";")[0].strip().lower() == b"multipart/form-data"
+    )
+
+
 class RequestSizeGuard:
     """Reject over-ceiling Content-Length values before downstream body access."""
 
@@ -105,21 +127,58 @@ class RequestSizeGuard:
         self.max_bytes = max_bytes
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http" or not _exceeds_limit(_content_length(scope), self.max_bytes):
-            await self.app(scope, receive, send)
+        if scope["type"] == "http" and _exceeds_limit(_content_length(scope), self.max_bytes):
+            if scope.get("path") in RSA_ROUTE_PATHS | DH_ROUTE_PATHS:
+                content = {
+                    "success": False,
+                    "code": "REQUEST_TOO_LARGE",
+                    "message": (
+                        messages.DH_REQUEST_TOO_LARGE
+                        if scope.get("path") in DH_ROUTE_PATHS
+                        else messages.RSA_REQUEST_TOO_LARGE
+                    ),
+                    "field": None,
+                }
+            else:
+                content = {"success": False, "message": _request_too_large_message(scope)}
+            response = JSONResponse(status_code=413, content=content)
+            await response(scope, receive, send)
             return
 
-        if scope.get("path") in RSA_ROUTE_PATHS:
-            content = {
-                "success": False,
-                "code": "REQUEST_TOO_LARGE",
-                "message": messages.RSA_REQUEST_TOO_LARGE,
-                "field": None,
-            }
-        else:
-            content = {"success": False, "message": _request_too_large_message(scope)}
-        response = JSONResponse(status_code=413, content=content)
-        await response(scope, receive, send)
+        if scope["type"] == "http" and _is_dh_multipart(scope):
+            if _exceeds_limit(_content_length(scope), DH_MULTIPART_MAX_BODY_BYTES):
+                response = JSONResponse(
+                    status_code=413,
+                    content={
+                        "success": False,
+                        "code": "FILE_INVALID",
+                        "message": messages.DH_FILE_TOO_LARGE,
+                        "field": "file",
+                    },
+                )
+                await response(scope, receive, send)
+                return
+
+            received = 0
+            original_receive = receive
+
+            async def receive_with_dh_cap() -> ASGIMessage:
+                nonlocal received
+                message = await original_receive()
+                if message["type"] == "http.request":
+                    received += len(message.get("body", b""))
+                    if received > DH_MULTIPART_MAX_BODY_BYTES:
+                        raise DhError(
+                            413,
+                            "FILE_INVALID",
+                            messages.DH_FILE_TOO_LARGE,
+                            "file",
+                        )
+                return message
+
+            receive = receive_with_dh_cap
+
+        await self.app(scope, receive, send)
 
 
 class MultipartCompletionGuard:

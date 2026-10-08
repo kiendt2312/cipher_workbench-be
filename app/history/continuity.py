@@ -50,7 +50,17 @@ HISTORY_COLUMNS: Final = (
     "succeeded",
     "duration_ms",
 )
-CIPHERS: Final = ("caesar", "vigenere", "playfair", "affine", "columnar", "hill", "des", "rsa")
+CIPHERS: Final = (
+    "caesar",
+    "vigenere",
+    "playfair",
+    "affine",
+    "columnar",
+    "hill",
+    "des",
+    "rsa",
+    "dh",
+)
 OPERATIONS: Final = ("encrypt", "decrypt")
 SOURCES: Final = ("text", "file")
 RESPONSE_MODES: Final = ("content", "file")
@@ -69,7 +79,7 @@ CREATE TABLE cipher_operations (
         CHECK(typeof(created_at) = 'integer'),
     cipher TEXT NOT NULL
         CHECK(typeof(cipher) = 'text' AND cipher IN
-            ('caesar', 'vigenere', 'playfair', 'affine', 'columnar', 'hill', 'des', 'rsa')),
+            ('caesar', 'vigenere', 'playfair', 'affine', 'columnar', 'hill', 'des', 'rsa', 'dh')),
     operation TEXT
         CHECK(operation IS NULL OR
             (typeof(operation) = 'text' AND operation IN ('encrypt', 'decrypt'))),
@@ -1119,7 +1129,8 @@ def _check_schema(connection: sqlite3.Connection) -> None:
     definition = " ".join(sql_row[0].upper().split())
     # Only the two shipped schema forms below are accepted; this is not a general SQL parser.
     cipher_values = (
-        "CIPHER IN ('CAESAR', 'VIGENERE', 'PLAYFAIR', 'AFFINE', 'COLUMNAR', 'HILL', 'DES', 'RSA')"
+        "CIPHER IN ('CAESAR', 'VIGENERE', 'PLAYFAIR', 'AFFINE', 'COLUMNAR', 'HILL', 'DES', "
+        "'RSA', 'DH')"
     )
     plain_checks = (
         cipher_values,

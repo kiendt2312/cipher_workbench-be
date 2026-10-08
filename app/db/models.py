@@ -15,7 +15,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from app.db.types import Boolean01, EpochMicrosecondUTC
 
-CIPHERS = ("caesar", "vigenere", "playfair", "affine", "columnar", "hill", "des", "rsa")
+CIPHERS = ("caesar", "vigenere", "playfair", "affine", "columnar", "hill", "des", "rsa", "dh")
 OPERATIONS = ("encrypt", "decrypt")
 SOURCES = ("text", "file")
 RESPONSE_MODES = ("content", "file")

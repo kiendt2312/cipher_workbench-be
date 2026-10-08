@@ -1,8 +1,8 @@
-# Backend Caesar, Vigenère, Playfair, Affine, Columnar, Hill, DES và RSA
+# Backend Caesar, Vigenère, Playfair, Affine, Columnar, Hill, DES, RSA và Diffie–Hellman
 
-Backend FastAPI cung cấp API mã hóa/giải mã cho tám thuật toán: năm hệ mã cổ điển
+Backend FastAPI cung cấp API mã hóa/giải mã và trao đổi khóa cho chín thuật toán: năm hệ mã cổ điển
 **Caesar**, **Vigenère**, **Playfair**, **Affine**, **Columnar Transposition**, hệ mã
-khối cổ điển **Hill**, hệ mã khối **DES**, và textbook **RSA** phục vụ học tập.
+khối cổ điển **Hill**, hệ mã khối **DES**, textbook **RSA**, và **Diffie–Hellman** phục vụ học tập.
 API nhận văn bản JSON hoặc file `.txt`, trả kết quả xem trước dạng JSON hoặc file
 đính kèm do server tạo.
 
@@ -13,7 +13,9 @@ chính `result` server trả về. Client chỉ nên kiểm tra sơ bộ để h
 
 Đội Frontend nên bắt đầu từ
 [`repo_docs/frontend-integration.md`](repo_docs/frontend-integration.md), tài liệu
-consumer contract chi tiết cho cả 27 endpoint cipher, health và lịch sử.
+consumer contract chung cho cả 32 POST endpoint cipher, health và lịch sử. Wire
+contract DH đầy đủ nằm tại
+[`repo_docs/dh-frontend-contract.md`](repo_docs/dh-frontend-contract.md).
 
 ## 1. Tổng quan hành vi
 
@@ -30,7 +32,7 @@ JSON text hoặc multipart .txt
  request guards + validation xác định
               │
               ▼
- Caesar | Vigenère | Playfair | Affine | Columnar | Hill | DES | RSA core
+ Caesar | Vigenère | Playfair | Affine | Columnar | Hill | DES | RSA | DH core
               │
               ▼
  JSON (hai trường; Hill/DES thêm warnings) hoặc attachment UTF-8
@@ -239,7 +241,24 @@ POST /api/rsa/decrypt
 Lỗi RSA có đúng `{success:false,code,message,field}` với status 413/415/422/500;
 field lạ, trùng hoặc không áp dụng đều bị từ chối.
 
-## 3. API: 27 endpoint (26 POST, 1 GET)
+### 2.8 Diffie–Hellman giáo dục
+
+DH minh họa sinh/kiểm tra tham số, cặp khóa, shared secret, trao đổi hai phía và
+dùng `K mod 26` làm khóa Caesar. Tất cả đại lượng mật mã là decimal string; `bits`
+và index/bit của trace là JSON integer. Đây không phải giao thức DH production:
+không có ECDH, KDF, xác thực chống MITM hoặc lưu khóa server-side. `/exchange` cố ý
+trả private key kèm cảnh báo giáo dục. Trace lũy thừa modulo chạy từ bit trái sang phải.
+
+`/params` thủ công giới hạn `q ≤ 10^12`; các endpoint downstream tự kiểm tra q đến
+128 bit và không dùng provenance/state. Nếu bỏ `alpha`, `/params` chỉ trả
+`suggestedAlpha`, không tự chọn thay client.
+
+Primality 128-bit là Miller–Rabin xác suất, không phải proof deterministic và không
+tái dùng claim deterministic `<2^64` của RSA. Factorization tham số tùy ý có thể tốn
+tài nguyên dù đã bounded và chạy ngoài event loop; xem
+[`docs/dh-engineering-evidence.md`](docs/dh-engineering-evidence.md).
+
+## 3. API: 33 endpoint (32 POST, 1 GET)
 
 | Cipher | Method và path | Request | Vai trò |
 |---|---|---|---|
@@ -270,6 +289,12 @@ field lạ, trùng hoặc không áp dụng đều bị từ chối.
 | RSA | `POST /api/rsa/keys/random` | JSON | Sinh modulus đúng 16/32/64/128 bit |
 | RSA | `POST /api/rsa/encrypt` | JSON hoặc multipart | Mã hóa number/text hoặc plaintext `.txt` |
 | RSA | `POST /api/rsa/decrypt` | JSON | Giải mã number/text từ cipher package |
+| DH | `POST /api/dh/params` | JSON | Kiểm tra q/alpha thủ công, alpha có thể bỏ để lấy suggestion |
+| DH | `POST /api/dh/params/random` | JSON | Sinh safe-prime group 16/32/64/128 bit |
+| DH | `POST /api/dh/keypair` | JSON | Sinh hoặc kiểm tra private key và trả public key/trace |
+| DH | `POST /api/dh/shared-secret` | JSON | Tính shared secret và trace |
+| DH | `POST /api/dh/exchange` | JSON | Minh họa cả hai phía, cố ý trả private keys giáo dục |
+| DH | `POST /api/dh/caesar` | JSON hoặc multipart | Caesar bằng `K mod 26`; file `.txt` luôn trả JSON |
 
 Consumer đang dùng allowlist 12 route phải mở lên đúng ba path Columnar trên để
 thành 15 route; không có route generalized hoặc versioned mới. OpenAPI gắn cả ba
@@ -757,12 +782,14 @@ lưu `p/q/e/d`, public/private key, `data`, cipher array, `textMetadata`,
 best-effort: DB lỗi hoặc chậm quá 500 ms thì bản ghi bị bỏ qua, response cipher
 không đổi.
 
-Có 22 route biến đổi được ghi: encrypt/decrypt/file của năm cipher cổ điển và DES,
+Có 23 route biến đổi được ghi: encrypt/decrypt/file của năm cipher cổ điển và DES,
 encrypt/decrypt của Hill, cùng hai transform RSA. RSA encrypt JSON có `source=text`,
 encrypt multipart `.txt` có `source=file`, decrypt có `source=text`; `responseMode`
 luôn null. JSON RSA text encrypt chỉ ghi `inputLength` code point, text decrypt chỉ
 ghi `outputLength` code point, multipart chỉ ghi `inputLength` raw byte; phía cipher
-array và number để length null. Hai route khóa Hill/RSA và `/api/des/trace` không ghi.
+array và number để length null. Chỉ `/api/dh/caesar` ghi metadata DH; năm route DH
+còn lại không ghi, và không tham số/khóa/content/file/trace/warning nào được lưu.
+Hai route khóa Hill/RSA và `/api/des/trace` không ghi.
 
 SQLite dùng baseline riêng ở effective schema có đủ `des` và `rsa`; không chạy hoặc
 stamp chuỗi PostgreSQL `0001`–`0004` trên file SQLite. PostgreSQL legacy chỉ được đọc
@@ -888,7 +915,8 @@ hoàn chỉnh.
 README là bản nhập môn, không thay thế đặc tả hoặc OpenAPI. Khi có khác biệt, dùng
 thứ tự sau:
 
-1. [OpenSpec RSA đang hoạt động](openspec/changes/add-rsa-cipher/) cho RSA (gồm quyết định chủ sở
+1. [OpenSpec Diffie–Hellman đang hoạt động](openspec/changes/add-diffie-hellman/) cho DH,
+   [OpenSpec RSA đang hoạt động](openspec/changes/add-rsa-cipher/) cho RSA (gồm quyết định chủ sở
    hữu Q1–Q16 ngày 2026-10-06), [OpenSpec DES](openspec/changes/archive/2026-10-01-add-des-cipher/)
    cho DES (gồm quyết định chủ sở hữu Q1–Q22 ngày 2026-10-01),
    [OpenSpec Hill đã hoàn thành](openspec/changes/archive/2026-10-01-add-hill-cipher/)

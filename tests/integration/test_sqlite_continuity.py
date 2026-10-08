@@ -52,13 +52,17 @@ def _import(path: Path, rows: list[HistoryRow]):
         rows,
         IdentityState(last_value=100, is_called=True, increment=1),
         source_revision="postgres-0004",
-        schema_revision="sqlite_0001",
+        schema_revision="sqlite_0002",
         snapshot_epoch_us=7,
     )
 
 
 def test_full_disposable_transfer_backup_restore_and_replacement(tmp_path: Path) -> None:
-    original_rows = [_row(2), _row(7, created_at=2_000_000, cipher="rsa")]
+    original_rows = [
+        _row(2),
+        _row(7, created_at=2_000_000, cipher="rsa"),
+        _row(9, created_at=2_500_000, cipher="dh"),
+    ]
     original = _import(tmp_path / "staging.sqlite3", original_rows)
     backup_path = tmp_path / "recovery.sqlite3"
 
@@ -75,7 +79,7 @@ def test_full_disposable_transfer_backup_restore_and_replacement(tmp_path: Path)
         backup_path,
         restored_path,
         expected_manifest_digest=backup.backup_digest,
-        expected_schema_revision="sqlite_0001",
+        expected_schema_revision="sqlite_0002",
     )
     assert restored.verified is True
     assert restored.restored_digest == backup.backup_digest
@@ -355,7 +359,7 @@ def test_cli_verify_publish_restore_replace_delta_and_redacted_failure(
                 "--expected-manifest-digest",
                 original.manifest.digest,
                 "--schema-revision",
-                "sqlite_0001",
+                "sqlite_0002",
             ]
         )
         == 0
@@ -391,7 +395,7 @@ def test_cli_verify_publish_restore_replace_delta_and_redacted_failure(
                 "--expected-manifest-digest",
                 backup_digest,
                 "--schema-revision",
-                "sqlite_0001",
+                "sqlite_0002",
             ]
         )
         == 0
@@ -675,7 +679,7 @@ def test_rollback_delta_detects_consumed_identity_after_rows_are_purged(tmp_path
         [_row(1)],
         IdentityState(last_value=100, is_called=True, increment=1),
         source_revision="postgres-0004",
-        schema_revision="sqlite_0001",
+        schema_revision="sqlite_0002",
         snapshot_epoch_us=7,
     )
     after = import_staging(
@@ -683,7 +687,7 @@ def test_rollback_delta_detects_consumed_identity_after_rows_are_purged(tmp_path
         [_row(1)],
         IdentityState(last_value=101, is_called=True, increment=1),
         source_revision="postgres-0004",
-        schema_revision="sqlite_0001",
+        schema_revision="sqlite_0002",
         snapshot_epoch_us=7,
     )
 
@@ -704,7 +708,8 @@ def test_existing_sqlite_baseline_can_be_verified_with_injected_manifest(tmp_pat
                 id INTEGER PRIMARY KEY AUTOINCREMENT CHECK(id > 0),
                 created_at INTEGER NOT NULL,
                 cipher TEXT NOT NULL CHECK(cipher IN
-                    ('caesar', 'vigenere', 'playfair', 'affine', 'columnar', 'hill', 'des', 'rsa')),
+                    ('caesar', 'vigenere', 'playfair', 'affine', 'columnar', 'hill', 'des',
+                     'rsa', 'dh')),
                 operation TEXT CHECK(operation IN ('encrypt', 'decrypt')),
                 source TEXT NOT NULL CHECK(source IN ('text', 'file')),
                 response_mode TEXT CHECK(response_mode IN ('content', 'file')),
@@ -719,7 +724,7 @@ def test_existing_sqlite_baseline_can_be_verified_with_injected_manifest(tmp_pat
             CREATE INDEX ix_cipher_operations_cipher_created_at
                 ON cipher_operations (cipher, created_at DESC, id DESC);
             CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL);
-            INSERT INTO alembic_version(version_num) VALUES ('sqlite_0001');
+            INSERT INTO alembic_version(version_num) VALUES ('sqlite_0002');
             """
         )
         connection.execute(
@@ -733,14 +738,14 @@ def test_existing_sqlite_baseline_can_be_verified_with_injected_manifest(tmp_pat
         [row],
         IdentityState(last_value=1, is_called=True, increment=1),
         source_revision="postgres-0004",
-        schema_revision="sqlite_0001",
+        schema_revision="sqlite_0002",
         snapshot_epoch_us=7,
     )
     report = verify_staging(
         path,
         expected_manifest=manifest,
         expected_manifest_digest=manifest.digest,
-        expected_schema_revision="sqlite_0001",
+        expected_schema_revision="sqlite_0002",
     )
     assert report.manifest == manifest
 

@@ -20,6 +20,7 @@ from app.api.routes_columnar_file import router as columnar_file_router
 from app.api.routes_columnar_text import router as columnar_text_router
 from app.api.routes_des import router as des_router
 from app.api.routes_des_file import router as des_file_router
+from app.api.routes_dh import router as dh_router
 from app.api.routes_file import router as file_router
 from app.api.routes_health import router as health_router
 from app.api.routes_hill import router as hill_router
@@ -78,6 +79,7 @@ register_exception_handlers(app)
 app.include_router(health_router)
 app.include_router(history_router)
 app.include_router(rsa_router)
+app.include_router(dh_router)
 app.include_router(hill_router)
 app.include_router(des_router)
 app.include_router(des_file_router)
