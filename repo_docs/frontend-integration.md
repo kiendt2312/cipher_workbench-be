@@ -17,10 +17,10 @@ theo feature; khi wording khác nhau, tài liệu hiện tại thắng và phả
 - Backend **không có UI**: giao diện thuộc project FE. Thử API tại `/docs`
   (<http://localhost:8080/docs> khi chạy docker-compose).
 
-**Phạm vi snapshot:** phần DH áp dụng cho branch `spec/add-diffie-hellman` tại
-commit `ee4f0ff`; branch này chưa được merge/deploy vào `main` tại thời điểm viết.
-Các feature còn lại cũng được mô tả theo cùng snapshot branch, không phải cam kết
-rằng một môi trường cụ thể đã deploy commit này.
+**Phạm vi snapshot:** DH bắt nguồn từ implementation checkpoint `ee4f0ff` trên
+`spec/add-diffie-hellman`; unified contract được chốt tại `ca44f4e` và được tích hợp
+cùng feature vào `main`. Merge repository không đồng nghĩa một môi trường cụ thể đã
+deploy; FE vẫn phải đối chiếu version đang chạy qua quy trình release của môi trường đó.
 
 ## Mục lục contract
 
