@@ -11,11 +11,13 @@ có thẩm quyền cho validation và kết quả cipher. Với nguồn file upl
 quyết định bytes/BOM và tên attachment; với nguồn text, client có thể tạo file từ
 chính `result` server trả về. Client chỉ nên kiểm tra sơ bộ để hỗ trợ trải nghiệm.
 
-Đội Frontend nên bắt đầu từ
-[`repo_docs/frontend-integration.md`](repo_docs/frontend-integration.md), tài liệu
-consumer contract chung cho cả 32 POST endpoint cipher, health và lịch sử. Wire
-contract DH đầy đủ nằm tại
-[`repo_docs/dh-frontend-contract.md`](repo_docs/dh-frontend-contract.md).
+Đội Frontend dùng
+[`repo_docs/frontend-integration.md`](repo_docs/frontend-integration.md) làm contract
+canonical, self-contained duy nhất cho cả 32 POST endpoint cipher, health và lịch sử.
+Tổng snapshot là 35 operations: 32 POST và ba GET (random Hill, health, history).
+Các file [`repo_docs/rsa-frontend-contract.md`](repo_docs/rsa-frontend-contract.md) và
+[`repo_docs/dh-frontend-contract.md`](repo_docs/dh-frontend-contract.md) chỉ là
+supporting reference theo feature.
 
 ## 1. Tổng quan hành vi
 
@@ -865,7 +867,7 @@ app/
 │   ├── engine.py                   # async engine, session factory, ping
 │   └── models.py                   # bảng cipher_operations
 ├── history/
-│   ├── routes.py                   # 22 route biến đổi được ghi lịch sử
+│   ├── routes.py                   # 23 route biến đổi được ghi lịch sử
 │   ├── cursor.py                   # cursor phân trang opaque
 │   └── store.py                    # ghi/đọc cipher_operations
 └── errors/

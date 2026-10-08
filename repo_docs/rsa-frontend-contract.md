@@ -1,9 +1,8 @@
-# Hợp đồng tích hợp Frontend — RSA textbook
+# Supporting reference — RSA textbook
 
-Tài liệu này là contract dành cho FE của phần RSA đã ship. Nó bổ sung cho
-[`frontend-integration.md`](frontend-integration.md): guide chung giữ phần bắt đầu nhanh,
-history và quy ước toàn hệ thống; file này là nơi tra cứu chi tiết duy nhất cho wire
-contract RSA. Không suy ra endpoint hoặc field ngoài những gì được ghi ở đây.
+Tài liệu này giữ phần tra cứu RSA theo feature. Contract canonical, self-contained
+và có quyền cao hơn cho FE là [`frontend-integration.md`](frontend-integration.md),
+đặc biệt mục 18. Không suy ra endpoint hoặc field ngoài contract canonical.
 
 > **Cảnh báo sản phẩm bắt buộc:** đây là textbook RSA để học thuật toán. Random
 > keygen chỉ hỗ trợ modulus 16/32/64/128 bit; manual key có thể nhỏ hơn và chịu các

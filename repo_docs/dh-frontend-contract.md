@@ -1,9 +1,8 @@
-# Hợp đồng tích hợp Frontend — Diffie–Hellman giáo dục
+# Supporting reference — Diffie–Hellman giáo dục
 
-Tài liệu này là wire contract dành cho FE của phần Diffie–Hellman (DH) đã triển khai.
-Nó bổ sung cho [`frontend-integration.md`](frontend-integration.md): guide chung giữ
-quick start, history và quy ước toàn hệ thống; file này là nơi tra cứu chi tiết duy
-nhất cho sáu endpoint DH. Không suy ra endpoint hoặc field ngoài tài liệu này.
+Tài liệu này giữ phần tra cứu DH theo feature. Contract canonical, self-contained
+và có quyền cao hơn cho FE là [`frontend-integration.md`](frontend-integration.md),
+đặc biệt mục 19. Không suy ra endpoint hoặc field ngoài contract canonical.
 
 > **Cảnh báo sản phẩm bắt buộc:** DH ở đây dùng để học số học trao đổi khóa. Không
 > có xác thực chống MITM, ECDH, KDF, mã hóa production hoặc lưu khóa server-side.

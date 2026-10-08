@@ -3,19 +3,35 @@
 Tài liệu này là **điểm vào consumer contract cho Frontend** khi tích hợp với backend
 cipher. Nội dung độc lập framework: FE có thể dùng React, Vue, Svelte hoặc JavaScript
 thuần, nhưng hành vi API và trạng thái quan sát được phải giữ đúng contract dưới đây.
-Phần RSA và DH có contract triển khai chi tiết lần lượt tại
-[`rsa-frontend-contract.md`](rsa-frontend-contract.md) và
-[`dh-frontend-contract.md`](dh-frontend-contract.md); các mục quick start dưới đây
-không thay thế hai wire contract đó.
+Đây là **contract frontend-facing canonical và self-contained duy nhất** của snapshot
+backend này. Hai tài liệu [`rsa-frontend-contract.md`](rsa-frontend-contract.md) và
+[`dh-frontend-contract.md`](dh-frontend-contract.md) được giữ làm supporting reference
+theo feature; khi wording khác nhau, tài liệu hiện tại thắng và phải được cập nhật trước.
 
-- Cập nhật: `2026-10-08`. Backend có 32 POST route cipher (gồm bốn route RSA và sáu route DH), một GET sinh khóa Hill,
-  `GET /api/health`,
-  `GET /api/history` (tùy chọn, dùng SQLite cục bộ trên backend).
+- Cập nhật: `2026-10-08`. Snapshot có đúng **35 operations**: 32 POST route cipher
+  (gồm bốn RSA và sáu DH), `GET /api/hill/key/random`, `GET /api/health` và
+  `GET /api/history` (history tùy chọn, dùng SQLite cục bộ trên backend).
 - **Người mới:** đọc mục **A. Bắt đầu nhanh** (khoảng 10 phút) rồi dùng file
-  [`examples/cipher-api.ts`](examples/cipher-api.ts). Các mục 1–17 là tra cứu chi tiết.
+  [`examples/cipher-api.ts`](examples/cipher-api.ts). Các mục 1–19 là tra cứu chi tiết.
 - **Đã tích hợp trước đây:** đọc mục **0. Thay đổi gần đây**.
 - Backend **không có UI**: giao diện thuộc project FE. Thử API tại `/docs`
   (<http://localhost:8080/docs> khi chạy docker-compose).
+
+**Phạm vi snapshot:** phần DH áp dụng cho branch `spec/add-diffie-hellman` tại
+commit `ee4f0ff`; branch này chưa được merge/deploy vào `main` tại thời điểm viết.
+Các feature còn lại cũng được mô tả theo cùng snapshot branch, không phải cam kết
+rằng một môi trường cụ thể đã deploy commit này.
+
+## Mục lục contract
+
+- [A. Bắt đầu nhanh và toàn bộ endpoint](#a-bắt-đầu-nhanh)
+- [1–3. Quy ước chung, runtime và route inventory](#1-nguyên-tắc-tích-hợp)
+- [4. Thuật toán và behavior theo feature](#4-thuật-toán-fe-cần-hiểu)
+- [5–9. Type, response, text/file và validation](#5-typescript-contract-dùng-trực-tiếp)
+- [14. Acceptance checklist](#14-acceptance-checklist)
+- [16–17. Health, history và privacy](#16-health-và-lịch-sử-thao-tác)
+- [18. Exact RSA wire contract](#18-exact-rsa-wire-contract-canonical)
+- [19. Exact DH wire contract và migration từ FE cũ](#19-exact-dh-wire-contract-và-migration-từ-fe-cũ-canonical)
 
 ## A. Bắt đầu nhanh
 
@@ -85,7 +101,7 @@ chỉ là plaintext `.txt` gửi thẳng tới `/api/rsa/encrypt`; response luô
 
 | Cipher | JSON text | Multipart | Quy tắc | Ví dụ |
 |---|---|---|---|---|
-| Caesar | `"key": 3` (**số**, không phải chuỗi) | `key` | Số nguyên có dấu, lớn tùy ý; file tối đa 32 ký tự | `{"text":"Hello World","key":3}` → `Khoor Zruog` |
+| Caesar | `"key": 3` (**số**, không phải chuỗi) | `key` | Số nguyên có dấu, lớn tùy ý; scalar key multipart tối đa 32 ký tự | `{"text":"Hello World","key":3}` → `Khoor Zruog` |
 | Vigenère | `"key": "LEMON"` | `key` | Chỉ `A-Z`/`a-z`, không khoảng trắng | `Attack at dawn!` → `Lxfopv ef rnhr!` |
 | Playfair | `"key": "PLAYFAIR EXAMPLE"` | `key` | Có ít nhất một chữ cái; kết quả là văn bản chuẩn hóa (xem 4.3) | `HIDE THE GOLD` → `BMODZBXDNAGE` |
 | Affine | `"a": 5, "b": 8` (**số**) | `a`, `b` | Số nguyên có dấu; `a` mod 26 nguyên tố cùng nhau với 26 | `HELLO` → `RCLLA` |
@@ -281,9 +297,10 @@ Giữ cặp định dạng: mã hóa `inputFormat=text` ↔ giải mã `outputFo
 > bảo vệ dữ liệu thật, không có OAEP/authenticity và không chứng minh được
 > key/metadata đúng.
 
-Đọc [`rsa-frontend-contract.md`](rsa-frontend-contract.md) trước khi implement. File đó
-là nguồn chi tiết cho exact union types, bốn endpoint, errors, limits, multipart,
-trace, lossless package và history RSA; phần dưới chỉ giúp thử nhanh một block flow.
+Exact union types, bốn endpoint, errors, limits, multipart, trace, lossless package
+và history RSA nằm trực tiếp ở
+[mục 18](#18-exact-rsa-wire-contract-canonical). File
+[`rsa-frontend-contract.md`](rsa-frontend-contract.md) chỉ là supporting reference.
 
 ```ts
 const encrypted = await postJson("/api/rsa/encrypt", {
@@ -665,17 +682,19 @@ chỉ lưu metadata thao tác, đọc qua `GET /api/history` (mục 16).
 | Hill | `POST /api/hill/encrypt` | `POST /api/hill/decrypt` | Không có |
 | DES | `POST /api/des/encrypt` | `POST /api/des/decrypt` | `POST /api/des/file` |
 | RSA | `POST /api/rsa/encrypt` | `POST /api/rsa/decrypt` | Multipart plaintext dùng chính `/api/rsa/encrypt` |
+| DH | `POST /api/dh/caesar` với `action=encrypt` | cùng route với `action=decrypt` | Multipart `.txt` dùng chính `/api/dh/caesar`, luôn JSON |
 
 Các text endpoint không phải RSA nhận `application/json` hoặc `application/*+json`.
-RSA chỉ nhận `application/json` cho hai route keygen và `/api/rsa/decrypt`;
+RSA và DH chỉ nhận base `application/json` trên JSON variants. RSA nhận JSON cho hai route keygen và `/api/rsa/decrypt`;
 `/api/rsa/encrypt` nhận `application/json` hoặc `multipart/form-data` cho plaintext
-`.txt`. Mọi response RSA đều là JSON. Các file endpoint truyền thống nhận
+`.txt`; DH `/caesar` nhận JSON hoặc multipart. Mọi response RSA/DH đều là JSON. Các file endpoint truyền thống nhận
 `multipart/form-data` với response mode `content|file`; RSA multipart không có
 `response_mode`.
 
-Ngoài 22 route biến đổi được history matcher ghi nhận, Hill có
+Ngoài 23 route biến đổi được history matcher ghi nhận, Hill có
 `POST /api/hill/key/analyze` và `GET /api/hill/key/random?m=2|3|4`; DES có
-`POST /api/des/trace`; RSA có hai route keygen. Backend còn có hai route đọc dùng chung:
+`POST /api/des/trace`; RSA có hai route keygen; DH có năm route params/key không ghi
+history. Backend còn có hai route đọc dùng chung:
 `GET /api/health` và `GET /api/history` (mục 16).
 
 Contract wire riêng của ba route Columnar:
@@ -2064,7 +2083,7 @@ hiện tại luôn thắng demo.
 
 ## 14. Acceptance checklist
 
-- [ ] Cả 22 POST transform, bốn POST helper/trace/keygen và GET random Hill được chọn
+- [ ] Cả 23 POST transform, chín POST helper/trace/keygen và GET random Hill được chọn
   đúng theo cipher/source/operation.
 - [ ] Caesar vector `Hello World`, key `3` cho `Khoor Zruog` và decrypt đúng chiều ngược lại.
 - [ ] Vigenère vector `Attack at dawn!`/`LEMON` cho `Lxfopv ef rnhr!` và decrypt đúng.
@@ -2185,8 +2204,10 @@ Các implementation link chính để audit contract là
 [`routes_des_file.py`](../app/api/routes_des_file.py) và
 [`des_schemas.py`](../app/api/des_schemas.py),
 [`routes_rsa.py`](../app/api/routes_rsa.py),
-[`rsa_schemas.py`](../app/api/rsa_schemas.py) và contract FE chuyên biệt
+[`rsa_schemas.py`](../app/api/rsa_schemas.py) và supporting reference
 [`rsa-frontend-contract.md`](rsa-frontend-contract.md),
+[`routes_dh.py`](../app/api/routes_dh.py), [`dh_schemas.py`](../app/api/dh_schemas.py)
+và supporting reference [`dh-frontend-contract.md`](dh-frontend-contract.md),
 [`routes_health.py`](../app/api/routes_health.py) và
 [`routes_history.py`](../app/api/routes_history.py). File mẫu
 [`examples/cipher-api.ts`](examples/cipher-api.ts) phải được cập nhật cùng tài liệu
@@ -2198,7 +2219,7 @@ change. Không thêm `/v1`, endpoint, field hoặc behavior mới chỉ bằng c
 
 ## 16. Health và lịch sử thao tác
 
-Backend có thể chạy với SQLite cục bộ trên máy BE. Khi bật, mỗi request tới 22 route biến đổi được
+Backend có thể chạy với SQLite cục bộ trên máy BE. Khi bật, mỗi request tới 23 route biến đổi được
 ghi lại dưới dạng **metadata**. Backend không lưu text, key, IV, tên file, nội dung file
 hay kết quả. Hai route khóa Hill, hai route khóa RSA và `/api/des/trace` không được ghi.
 Hai RSA transform được ghi kể cả request lỗi, nhưng không lưu key/data/cipher array,
@@ -2257,7 +2278,7 @@ Query (tất cả tùy chọn):
 |---|---|---|
 | `limit` | số nguyên `1`–`100` | `20` |
 | `cursor` | chuỗi opaque lấy từ `nextCursor` của trang trước | trang đầu |
-| `cipher` | `caesar`, `vigenere`, `playfair`, `affine`, `columnar`, `hill`, `des`, `rsa` | tất cả |
+| `cipher` | `caesar`, `vigenere`, `playfair`, `affine`, `columnar`, `hill`, `des`, `rsa`, `dh` | tất cả |
 | `operation` | `encrypt`, `decrypt` | tất cả |
 
 Kết quả sắp mới nhất trước. `nextCursor` là `null` ở trang cuối. FE phải coi cursor
@@ -2289,10 +2310,10 @@ là chuỗi opaque, gửi lại nguyên văn và không tự dựng.
 
 Ý nghĩa các trường:
 
-- `source`: `text` cho route JSON, `file` cho route multipart. DES và RSA encrypt có
-  thể có cả hai; RSA decrypt chỉ có `text`.
-- `operation`: `null` khi request lỗi trước lúc backend đọc được `action` của file.
-- `responseMode`: `content` hoặc `file` cho route file truyền thống; RSA luôn `null`.
+- `source`: `text` cho route JSON, `file` cho route multipart. DES, RSA encrypt và
+  DH Caesar có thể có cả hai; RSA decrypt chỉ có `text`.
+- `operation`: `null` khi request lỗi trước lúc backend đọc được action.
+- `responseMode`: `content` hoặc `file` cho route file truyền thống; RSA và DH luôn `null`.
 - `inputLength`/`outputLength`: số Unicode code point với text, số byte UTF-8 với
   file (tính cả BOM nếu file gửi lên có BOM); `null` khi request lỗi trước lúc đo được.
   Riêng RSA: number để cả hai null; text encrypt chỉ input length; text decrypt chỉ
@@ -2304,7 +2325,7 @@ là chuỗi opaque, gửi lại nguyên văn và không tự dựng.
 type HistoryItem = {
   id: number;
   createdAt: string; // ISO 8601
-  cipher: "caesar" | "vigenere" | "playfair" | "affine" | "columnar" | "hill" | "des" | "rsa";
+  cipher: "caesar" | "vigenere" | "playfair" | "affine" | "columnar" | "hill" | "des" | "rsa" | "dh";
   operation: "encrypt" | "decrypt" | null;
   source: "text" | "file";
   responseMode: "content" | "file" | null;
@@ -2464,3 +2485,1419 @@ xóa lịch sử đã lưu không.
 | Nội dung | Input, key, kết quả | Chỉ metadata, không có nội dung |
 | Thời hạn | Đến khi người dùng xóa (tối đa 50 mục) | Mặc định 30 ngày; cấu hình 1–3650 ngày |
 | Mục đích | Xem lại thao tác của mình | Thống kê và theo dõi vận hành |
+
+
+## 18. Exact RSA wire contract (canonical)
+
+Phần này được nhúng trực tiếp để guide chung tự chứa đủ contract RSA. File
+`rsa-frontend-contract.md` chỉ là supporting reference của cùng snapshot.
+
+### 1. Tóm tắt bắt buộc
+
+- FE gọi URL tương đối `/api/...`; không ghi cứng host, port hoặc `/v1`.
+- Có đúng bốn RSA endpoint, đều là `POST`.
+- Crypto integer đi trên wire bằng **decimal string**, không dùng JSON number,
+  hex hoặc base64. `bits`, `traceBlockIndex` và `originalUtf8ByteLength` là JSON
+  integer thật theo từng request shape.
+- JSON RSA chỉ nhận base media type `application/json`. Có thể có parameter như
+  `application/json; charset=utf-8`, nhưng **không có cam kết nhận
+  `application/*+json`**.
+- Chỉ `/api/rsa/encrypt` nhận thêm `multipart/form-data`, và chỉ để mã hóa plaintext
+  `.txt`. Không có upload ciphertext, `/api/rsa/file`, `/api/rsa/trace` hoặc download.
+- Mọi response RSA, kể cả multipart và mọi lỗi, đều là JSON.
+- Request strict: field lạ, field trùng, field không áp dụng và thiếu field bắt buộc
+  đều bị từ chối. Không gửi object dùng chung có field thừa.
+- `mode="block"` tạo một cipher package lossless. FE phải giữ nguyên
+  `cipher`, `mode` và `originalUtf8ByteLength` để giải mã.
+- `trace` luôn có mặt: mặc định `null`, hoặc full trace của đúng một block khi gửi
+  `traceBlockIndex`.
+- `blocks`, `cipher`, `egcdSteps` và selected `trace.steps` luôn là danh sách đầy đủ;
+  không có cursor, pagination hoặc silent truncation.
+- Chỉ hai transform encrypt/decrypt có metadata history best-effort. Hai keygen route
+  không có history.
+
+### 2. Endpoint và content type
+
+| Method/path | Request được nhận | Response thành công |
+|---|---|---|
+| `POST /api/rsa/keys` | `application/json` | Manual key material, không có `p/q` |
+| `POST /api/rsa/keys/random` | `application/json` | Random key material, có `p/q` |
+| `POST /api/rsa/encrypt` | `application/json` number/text **hoặc** `multipart/form-data` plaintext `.txt` | Number/text encrypt JSON |
+| `POST /api/rsa/decrypt` | `application/json` number/text | Number/text decrypt JSON |
+
+Quy tắc media type:
+
+- JSON: đặt `Content-Type: application/json`; body phải là một JSON object UTF-8.
+  UTF-8 BOM đầu JSON được nhận; UTF-16/UTF-32 không được nhận.
+- `application/problem+json`, `text/plain`, thiếu `Content-Type`, hoặc multipart gửi
+  tới ba route chỉ nhận JSON trả 415 `UNSUPPORTED_MEDIA_TYPE`.
+- Multipart: dùng `FormData` và **không tự đặt header `Content-Type`**; browser phải tự
+  thêm boundary. Đây là cách dùng được tài liệu Web Platform hiện hành xác nhận tại
+  [MDN FormData](https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest_API/Using_FormData_Objects).
+- `fetch("/api/rsa/...")` là URL tương đối hợp lệ; browser resolve theo base URL của
+  document. Xem [MDN `fetch()`](https://developer.mozilla.org/en-US/docs/Web/API/Window/fetch).
+
+### 3. Consumer types
+
+Các type dưới đây mô tả wire shape. `DecimalString` là string theo regex ASCII
+`^[0-9]+$`; TypeScript alias không thay thế runtime validation.
+
+```ts
+type DecimalString = string;
+type SignedDecimalString = string; // chỉ output hệ số t của Euclid có thể âm
+type RsaMode = "char" | "block";
+
+type RsaErrorCode =
+  | "REQUEST_TOO_LARGE"
+  | "UNSUPPORTED_MEDIA_TYPE"
+  | "INVALID_REQUEST"
+  | "NOT_INTEGER"
+  | "NUMBER_TOO_LARGE"
+  | "INVALID_BITS"
+  | "NOT_PRIME"
+  | "SAME_PRIME"
+  | "E_OUT_OF_RANGE"
+  | "D_OUT_OF_RANGE"
+  | "E_NOT_COPRIME"
+  | "PRIME_TOO_LARGE"
+  | "P_TOO_LARGE"
+  | "N_TOO_SMALL"
+  | "CIPHER_TOO_LARGE"
+  | "DECODE_FAILED"
+  | "EMPTY_INPUT"
+  | "INPUT_TOO_LARGE"
+  | "FILE_INVALID"
+  | "INVALID_LENGTH_METADATA"
+  | "TRACE_INDEX_OUT_OF_RANGE"
+  | "FILE_READ_FAILED"
+  | "INTERNAL_ERROR";
+
+type RsaErrorResponse = {
+  success: false;
+  code: RsaErrorCode;
+  message: string;
+  field: string | null; // ví dụ "n", "cipher", "cipher[3]"
+};
+
+type EuclidStep = {
+  index: number;
+  q: DecimalString | null;
+  r: DecimalString;
+  t: SignedDecimalString;
+};
+
+type KeyMaterial = {
+  success: true;
+  n: DecimalString;
+  phi: DecimalString;
+  e: DecimalString;
+  d: DecimalString;
+  publicKey: { e: DecimalString; n: DecimalString };
+  privateKey: { d: DecimalString; n: DecimalString };
+  egcdSteps: EuclidStep[];
+};
+
+type ManualKeyResponse = KeyMaterial; // exact: không có p, q
+type RandomKeyResponse = KeyMaterial & {
+  p: DecimalString;
+  q: DecimalString;
+};
+
+type ModPowStep = {
+  i: number;
+  bit: 0 | 1;
+  base: DecimalString;
+  before: DecimalString;
+  result: DecimalString;
+};
+
+type RsaTrace = {
+  operation: "encrypt" | "decrypt";
+  blockIndex: number;
+  input: DecimalString;
+  exponent: DecimalString;
+  modulus: DecimalString;
+  result: DecimalString;
+  steps: ModPowStep[];
+};
+
+type NumberEncryptResponse = {
+  success: true;
+  inputType: "number";
+  blocks: [DecimalString];
+  cipher: [DecimalString];
+  blockSize: null;
+  trace: RsaTrace | null;
+};
+
+type TextEncryptResponse = {
+  success: true;
+  inputType: "text";
+  mode: RsaMode;
+  blocks: DecimalString[];
+  cipher: DecimalString[];
+  blockSize: number; // 1 với char; k byte với block
+  originalUtf8ByteLength: number;
+  trace: RsaTrace | null;
+};
+
+type NumberDecryptResponse = {
+  success: true;
+  inputType: "number";
+  blocks: [DecimalString]; // số plaintext sau giải mã
+  plaintext: DecimalString;
+  blockSize: null;
+  trace: RsaTrace | null;
+};
+
+type TextDecryptResponse = {
+  success: true;
+  inputType: "text";
+  mode: RsaMode;
+  blocks: DecimalString[]; // plaintext block/code point sau giải mã
+  plaintext: string;
+  blockSize: number;
+  originalUtf8ByteLength: number;
+  trace: RsaTrace | null;
+};
+```
+
+Các field nullable của RSA chỉ gồm `q` ở hai dòng đầu `egcdSteps`, `blockSize` ở
+number response, `trace` khi không opt-in và `field` ở lỗi toàn request/hệ thống.
+Không có wrapper `result` và không có field `warnings` trong success response RSA.
+
+### 4. Sinh khóa
+
+#### 4.1 Manual key — `POST /api/rsa/keys`
+
+Request exact:
+
+```ts
+type ManualKeyRequest = {
+  p: DecimalString;
+  q: DecimalString;
+  e: DecimalString;
+};
+```
+
+```json
+{"p":"17","q":"11","e":"7"}
+```
+
+Response exact:
+
+```json
+{
+  "success": true,
+  "n": "187",
+  "phi": "160",
+  "e": "7",
+  "d": "23",
+  "publicKey": {"e": "7", "n": "187"},
+  "privateKey": {"d": "23", "n": "187"},
+  "egcdSteps": [
+    {"index": 0, "q": null, "r": "160", "t": "0"},
+    {"index": 1, "q": null, "r": "7", "t": "1"},
+    {"index": 2, "q": "22", "r": "6", "t": "-22"},
+    {"index": 3, "q": "1", "r": "1", "t": "23"},
+    {"index": 4, "q": "6", "r": "0", "t": "-160"}
+  ]
+}
+```
+
+- Manual response không trả `p` hoặc `q`.
+- `egcdSteps` luôn là bảng đầy đủ: hai dòng khởi tạo có `q:null`, dòng cuối có
+  `r:"0"`. `t` là decimal string có dấu khi âm.
+- Validation theo thứ tự `p`, `q`, `e`; `p/q` phải khác nhau, là số nguyên tố và
+  không vượt `10^12`; `1 < e < phi(n)` và `gcd(e,phi)=1`.
+
+#### 4.2 Random key — `POST /api/rsa/keys/random`
+
+Request chỉ có `bits`, là JSON integer thật:
+
+```ts
+type RandomKeyRequest = { bits: 16 | 32 | 64 | 128 };
+```
+
+```json
+{"bits":16}
+```
+
+Một response hợp lệ có shape sau. Giá trị được sinh ngẫu nhiên và có thể khác giữa
+các request; API không cam kết uniqueness:
+
+```json
+{
+  "success": true,
+  "n": "59989",
+  "phi": "59500",
+  "e": "3",
+  "d": "39667",
+  "publicKey": {"e": "3", "n": "59989"},
+  "privateKey": {"d": "39667", "n": "59989"},
+  "egcdSteps": [
+    {"index": 0, "q": null, "r": "59500", "t": "0"},
+    {"index": 1, "q": null, "r": "3", "t": "1"},
+    {"index": 2, "q": "19833", "r": "1", "t": "-19833"},
+    {"index": 3, "q": "3", "r": "0", "t": "59500"}
+  ],
+  "p": "251",
+  "q": "239"
+}
+```
+
+`n` có đúng bit length đã yêu cầu. FE không được giả định `e` luôn là `65537`.
+
+### 5. Transform number
+
+#### 5.1 Encrypt number
+
+Request exact:
+
+```ts
+type NumberEncryptRequest = {
+  e: DecimalString;
+  n: DecimalString;
+  inputType: "number";
+  data: DecimalString;
+  traceBlockIndex?: number;
+};
+```
+
+```http
+POST /api/rsa/encrypt
+Content-Type: application/json
+
+{"e":"7","n":"187","inputType":"number","data":"88"}
+```
+
+```json
+{
+  "success": true,
+  "inputType": "number",
+  "blocks": ["88"],
+  "cipher": ["11"],
+  "blockSize": null,
+  "trace": null
+}
+```
+
+`data="00088"` cũng hợp lệ nhưng output được canonicalize thành `"88"`.
+
+#### 5.2 Decrypt number
+
+Request exact; `cipher` phải có đúng một item:
+
+```ts
+type NumberDecryptRequest = {
+  d: DecimalString;
+  n: DecimalString;
+  inputType: "number";
+  cipher: [DecimalString];
+  traceBlockIndex?: number;
+};
+```
+
+```http
+POST /api/rsa/decrypt
+Content-Type: application/json
+
+{"d":"23","n":"187","inputType":"number","cipher":["11"]}
+```
+
+```json
+{
+  "success": true,
+  "inputType": "number",
+  "blocks": ["88"],
+  "plaintext": "88",
+  "blockSize": null,
+  "trace": null
+}
+```
+
+Number response vẫn dùng string cho plaintext; không chuyển qua JavaScript `number`.
+
+### 6. Transform text
+
+#### 6.1 Request exact
+
+```ts
+type TextEncryptRequest = {
+  e: DecimalString;
+  n: DecimalString;
+  inputType: "text";
+  mode: "char" | "block";
+  data: string;
+  traceBlockIndex?: number;
+};
+
+type CharDecryptRequest = {
+  d: DecimalString;
+  n: DecimalString;
+  inputType: "text";
+  mode: "char";
+  cipher: DecimalString[];
+  traceBlockIndex?: number;
+};
+
+type BlockDecryptRequest = {
+  d: DecimalString;
+  n: DecimalString;
+  inputType: "text";
+  mode: "block";
+  cipher: DecimalString[];
+  originalUtf8ByteLength: number;
+  traceBlockIndex?: number;
+};
+```
+
+Không gửi `originalUtf8ByteLength` khi encrypt hoặc khi decrypt `mode="char"`.
+Không gửi `mode` cho number. Những field không áp dụng này không bị bỏ qua mà trả
+422 `INVALID_REQUEST`.
+
+#### 6.2 `mode="char"`
+
+- Mỗi Unicode code point là một plaintext block (`ord(character)`), không phải mỗi
+  UTF-8 byte hoặc mỗi UTF-16 code unit.
+- Mỗi code point phải nhỏ hơn `n`.
+- Không trim, normalize Unicode hoặc đổi newline.
+- Encrypt/decrypt text response có `blockSize:1`.
+- Encrypt trả `originalUtf8ByteLength` từ UTF-8 đầu vào; decrypt tính lại trường này
+  từ plaintext đã phục hồi. Char decrypt không nhận length metadata.
+
+Ví dụ giữ trailing NUL:
+
+```json
+{
+  "e": "3",
+  "n": "67591",
+  "inputType": "text",
+  "mode": "char",
+  "data": "A\u0000"
+}
+```
+
+```json
+{
+  "success": true,
+  "inputType": "text",
+  "mode": "char",
+  "blocks": ["65", "0"],
+  "cipher": ["4261", "0"],
+  "blockSize": 1,
+  "originalUtf8ByteLength": 2,
+  "trace": null
+}
+```
+
+Decrypt `cipher:["4261","0"]` với `d:"44715"`, `n:"67591"`, `mode:"char"`
+trả `plaintext:"A\u0000"` và `blocks:["65","0"]`.
+
+#### 6.3 `mode="block"` và cipher package lossless
+
+Backend:
+
+1. Encode nguyên chuỗi thành UTF-8 strict.
+2. Chọn `k` lớn nhất sao cho `256^k <= n - 1`; `blockSize` là `k` byte.
+3. Chia bytes thành chunk `k`, pad **bên phải** block cuối bằng `0x00`, đọc
+   big-endian thành plaintext blocks.
+4. Trả `originalUtf8ByteLength` là số byte trước padding.
+5. Khi decrypt, dùng length này để phân biệt padding với NUL thật, kiểm block count,
+   zero padding và UTF-8 rồi mới trả plaintext.
+
+Ví dụ copyable:
+
+```http
+POST /api/rsa/encrypt
+Content-Type: application/json
+
+{"e":"3","n":"67591","inputType":"text","mode":"block","data":"Hi!"}
+```
+
+```json
+{
+  "success": true,
+  "inputType": "text",
+  "mode": "block",
+  "blocks": ["18537", "8448"],
+  "cipher": ["37222", "6468"],
+  "blockSize": 2,
+  "originalUtf8ByteLength": 3,
+  "trace": null
+}
+```
+
+```http
+POST /api/rsa/decrypt
+Content-Type: application/json
+
+{"d":"44715","n":"67591","inputType":"text","mode":"block","cipher":["37222","6468"],"originalUtf8ByteLength":3}
+```
+
+```json
+{
+  "success": true,
+  "inputType": "text",
+  "mode": "block",
+  "blocks": ["18537", "8448"],
+  "plaintext": "Hi!",
+  "blockSize": 2,
+  "originalUtf8ByteLength": 3,
+  "trace": null
+}
+```
+
+Nếu FE cần persist/import ở client, có thể tự định nghĩa record cục bộ tối thiểu:
+
+```ts
+type RsaBlockCipherRecord = {
+  mode: "block";
+  cipher: DecimalString[];
+  originalUtf8ByteLength: number;
+  n: DecimalString;
+};
+
+function toBlockDecryptRequest(
+  record: RsaBlockCipherRecord,
+  d: DecimalString,
+): BlockDecryptRequest {
+  return {
+    d,
+    n: record.n,
+    inputType: "text",
+    mode: "block",
+    cipher: record.cipher,
+    originalUtf8ByteLength: record.originalUtf8ByteLength,
+  };
+}
+```
+
+`RsaBlockCipherRecord` là gợi ý lưu trữ FE, **không phải** response, file download hay
+wire shape mới của backend. Decrypt route vẫn yêu cầu full `BlockDecryptRequest`; khóa
+private `d` được giữ riêng và không phải metadata server lưu. Nếu FE export/import
+record, không đổi `cipher` hoặc `originalUtf8ByteLength`.
+
+#### 6.4 BOM, newline, Unicode composition và NUL
+
+Route contract giữ nguyên:
+
+- Leading UTF-8 BOM trong file trở thành ký tự plaintext `U+FEFF`; ba byte BOM được
+  tính vào `originalUtf8ByteLength`.
+- JSON `data` bắt đầu bằng `U+FEFF` cũng giữ ký tự đó như nội dung. Đây khác với BOM
+  ở đầu **JSON document** dùng để nhận diện encoding; BOM transport không được chèn
+  vào string `data`.
+- `CR`, `LF` và `CRLF` được giữ đúng thứ tự; không có universal-newline conversion.
+- `"é"` và `"e\u0301"` là hai plaintext khác nhau; backend không normalize.
+- Leading/trailing whitespace và trailing `U+0000` là nội dung, không được trim.
+- Block decrypt không dùng `rstrip(0x00)`; length metadata quyết định byte nào có nghĩa.
+
+FE nên dùng trực tiếp `plaintext` server trả, không tự dựng text từ `blocks`. Nếu cần
+hiển thị số code point, `[...text].length` gần với cách backend đếm hơn
+`text.length` của JavaScript; đây là gợi ý UI, không thay server validation. Nếu cần
+ước lượng số byte UTF-8, dùng `new TextEncoder().encode(text).byteLength`; Web
+Platform định nghĩa `TextEncoder.encode()` trả UTF-8 bytes, xem
+[MDN TextEncoder](https://developer.mozilla.org/en-US/docs/Web/API/TextEncoder/encode).
+
+**Gợi ý client, không phải route contract:** decrypt luôn trả JSON, không có file
+download từ server. Nếu UI cho tải plaintext, FE có thể tạo `Blob` từ chính
+`plaintext` với `type:"text/plain;charset=utf-8"`. Không tự thêm/bỏ BOM hoặc trim
+NUL/newline; `U+FEFF` và `U+0000` đã có trong string sẽ được UTF-8 encode như nội dung.
+`Blob` mặc định giữ newline (`endings:"transparent"`) và encode string thành UTF-8;
+xem [MDN `Blob()`](https://developer.mozilla.org/en-US/docs/Web/API/Blob/Blob). Tên file
+download là quyết định UI của FE, không phải filename server trả.
+
+### 7. Selected-block trace và Euclid table
+
+`traceBlockIndex` là opt-in cho đúng một block, zero-based:
+
+- number: chỉ index `0` hợp lệ;
+- text: index phải nhỏ hơn số block/cipher item;
+- không có nhiều index, all-block trace, pagination hoặc truncation;
+- khi không gửi, `trace` vẫn có mặt và bằng `null`;
+- bật trace không đổi bất kỳ field transform nào ngoài `trace`.
+
+```http
+POST /api/rsa/encrypt
+Content-Type: application/json
+
+{"e":"7","n":"187","inputType":"number","data":"88","traceBlockIndex":0}
+```
+
+```json
+{
+  "success": true,
+  "inputType": "number",
+  "blocks": ["88"],
+  "cipher": ["11"],
+  "blockSize": null,
+  "trace": {
+    "operation": "encrypt",
+    "blockIndex": 0,
+    "input": "88",
+    "exponent": "7",
+    "modulus": "187",
+    "result": "11",
+    "steps": [
+      {"i": 0, "bit": 1, "base": "88", "before": "1", "result": "88"},
+      {"i": 1, "bit": 1, "base": "77", "before": "88", "result": "44"},
+      {"i": 2, "bit": 1, "base": "132", "before": "44", "result": "11"}
+    ]
+  }
+}
+```
+
+`steps` đi từ bit thấp tới bit cao của exponent theo right-to-left
+square-and-multiply, đầy đủ tối đa 128 dòng. Khi decrypt, `input` là cipher item và
+`exponent` là `d`.
+
+`egcdSteps` của keygen cũng luôn đầy đủ tới remainder 0. Hai loại steps là hai schema
+khác nhau; FE không dùng chung renderer nếu renderer đang giả định cùng field.
+
+### 8. Plaintext `.txt` multipart encrypt
+
+Multipart chỉ dùng tại `POST /api/rsa/encrypt` và có exact parts:
+
+| Part | Bắt buộc | Wire type | Quy tắc |
+|---|---:|---|---|
+| `file` | có | upload | Filename kết thúc `.txt`, không phân biệt hoa thường |
+| `e` | có | scalar string | Decimal string |
+| `n` | có | scalar string | Decimal string |
+| `mode` | có | scalar string | `char` hoặc `block` |
+| `traceBlockIndex` | không | scalar string | `0|[1-9][0-9]*`, tối đa 10 digit |
+
+Không gửi `inputType`, `data`, `originalUtf8ByteLength`, `cipher`, `action`,
+`response_mode` hoặc bất kỳ part nào khác. Part trùng cũng bị từ chối.
+
+Browser example:
+
+```ts
+async function encryptRsaTextFile(input: {
+  file: File;
+  e: DecimalString;
+  n: DecimalString;
+  mode: RsaMode;
+  traceBlockIndex?: number;
+}): Promise<TextEncryptResponse> {
+  const form = new FormData();
+  form.append("file", input.file);
+  form.append("e", input.e);
+  form.append("n", input.n);
+  form.append("mode", input.mode);
+  if (input.traceBlockIndex !== undefined) {
+    form.append("traceBlockIndex", String(input.traceBlockIndex));
+  }
+
+  const response = await fetch("/api/rsa/encrypt", {
+    method: "POST",
+    body: form,
+    // Không đặt Content-Type; browser thêm multipart boundary.
+  });
+  const body = (await response.json()) as TextEncryptResponse | RsaErrorResponse;
+  if (!response.ok) {
+    const error = body as RsaErrorResponse;
+    throw Object.assign(new Error(error.message), { response: error });
+  }
+  return body as TextEncryptResponse;
+}
+```
+
+`curl` tương đương:
+
+```bash
+curl -sS -X POST http://localhost:8080/api/rsa/encrypt \
+  -F 'file=@plain.txt;type=application/octet-stream' \
+  -F 'e=3' \
+  -F 'n=67591' \
+  -F 'mode=block'
+```
+
+Backend không dùng MIME upload làm authority. Với file chứa bytes `Hi!`, response
+giống hệt JSON block encrypt ở mục 6.3, có `Content-Type: application/json`, không có
+`Content-Disposition` và không có attachment.
+
+Validation file:
+
+- `.TXT` hợp lệ; filename rỗng, không extension, `.txt.bin` hoặc đuôi khác trả 415.
+- Tối đa đúng `1.000.000` raw byte **decimal**, tính cả BOM. `1.000.001` byte trả 413.
+- File 0 byte trả 422 `EMPTY_INPUT`.
+- Decode UTF-8 strict; invalid UTF-8 trả 415. MIME không cứu file bytes sai.
+- Sau decode, tối đa 10.000 Unicode code point, gồm BOM, whitespace, newline và NUL.
+- FE nên append `File` gốc vào `FormData`; không cần đọc/decode/re-encode trước request,
+  vì làm vậy có thể thay đổi bytes/BOM.
+
+Không có multipart decrypt. FE muốn giải mã phải lưu cipher package và gửi JSON tới
+`/api/rsa/decrypt`.
+
+### 9. Numeric, text, collection và request caps
+
+| Phạm vi | Giới hạn hiện tại |
+|---|---|
+| Crypto input `p/q/e/d/n/data/cipher[i]` | ASCII decimal string, tối đa 128 raw digit **và** giá trị `<= 2^128 - 1` |
+| Manual prime `p`, `q` | `<= 10^12` trước phép thử prime |
+| Random modulus size | `bits` thuộc `16|32|64|128` |
+| Transform exponent | `1 < e < n` hoặc `1 < d < n` |
+| Number/plain block/cipher item | `0 <= value < n` |
+| Block mode modulus | `n > 256` |
+| JSON/file plaintext | `1..10.000` Unicode code point |
+| Number decrypt cipher | đúng 1 item |
+| Char decrypt cipher | `1..10.000` item |
+| Block decrypt cipher | `1..40.000` item |
+| `originalUtf8ByteLength` | JSON integer `1..40.000`, tối đa 10 raw digit trước parse và phải khớp block count/padding |
+| `traceBlockIndex` | JSON integer không âm; multipart dùng canonical digit string; tối đa 10 raw digit và phải nằm trong collection |
+| File | tối đa `1.000.000` raw byte decimal, rồi vẫn chịu cap 10.000 code point |
+| Multipart scalar part | tối đa `1.000.000` byte ở parser hiện hành; decimal validator vẫn áp cap 128 digit/value |
+| Request tầng hạ tầng | `> 64 MiB = 67.108.864` byte bị từ chối khi có đúng một `Content-Length` decimal hợp lệ; đúng trần qua guard |
+
+Trần request 64 MiB là guard hạ tầng, không thay thế business cap. Nếu
+`Content-Length` thiếu, trùng hoặc không parse được, request đi tiếp tới parser và các
+cap nghiệp vụ; FE không được dựa vào trường hợp này để gửi payload lớn hơn.
+
+JavaScript `Number` chỉ chính xác tới `2^53 - 1`; xem
+[MDN `Number.MAX_SAFE_INTEGER`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number/MAX_SAFE_INTEGER).
+Vì RSA cho phép tới `2^128 - 1`, FE phải giữ crypto integer dưới dạng string. Có thể
+dùng `BigInt` cho tính toán/validation cục bộ, nhưng serialize lại bằng decimal string;
+không đưa `bigint` trực tiếp vào `JSON.stringify`.
+
+Ngược lại, `bits`, `traceBlockIndex` và `originalUtf8ByteLength` nằm trong range nhỏ,
+nên JSON request dùng JavaScript `number` nguyên. Không stringify ba control này;
+chỉ `traceBlockIndex` trong `FormData` phải chuyển thành scalar string do transport
+multipart.
+
+### 10. Strict fields và validation precedence
+
+#### 10.1 Exact field matrix
+
+| Variant | Bắt buộc | Tùy chọn | Field không áp dụng điển hình |
+|---|---|---|---|
+| Manual key | `p,q,e` | — | `bits,n,d` |
+| Random key | `bits` | — | `p,q,e` |
+| Number encrypt | `e,n,inputType,data` | `traceBlockIndex` | `mode,cipher,originalUtf8ByteLength` |
+| Text encrypt | `e,n,inputType,mode,data` | `traceBlockIndex` | `cipher,originalUtf8ByteLength` |
+| Number decrypt | `d,n,inputType,cipher` | `traceBlockIndex` | `mode,data,originalUtf8ByteLength` |
+| Char decrypt | `d,n,inputType,mode,cipher` | `traceBlockIndex` | `data,originalUtf8ByteLength` |
+| Block decrypt | `d,n,inputType,mode,cipher,originalUtf8ByteLength` | `traceBlockIndex` | `data` |
+| Multipart encrypt | `file,e,n,mode` | `traceBlockIndex` | `inputType,data,cipher,action,response_mode,originalUtf8ByteLength` |
+
+Các request JSON dùng object exact. Ví dụ sau đều là lỗi:
+
+- number encrypt có thêm `mode`;
+- char decrypt có thêm `originalUtf8ByteLength`;
+- multipart có `action` hoặc `response_mode`;
+- raw JSON có hai member cùng tên;
+- crypto integer được gửi thành JSON number, boolean, `null` hoặc digit Unicode.
+
+Unknown/duplicate/inapplicable field trả `INVALID_REQUEST` với `field` là tên member.
+Missing required member cũng trả `INVALID_REQUEST` với `field` là tên member đang
+thiếu, **ngoại trừ** block decrypt thiếu `originalUtf8ByteLength`: trường hợp đó trả
+`INVALID_LENGTH_METADATA` với field cùng tên. Chỉ malformed JSON, root không phải
+object hoặc lỗi không quy được cho member mới có `field:null`. Nếu có nhiều
+unknown/duplicate cùng cấp, field xuất hiện đầu tiên trong raw JSON thắng; còn numeric
+validation dùng schema order (`p,q,e`, `e,n,data`, `d,n,cipher[0..]`) chứ không phụ
+thuộc member order client gửi.
+
+#### 10.2 Precedence thực tế cần biết
+
+JSON dừng ở lỗi đầu theo nhóm:
+
+```text
+64 MiB guard
+→ media type / parse UTF-8 JSON object / duplicate
+→ inputType, mode và exact required/allowed field set
+→ text hoặc collection cap
+→ bits / originalUtf8ByteLength control validation khi áp dụng
+→ crypto lexical/raw/value theo schema order
+→ key/domain/item < n/package consistency
+→ traceBlockIndex
+→ transform
+```
+
+Multipart dừng ở lỗi đầu:
+
+```text
+64 MiB guard / multipart framing
+→ exact field set / duplicate
+→ file presence và upload type
+→ e, n, mode presence
+→ e lexical/value → n lexical/value → mode
+→ filename extension → 1.000.000 raw byte → empty → UTF-8
+→ 10.000 code point → key/block/domain
+→ traceBlockIndex → transform
+```
+
+FE không nên suy ra field phía sau hợp lệ chỉ vì server trả lỗi sớm ở field khác.
+
+### 11. Error contract và cách FE xử lý
+
+Mọi lỗi trên đúng bốn RSA route dùng exact `RsaErrorResponse` đã định nghĩa tại mục 3:
+`{success:false,code:RsaErrorCode,message:string,field:string|null}`.
+
+FE nên hiển thị nguyên `message`, branch/focus control theo `code` và `field`, và có
+fallback riêng cho lỗi mạng/JSON parse. Không branch theo câu tiếng Việt. `field` có
+thể là path như `cipher[3]`.
+
+| Code | HTTP | Exact message | `field` |
+|---|---:|---|---|
+| `REQUEST_TOO_LARGE` | 413 | `Yêu cầu vượt quá dung lượng cho phép.` | `null` |
+| `UNSUPPORTED_MEDIA_TYPE` | 415 | `Kiểu nội dung không được hỗ trợ.` | `null` |
+| `INVALID_REQUEST` | 422 | `Dữ liệu gửi lên không hợp lệ.` | `null` hoặc field liên quan |
+| `NOT_INTEGER` | 422 | `Giá trị phải là số nguyên không âm.` | numeric field/path |
+| `NUMBER_TOO_LARGE` | 422 | `Giá trị không được vượt quá 2^128 - 1.` | numeric field/path |
+| `INVALID_BITS` | 422 | `Số bit phải là một trong 16, 32, 64 hoặc 128.` | `bits` |
+| `NOT_PRIME` | 422 | `{field} = {value} không phải số nguyên tố.` | `p` hoặc `q` |
+| `SAME_PRIME` | 422 | `p và q phải khác nhau.` | `q` |
+| `E_OUT_OF_RANGE` | 422 | Keygen: `e phải thỏa 1 < e < phi(n) = {phi}.`; transform: `e phải thỏa 1 < e < n.` | `e` |
+| `D_OUT_OF_RANGE` | 422 | `d phải thỏa 1 < d < n.` | `d` |
+| `E_NOT_COPRIME` | 422 | `gcd({e}, {phi}) = {g}, không tồn tại d. Gợi ý e = {suggestion}.` | `e` |
+| `PRIME_TOO_LARGE` | 422 | `Hãy dùng p, q ≤ 10^12 hoặc sinh khóa ngẫu nhiên.` | `p` hoặc `q` |
+| `P_TOO_LARGE` | 422 | `P = {P} ≥ n = {n}. Hãy chia khối hoặc dùng n lớn hơn.` | `data` hoặc `file` |
+| `N_TOO_SMALL` | 422 | General: `n phải lớn hơn 1.`; block: `n phải lớn hơn 256 để chứa ít nhất 1 byte mỗi khối.` | `n` |
+| `CIPHER_TOO_LARGE` | 422 | `Bản mã không hợp lệ với khóa này.` | `cipher[i]` |
+| `DECODE_FAILED` | 422 | `Không khôi phục được văn bản hợp lệ từ dữ liệu đã giải mã.` | `data`, `cipher` hoặc `cipher[i]` |
+| `EMPTY_INPUT` | 422 | `Dữ liệu đầu vào đang rỗng.` | `data`, `cipher` hoặc `file` |
+| `INPUT_TOO_LARGE` | 422 | Text: `Dữ liệu văn bản không được vượt quá 10.000 ký tự Unicode.`; collection: `Danh sách bản mã vượt quá giới hạn cho phép.` | `data`, `file` hoặc `cipher` |
+| `FILE_INVALID` | 413 | `File vượt quá dung lượng tối đa 1 MB.` | `file` |
+| `FILE_INVALID` | 415 | `Chỉ nhận file .txt.` hoặc `File phải sử dụng UTF-8.` | `file` |
+| `INVALID_LENGTH_METADATA` | 422 | `Độ dài UTF-8 gốc không khớp với danh sách bản mã.` | `originalUtf8ByteLength` |
+| `TRACE_INDEX_OUT_OF_RANGE` | 422 | `Chỉ số khối cần xem không hợp lệ.` | `traceBlockIndex` |
+| `FILE_READ_FAILED` | 500 | `Không thể đọc file.` | `file` |
+| `INTERNAL_ERROR` | 500 | `Đã xảy ra lỗi hệ thống.` | `null` |
+
+Ví dụ indexed error:
+
+```json
+{
+  "success": false,
+  "code": "NOT_INTEGER",
+  "message": "Giá trị phải là số nguyên không âm.",
+  "field": "cipher[3]"
+}
+```
+
+Lỗi không trả partial key/result/trace, traceback hoặc exception string.
+
+#### 11.1 Hai edge error cần map chính xác
+
+Block decrypt thiếu `originalUtf8ByteLength` dùng cùng code với metadata sai
+type/range/count/padding:
+
+```http
+POST /api/rsa/decrypt
+Content-Type: application/json
+```
+
+```json
+{"d":"44715","n":"67591","inputType":"text","mode":"block","cipher":["37222","6468"]}
+```
+
+```json
+{"success":false,"code":"INVALID_LENGTH_METADATA","message":"Độ dài UTF-8 gốc không khớp với danh sách bản mã.","field":"originalUtf8ByteLength"}
+```
+
+Nếu plaintext JSON chứa lone surrogate, ví dụ chuỗi escape `\ud800` không thể encode
+thành UTF-8 strict, server trả lỗi gắn với plaintext `data`:
+
+```http
+POST /api/rsa/encrypt
+Content-Type: application/json
+```
+
+```json
+{"e":"3","n":"67591","inputType":"text","mode":"char","data":"\ud800"}
+```
+
+```json
+{"success":false,"code":"DECODE_FAILED","message":"Không khôi phục được văn bản hợp lệ từ dữ liệu đã giải mã.","field":"data"}
+```
+
+FE nên focus control length cho lỗi đầu và control plaintext cho lỗi sau; không gộp
+hai trường hợp thành generic `INVALID_REQUEST`.
+
+### 12. Fetch helper tối thiểu
+
+Helper dưới đây dành riêng cho JSON RSA. Nó không thay contract và không tự sửa input:
+
+```ts
+class RsaApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly body: RsaErrorResponse,
+  ) {
+    super(body.message);
+  }
+}
+
+async function postRsaJson<TSuccess>(
+  path: "/api/rsa/keys" | "/api/rsa/keys/random" | "/api/rsa/encrypt" | "/api/rsa/decrypt",
+  body: object,
+): Promise<TSuccess> {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  const payload = (await response.json()) as TSuccess | RsaErrorResponse;
+  if (!response.ok) throw new RsaApiError(response.status, payload as RsaErrorResponse);
+  return payload as TSuccess;
+}
+
+const encrypted = await postRsaJson<TextEncryptResponse>("/api/rsa/encrypt", {
+  e: "3",
+  n: "67591",
+  inputType: "text",
+  mode: "block",
+  data: "Hi!",
+});
+
+const decrypted = await postRsaJson<TextDecryptResponse>("/api/rsa/decrypt", {
+  d: "44715",
+  n: "67591",
+  inputType: "text",
+  mode: "block",
+  cipher: encrypted.cipher,
+  originalUtf8ByteLength: encrypted.originalUtf8ByteLength,
+});
+```
+
+`postRsaJson` là ví dụ cục bộ trong tài liệu này, không phải export hiện có của
+[`examples/cipher-api.ts`](examples/cipher-api.ts). Khi đưa vào FE thật, giữ request
+object riêng theo từng union variant để tránh spread field thừa.
+
+### 13. History, privacy và statelessness
+
+RSA transform vẫn stateless; server không lưu cipher package để dùng cho request sau.
+Khi history server được bật:
+
+- `POST /api/rsa/encrypt` và `/api/rsa/decrypt` ghi một row metadata cho cả success
+  lẫn 413/415/422/500;
+- `/keys` và `/keys/random` không ghi history;
+- JSON encrypt/decrypt có `source:"text"`; multipart encrypt có `source:"file"`;
+- `responseMode` luôn `null`;
+- number transform có `inputLength:null`, `outputLength:null`;
+- text encrypt chỉ có thể đặt `inputLength` là số Unicode code point;
+- text decrypt chỉ có thể đặt `outputLength` là số Unicode code point;
+- multipart encrypt chỉ có thể đặt `inputLength` là raw byte gồm BOM;
+- phía cipher array không được biểu diễn bằng length.
+
+Mọi length history đều nullable; request lỗi trước khi backend đo được thì giữ
+`null`. Đây là metadata quan sát, không phải cipher package để FE dùng giải mã.
+
+FE lọc bằng URL tương đối:
+
+```text
+GET /api/history?cipher=rsa
+```
+
+History không lưu plaintext, ciphertext, `p/q/e/d`, public/private key, `data`, cipher
+array, `originalUtf8ByteLength`, filename, file content, IP/user-agent, trace hoặc
+error message. Ghi là best-effort: DB tắt/lỗi/timeout hoặc schema chưa migrate có thể
+bỏ lỡ row nhưng không được làm thay đổi response RSA.
+
+`GET /api/history` là API chung, không có authentication và mặc định tắt trên môi
+trường dùng chung. Contract query, pagination, error và privacy chung nằm tại
+[mục 16 của guide](frontend-integration.md#16-health-và-lịch-sử-thao-tác).
+
+### 14. Giới hạn phát hiện khóa sai và tính giáo dục
+
+Textbook RSA ở đây không authenticated:
+
+- khóa private sai có thể tạo code point/UTF-8/padding hợp lệ và server sẽ trả HTTP
+  200 với plaintext khác;
+- `originalUtf8ByteLength` bị sửa có thể vẫn khớp block count/zero padding và cho
+  plaintext hợp lệ khác, ví dụ package `Hi!` với length 4 có thể thành `"Hi!\u0000"`;
+- `DECODE_FAILED` chỉ nói server quan sát thấy width, padding hoặc UTF-8 không hợp lệ;
+  nó không chứng minh nguyên nhân là wrong key;
+- HTTP 200 không chứng minh key, cipher package hoặc metadata đúng.
+
+FE không nên hiển thị “khóa đúng”/“khóa sai đã được xác minh”. Câu phù hợp là
+“Không khôi phục được văn bản hợp lệ” khi server trả `DECODE_FAILED`; còn HTTP 200 thì
+chỉ hiển thị plaintext quan sát được cùng cảnh báo textbook RSA.
+
+### 15. Checklist handoff FE
+
+- [ ] Chỉ gọi bốn endpoint exact bằng URL tương đối `/api/rsa/...`.
+- [ ] JSON đặt `application/json`; không gửi `application/*+json`.
+- [ ] Crypto integer được giữ và gửi bằng decimal string, không qua JavaScript
+  `Number`; control integer gửi đúng JSON integer.
+- [ ] Mỗi request variant chỉ có exact field set; không spread state chung có field
+  không áp dụng.
+- [ ] Manual response không giả định có `p/q`; random response không giả định `e=65537`.
+- [ ] Number response giữ `plaintext`, `blocks`, `cipher` dưới dạng string.
+- [ ] Char mode hiểu một block mỗi Unicode code point, không phải UTF-16 code unit.
+- [ ] Block package lưu và gửi lại nguyên `cipher` + `originalUtf8ByteLength`.
+- [ ] Không trim/normalize/rewrite BOM, newline, whitespace hoặc trailing NUL.
+- [ ] Trace mặc định xử lý được `null`; opt-in chỉ một zero-based block và render full
+  steps server trả.
+- [ ] Multipart append file gốc, không tự đặt `Content-Type`, không gửi
+  `action/response_mode/inputType` và luôn parse response JSON.
+- [ ] UI xử lý 413/415/422/500 bằng exact RSA envelope; focus theo `code/field`, hiển
+  thị `message`, lỗi mạng có fallback riêng.
+- [ ] UI không claim wrong-key detection hoặc bảo mật production.
+- [ ] Nếu hiển thị history server, hỗ trợ `cipher=rsa`, keygen exclusion,
+  `responseMode:null`, nullable lengths và tính best-effort/shared-instance.
+
+### 16. Nguồn bảo trì
+
+Authority của contract này theo thứ tự:
+
+1. Accepted OpenSpec change Q1–Q16 và hai làm rõ corrective R1–R2 tại
+   [`openspec/changes/add-rsa-cipher/`](../openspec/changes/add-rsa-cipher/), trong đó
+   Q16 thay thế riêng quyết định “no history” cho safe transform metadata; R1–R2 chỉ
+   reconcile hai error edge nêu tại mục 11.1.
+2. Runtime/schema/error mapping hiện tại:
+   [`routes_rsa.py`](../app/api/routes_rsa.py),
+   [`rsa_schemas.py`](../app/api/rsa_schemas.py),
+   [`rsa.py`](../app/core/rsa.py),
+   [`handlers.py`](../app/errors/handlers.py) và
+   [`messages.py`](../app/errors/messages.py).
+3. Contract tests:
+   [`test_rsa_endpoints.py`](../tests/integration/test_rsa_endpoints.py),
+   [`test_rsa_file_encrypt.py`](../tests/integration/test_rsa_file_encrypt.py),
+   [`test_rsa_validation.py`](../tests/unit/test_rsa_validation.py),
+   [`test_rsa.py`](../tests/unit/test_rsa.py) và các test history/guard liên quan.
+4. `/openapi.json` là projection machine-readable hữu ích, nhưng hiện under-describe
+   một số runtime constraint như minimum/raw-digit cap của control integer và một số
+   array cardinality. Không dùng điểm thiếu đó để nới contract.
+
+Nếu các nguồn trên lệch nhau, ghi nhận defect và reconcile với owner; FE không tự chọn
+behavior mới. Không thêm endpoint, field, key format, warning hoặc file flow chỉ bằng
+cách sửa tài liệu.
+
+## 19. Exact DH wire contract và migration từ FE cũ (canonical)
+
+Phần này được nhúng trực tiếp để guide chung tự chứa đủ contract DH. File
+`dh-frontend-contract.md` chỉ là supporting reference của cùng snapshot.
+
+- Có đúng sáu endpoint DH, tất cả là `POST` dưới `/api/dh`.
+- Mọi đại lượng mật mã và `shift` là **decimal string ASCII canonical**: `"0"` hoặc
+  `[1-9][0-9]*`. Không gửi JSON number, dấu, khoảng trắng, Unicode digit hay leading zero.
+- `bits`, `index`, `bit` là JSON integer thật; `success`, `passes`, `match` là boolean.
+- JSON chỉ nhận base media type `application/json`; `/caesar` nhận thêm
+  `multipart/form-data`. Mọi response, kể cả file upload và lỗi, đều là JSON.
+- Request strict: field lạ, trùng, thiếu hoặc không áp dụng bị từ chối. Không gửi
+  object dùng chung có field thừa.
+- `alpha`, `privateKey`, `privateKeyA`, `privateKeyB` là optional bằng cách **bỏ field**;
+  gửi explicit `null` không tương đương omission và bị lỗi.
+- Manual `/params` chỉ nhận `5 <= q <= 10^12`; các endpoint downstream tự kiểm tra q
+  tới `2^128-1`, không cần provenance token hay request trước đó.
+- Trace DH là square-and-multiply từ trái sang phải, đầy đủ, tối đa 128 rows mỗi phép.
+- Chỉ `/api/dh/caesar` ghi metadata history best-effort. Không lưu tham số, khóa,
+  input/result/file, trace hoặc warning.
+
+### 2. Endpoint và media type
+
+| Method/path | Request | Success |
+|---|---|---|
+| `POST /api/dh/params` | JSON `q,alpha?` | Kiểm q/alpha; thiếu alpha chỉ gợi ý |
+| `POST /api/dh/params/random` | JSON `bits` | Safe-prime `q=2p+1`, alpha và checks |
+| `POST /api/dh/keypair` | JSON `q,alpha,privateKey?` | Private/public key và trace |
+| `POST /api/dh/shared-secret` | JSON `q,privateKey,otherPublicKey` | Shared key và trace |
+| `POST /api/dh/exchange` | JSON `q,alpha,privateKeyA?,privateKeyB?` | Hai phía, grouped traces và warning |
+| `POST /api/dh/caesar` | JSON hoặc multipart `.txt` | Caesar bằng `K mod 26`, luôn JSON |
+
+Với JSON, đặt `Content-Type: application/json`. Parameter như `charset=utf-8` được
+nhận; không có cam kết nhận `application/*+json`. Body phải là một object UTF-8;
+UTF-8 BOM đầu JSON được nhận. Với `FormData`, không tự đặt `Content-Type`: browser
+phải tự thêm multipart boundary, theo [MDN FormData](https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest_API/Using_FormData_Objects).
+
+### 3. Consumer types
+
+```ts
+type DecimalString = string;
+type DhAction = "encrypt" | "decrypt";
+
+type DhErrorCode =
+  | "REQUEST_TOO_LARGE" | "UNSUPPORTED_MEDIA_TYPE" | "INVALID_REQUEST"
+  | "NOT_INTEGER" | "Q_OUT_OF_RANGE" | "NOT_PRIME"
+  | "ALPHA_OUT_OF_RANGE" | "NOT_PRIMITIVE_ROOT" | "BITS_INVALID"
+  | "PRIVATE_KEY_OUT_OF_RANGE" | "PRIVATE_KEY_WEAK" | "PUBLIC_KEY_INVALID"
+  | "INVALID_ACTION" | "EMPTY_INPUT" | "MISSING_FILE" | "FILE_INVALID"
+  | "UNSUPPORTED_ENCODING" | "FILE_READ_FAILED" | "INTERNAL_ERROR"
+  // Resource-bound domain failures có thể xuất hiện với group khó:
+  | "FACTORIZATION_FAILED" | "PRIMITIVE_ROOT_NOT_FOUND" | "GENERATION_FAILED";
+
+type DhErrorResponse = {
+  success: false;
+  code: DhErrorCode;
+  message: string;
+  field: string | null;
+};
+
+type EducationalPrivateKeysWarning = {
+  code: "EDUCATIONAL_PRIVATE_KEYS";
+  message: string;
+};
+
+type ShiftZeroWarning = {
+  code: "SHIFT_ZERO";
+  message: string;
+};
+
+type ParamsRequest = {q: DecimalString; alpha?: DecimalString};
+type RandomParamsRequest = {bits: 16 | 32 | 64 | 128};
+type KeyPairRequest = {
+  q: DecimalString; alpha: DecimalString; privateKey?: DecimalString;
+};
+type SharedSecretRequest = {
+  q: DecimalString; privateKey: DecimalString; otherPublicKey: DecimalString;
+};
+type ExchangeRequest = {
+  q: DecimalString; alpha: DecimalString;
+  privateKeyA?: DecimalString; privateKeyB?: DecimalString;
+};
+type DhCaesarJsonRequest = SharedSecretRequest & {
+  action: DhAction; data: string;
+};
+
+type ModPowStep = {
+  index: number;
+  bit: 0 | 1;
+  exponentPrefix: DecimalString;
+  squared: DecimalString;
+  multiplied: DecimalString | null;
+  result: DecimalString;
+};
+
+type PrimitiveRootCheck = {
+  factor: DecimalString;
+  exponent: DecimalString;
+  result: DecimalString;
+  passes: boolean;
+};
+
+type ParamsResponse = {
+  success: true;
+  q: DecimalString;
+  alpha: DecimalString | null;
+  factors: DecimalString[];
+  primitiveRootChecks: PrimitiveRootCheck[];
+  suggestedAlpha: DecimalString | null;
+};
+
+type RandomParamsResponse = Omit<ParamsResponse, "alpha" | "suggestedAlpha"> & {
+  p: DecimalString;
+  alpha: DecimalString;
+  suggestedAlpha: null;
+};
+
+type KeyPairResponse = {
+  success: true;
+  privateKey: DecimalString;
+  publicKey: DecimalString;
+  steps: ModPowStep[];
+};
+
+type SharedSecretResponse = {
+  success: true;
+  sharedKey: DecimalString;
+  steps: ModPowStep[];
+};
+
+type ExchangeResponse = {
+  success: true;
+  privateKeyA: DecimalString;
+  privateKeyB: DecimalString;
+  publicKeyA: DecimalString;
+  publicKeyB: DecimalString;
+  sharedKeyA: DecimalString;
+  sharedKeyB: DecimalString;
+  match: boolean;
+  steps: {
+    publicKeyA: ModPowStep[];
+    publicKeyB: ModPowStep[];
+    sharedKeyA: ModPowStep[];
+    sharedKeyB: ModPowStep[];
+  };
+  warning: EducationalPrivateKeysWarning;
+};
+
+type DhCaesarResponse = {
+  success: true;
+  sharedKey: DecimalString;
+  shift: DecimalString;
+  result: string;
+  warning?: ShiftZeroWarning; // field bị bỏ khi shift khác 0; không trả null
+};
+```
+
+`multiplied` luôn hiện diện nhưng là `null` ở row có bit `0`. Trong params response,
+`alpha` và `suggestedAlpha` luôn hiện diện và một trong hai có thể là `null`. Riêng
+`warning` của Caesar bị bỏ hoàn toàn khi không có warning.
+
+### 4. Tham số DH
+
+#### 4.1 Manual params — `/api/dh/params`
+
+Request exact: `ParamsRequest`. Chỉ endpoint này áp trần
+manual `10^12`.
+
+```json
+{"q":"23"}
+```
+
+```json
+{
+  "success":true,
+  "q":"23",
+  "alpha":null,
+  "factors":["2","11"],
+  "primitiveRootChecks":[],
+  "suggestedAlpha":"5"
+}
+```
+
+Đây chỉ là suggestion. FE không được coi `alpha:"5"` là đã được chọn; muốn dùng nó,
+người dùng hoặc FE phải gửi lại rõ ràng ở request tiếp theo. Khi gửi
+`{"q":"23","alpha":"5"}`, response có `alpha:"5"`, hai checks đầy đủ và
+`suggestedAlpha:null`. Alpha được gửi nhưng sai trả error; server không silent replace.
+
+#### 4.2 Random params — `/api/dh/params/random`
+
+Request exact: `RandomParamsRequest`; `bits` là number, không phải string.
+Response là `RandomParamsResponse`; `alpha` luôn là string và
+`suggestedAlpha` luôn `null`. `q`, `p`, `alpha`, `factors` và operand/result của checks
+có thể chuyển nguyên văn sang `/keypair` hoặc `/exchange`.
+
+```json
+{"bits":32}
+```
+
+Primality tới 128 bit là probable-prime Miller–Rabin trong phạm vi giáo dục, không
+phải chứng minh nguyên tố hay nhóm DH production.
+
+### 5. Keypair, shared secret và exchange
+
+#### 5.1 Keypair — `/api/dh/keypair`
+
+Request exact:
+
+Request exact là `KeyPairRequest`; bỏ `privateKey` để server sinh, không gửi null.
+
+Private key phải nằm trong `2..q-2` và public key suy ra không được là `1` hoặc
+`q-1`. Nếu bỏ `privateKey`, server dùng CSPRNG và response vẫn trả private key để
+minh họa. Ví dụ `q=23, alpha=5, privateKey=6` trả `publicKey="8"` cùng full trace.
+
+#### 5.2 Shared secret — `/api/dh/shared-secret`
+
+Request exact là `SharedSecretRequest`. Endpoint này cố ý không nhận `alpha`.
+Private key và peer public key đều phải thuộc `2..q-2`.
+
+```json
+{"q":"353","privateKey":"97","otherPublicKey":"248"}
+```
+
+trả `sharedKey:"160"` và trace kết thúc ở result `"160"`.
+
+#### 5.3 Exchange — `/api/dh/exchange`
+
+Request exact là `ExchangeRequest`. Bỏ một hoặc cả hai private key
+để server sinh; explicit `null` bị từ chối. Response luôn trả cả hai private keys,
+`match`, bốn nhóm trace và warning exact:
+
+```json
+{
+  "code":"EDUCATIONAL_PRIVATE_KEYS",
+  "message":"Chỉ dùng để học: response có khóa riêng; hệ thống thật không được gửi hoặc lưu khóa riêng."
+}
+```
+
+FE phải render warning này như cảnh báo không chặn kết quả. Không log, persist hoặc
+đưa private key vào URL/analytics.
+
+### 6. Luồng A/B hoàn chỉnh tới Caesar
+
+Luồng dưới đây dùng số cố định để FE test deterministic:
+
+1. `/params` với `{"q":"23"}` → `suggestedAlpha:"5"`; chọn alpha ở UI.
+2. A gọi `/keypair` với private key `"6"` → public key A `"8"`.
+3. B gọi `/keypair` với private key `"15"` → public key B `"19"`.
+4. A gọi `/shared-secret` với `privateKey:"6", otherPublicKey:"19"` → `sharedKey:"2"`.
+5. B gọi `/shared-secret` với `privateKey:"15", otherPublicKey:"8"` → `sharedKey:"2"`.
+6. Caesar dùng `shift = K mod 26 = "2"`.
+
+```ts
+const encrypted = await dhCaesarJson({
+  q: "23", privateKey: "6", otherPublicKey: "19",
+  action: "encrypt", data: "Hello World",
+}); // result: "Jgnnq Yqtnf", sharedKey: "2", shift: "2"
+
+const decrypted = await dhCaesarJson({
+  q: "23", privateKey: "15", otherPublicKey: "8",
+  action: "decrypt", data: encrypted.result,
+}); // result: "Hello World"
+```
+
+Caesar chỉ đổi ASCII `A-Z/a-z`; Unicode, dấu câu và line ending được giữ nguyên.
+Nếu `K mod 26 == 0`, request vẫn thành công và `warning.code == "SHIFT_ZERO"`; warning
+không phải error và text không đổi.
+
+### 7. `/api/dh/caesar`: JSON và multipart
+
+JSON request exact:
+
+```ts
+type DhCaesarJsonRequest = SharedSecretRequest & {action: DhAction; data: string};
+```
+
+`action` là bắt buộc ở runtime; thiếu hoặc sai trả `INVALID_ACTION`. `data=""` bị
+từ chối, nhưng whitespace-only hợp lệ. Response luôn là `DhCaesarResponse`.
+
+Multipart dùng đúng năm parts: `file`, `q`, `privateKey`, `otherPublicKey`, `action`.
+Không gửi `data`, `response_mode` hoặc field khác.
+
+```ts
+async function dhCaesarFile(input: {
+  file: File; q: string; privateKey: string; otherPublicKey: string;
+  action: "encrypt" | "decrypt";
+}): Promise<DhCaesarResponse> {
+  const form = new FormData();
+  form.set("file", input.file);
+  form.set("q", input.q);
+  form.set("privateKey", input.privateKey);
+  form.set("otherPublicKey", input.otherPublicKey);
+  form.set("action", input.action);
+  const response = await fetch("/api/dh/caesar", {method: "POST", body: form});
+  const body = await response.json();
+  if (!response.ok) throw body as DhErrorResponse;
+  return body as DhCaesarResponse;
+}
+```
+
+- Extension `.txt` không phân biệt hoa thường; file phải UTF-8 strict, không rỗng.
+- Chính xác 5.242.880 byte được nhận; 5.242.881 byte bị 413. Đây là raw file bytes.
+- UTF-8 BOM đầu file được nhận và bỏ khỏi visible `result`; response không phải file
+  download, không có `Content-Disposition`, filename hoặc `response_mode`.
+- Không tự thêm multipart `Content-Type`; không tạo attachment client-side như thể
+  server đã trả file. Nếu product muốn nút tải, đó là quyết định FE riêng ngoài API.
+
+### 8. Error contract và precedence
+
+Mọi lỗi DH có đúng bốn field `{success:false,code,message,field}`. FE hiển thị
+`message` tiếng Việt từ server; dùng `field` để focus control và `code` cho nhánh UX.
+
+| HTTP | Code | Message exact / quy tắc | Field |
+|---:|---|---|---|
+| 413 | `REQUEST_TOO_LARGE` | `Yêu cầu vượt quá dung lượng cho phép.` | `null` |
+| 415 | `UNSUPPORTED_MEDIA_TYPE` | `Kiểu nội dung không được hỗ trợ.` | `null` |
+| 422 | `INVALID_REQUEST` | `Dữ liệu gửi lên không hợp lệ.` | field đầu tiên hoặc `null` |
+| 422 | `NOT_INTEGER` | `Giá trị phải là số nguyên dương.` | input tương ứng |
+| 422 | `Q_OUT_OF_RANGE` | manual: `q phải từ 5 đến 10¹², hoặc dùng sinh tham số ngẫu nhiên.`; downstream: `q không được vượt quá 128 bit.` | `q` |
+| 422 | `NOT_PRIME` | `q = {q} không phải số nguyên tố.` | `q` |
+| 422 | `ALPHA_OUT_OF_RANGE` | `α phải thỏa 1 < α < q = {q}.` | `alpha` |
+| 422 | `NOT_PRIMITIVE_ROOT` | `α = {alpha} không phải nguyên căn của {q}. Gợi ý α = {suggestion}.` | `alpha` |
+| 422 | `BITS_INVALID` | `Chỉ hỗ trợ 16, 32, 64 hoặc 128 bit.` | `bits` |
+| 422 | `PRIVATE_KEY_OUT_OF_RANGE` | `Khóa riêng phải thỏa 2 ≤ X ≤ q − 2 = {q-2}.` | private-key field |
+| 422 | `PRIVATE_KEY_WEAK` | `Khóa riêng tạo khóa công khai không hợp lệ. Hãy chọn khóa riêng khác.` | private-key field |
+| 422 | `PUBLIC_KEY_INVALID` | `Khóa công khai của bên kia không hợp lệ.` | `otherPublicKey` |
+| 422 | `INVALID_ACTION` | `Action phải là encrypt hoặc decrypt.` | `action` |
+| 422 | `EMPTY_INPUT` | `Dữ liệu đầu vào đang rỗng.` | `data` hoặc `file` |
+| 422 | `MISSING_FILE` | `Thiếu file.` | `file` |
+| 415 | `FILE_INVALID` | `Chỉ chấp nhận file .txt.` | `file` |
+| 413 | `FILE_INVALID` | `File vượt quá dung lượng tối đa 5 MB.` | `file` |
+| 415 | `UNSUPPORTED_ENCODING` | `File phải sử dụng UTF-8.` | `file` |
+| 500 | `FILE_READ_FAILED` | `Không thể đọc file.` | `file` |
+| 500 | `INTERNAL_ERROR` | `Đã xảy ra lỗi hệ thống.` | `null` |
+
+Request có declared `Content-Length > 64 MiB` bị `REQUEST_TOO_LARGE` trước các lỗi
+khác. Sau đó thứ tự chính là media/parse/duplicate → exact fields/control → q → alpha
+→ private key → public key → action/data → computation. Multipart kiểm scalar trước
+extension → size → empty → encoding.
+
+Factorization, primitive-root search hoặc random generation có bound tài nguyên.
+Group khó có thể trả 422 `FACTORIZATION_FAILED`, `PRIMITIVE_ROOT_NOT_FOUND` hoặc
+`GENERATION_FAILED`; message public hiện là `Dữ liệu gửi lên không hợp lệ.` và `field`
+có thể là `value`, `q`, `bits` hoặc private-key field. FE nên đề nghị người dùng sinh
+group khác/thử lại; không biến các code này thành 500 và không giả định mọi prime 128-bit
+tùy ý sẽ hoàn tất. Backend giới hạn bốn DH CPU jobs đồng thời; request vượt capacity
+chờ lượt thay vì nhận một status “busy” riêng, nên FE phải giữ loading/cancel UX phù hợp.
+
+### 9. BigInt, warning và state FE
+
+Giữ decimal input/output dưới dạng string. Chỉ dùng [`BigInt(value)`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/BigInt)
+cho tính toán hoặc so sánh cục bộ; `JSON.stringify` không serialize `bigint`, nên
+phải đổi lại `.toString()`.
+Không dùng `Number`, `parseInt` hoặc unary `+` cho q/keys vì có thể vượt
+`Number.MAX_SAFE_INTEGER`.
+
+```ts
+function decimal(value: string): DecimalString {
+  if (!/^(0|[1-9][0-9]*)$/.test(value)) throw new Error("invalid decimal string");
+  return value;
+}
+
+const shift = BigInt(response.sharedKey) % 26n;
+// Khi gửi lại: shift.toString(), không gửi shift bigint trực tiếp.
+```
+
+`response.ok === false` là error. `warning` trong HTTP 200 là kết quả thành công có
+cảnh báo: UI vẫn hiển thị output, đồng thời render warning cạnh nó. Xóa trace/result
+cũ khi q/alpha/key/action/data/file đổi; disable submit khi request đang chạy vì việc
+kiểm q/factorization có thể tốn CPU.
+
+### 10. History và privacy
+
+- Chỉ `/api/dh/caesar` match server history; năm endpoint tham số/khóa không tạo row.
+- JSON ghi `source="text"`; multipart ghi `source="file"`; `operation` theo action;
+  `responseMode` luôn `null`.
+- JSON lengths là Unicode code points. File lengths là raw/output UTF-8 bytes và tính
+  cả 3 byte BOM nếu input có BOM.
+- Không row/log nào được chứa q, alpha, private/public/shared key, shift, data/result,
+  filename/content, trace hoặc warning. FE cũng không nên đưa các giá trị này vào
+  telemetry hay local history ngoài lựa chọn rõ ràng của product.
+- History best-effort: DB tắt/lỗi/schema cũ không được làm đổi status/body DH.
+
+### 11. Checklist tích hợp
+
+- [ ] Chỉ gọi đúng sáu URL tương đối và chỉ gửi field của request variant hiện tại.
+- [ ] Crypto integer/shift là decimal string; `bits/index/bit` là number; boolean giữ boolean.
+- [ ] Omit optional request fields; không gửi `null` thay omission.
+- [ ] Missing alpha chỉ hiện suggestion; không tự coi suggestion là selected alpha.
+- [ ] Trace/check/grouped steps giữ exact shape và left-to-right order.
+- [ ] `/exchange` luôn hiển thị cảnh báo private keys giáo dục.
+- [ ] Caesar hỗ trợ encrypt/decrypt, `SHIFT_ZERO` là warning chứ không phải error.
+- [ ] Multipart đúng năm parts, `.txt`, UTF-8, exact 5 MiB; luôn parse JSON response.
+- [ ] Error handler giữ exact four-field envelope và status 413/415/422/500.
+- [ ] Không lưu/log/analytics parameters, keys, content, file, trace hoặc warning.
+- [ ] UI không quảng bá ECDH/KDF/MITM protection hay production security.
+
+### 19.12 Migration mapping từ FE DH contract cũ
+
+Snapshot backend này **không** có `/api/diffie-hellman/*`, endpoint
+`/private-values`, field snake_case cũ hoặc adapter tương thích ngược. Mapping dưới
+đây là hướng dẫn để đội FE migrate request/response; nó không tạo alias API mới.
+
+| FE contract cũ do owner báo cáo | Contract canonical hiện tại |
+|---|---|
+| Hai route `/api/diffie-hellman/*` | Sáu route exact `/api/dh/params`, `/params/random`, `/keypair`, `/shared-secret`, `/exchange`, `/caesar` |
+| `private_a`, `private_b` | `privateKeyA?`, `privateKeyB?`; bỏ field để server sinh, không gửi `null` |
+| `include_trace` | Không gửi field này; keypair/shared-secret luôn có `steps`, exchange luôn có bốn grouped traces |
+| `public_a`, `public_b` | `publicKeyA`, `publicKeyB` |
+| `shared_a`, `shared_b` | `sharedKeyA`, `sharedKeyB` |
+| `matched` | `match` |
+| Response exchange không private keys/warning | Response mới luôn có `privateKeyA/B` và warning `EDUCATIONAL_PRIVATE_KEYS` |
+| Trace tối đa 20 theo schema cũ | Mỗi ModPow trace trái→phải tối đa 128 rows; exchange có bốn arrays, tổng tối đa 512 rows |
+| Manual q cap `10^6` | `/params` manual tới `10^12`; downstream tự validate q tới 128 bit; random bits `16|32|64|128` |
+| `/private-values` | Không tồn tại; omit private key trong `/keypair` hoặc `/exchange` để sinh |
+| `Q_NOT_PRIME` | `NOT_PRIME` trong four-field DH error envelope |
+
+Field cũ hoặc `include_trace` gửi tới schema strict mới bị 422 `INVALID_REQUEST`;
+URL cũ không match router. Product choice bổ sung adapter legacy nằm ngoài contract
+này và chưa được phê duyệt. FE phải migrate sang camelCase/exact routes nếu dùng
+checkpoint hiện tại.
+
+### 19.13 Ma trận envelope chung nhưng không đồng nhất hóa feature
+
+| Family | Success chính | Error envelope | Status chính |
+|---|---|---|---|
+| Caesar/Vigenère/Affine/Columnar | `{success:true,result}` | `{success:false,message}` | 413/415/422/500 |
+| Playfair | Encrypt như legacy; decrypt thêm `padding` | `{success:false,message}` | 413/415/422/500 |
+| Hill | Transform có `blocks,key,warnings`; decrypt thêm `padding`; key APIs có `result,warnings` | `{success:false,message,code,details}` | 413/422/500 |
+| DES | `{success:true,result,warnings}`; trace thêm `trace`; file attachment không mang warnings | `{success:false,message}` | 413/415/422/500 |
+| RSA | Exact variant responses, `trace:null|object`; luôn JSON | `{success:false,code,message,field}` | 413/415/422/500 |
+| DH | Exact params/key/shared/exchange/Caesar responses; luôn JSON | `{success:false,code,message,field}` | 413/415/422/500 |
+| Health/history | Shapes tại mục 16 | `{success:false,message}` khi có lỗi | 404/422/503 |
+
+Không viết một parser success chung giả định mọi response có `result`. FE có thể dùng
+parser error chung theo từng family envelope, nhưng phải giữ các khác biệt field và
+nullable/default đã mô tả ở các mục tương ứng.
