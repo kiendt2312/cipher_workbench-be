@@ -18,7 +18,7 @@ Các quyết định chủ sở hữu sau grilling có quyền cao hơn khi hai 
 - Tách core số học thuần khỏi HTTP adapter; mọi CPU-heavy primality/factorization/generation chạy ngoài event loop.
 - Giữ exact six-route contract, strict schemas, deterministic error precedence và full educational traces.
 - Cung cấp DH standalone với dữ liệu số học được tính thật: parameters, private/public keys, shared secrets, match và full traces.
-- Reuse Caesar transform/file semantics trong một integration riêng mà không thay đổi public Caesar routes hoặc hạ DH thành Caesar mode.
+- Reuse Caesar transform/file semantics trong một integration riêng mà không thay đổi public Caesar routes hoặc hạ DH thành Caesar mode; standalone chỉ thêm compatibility input decimal string canonical từ `sharedKey` DH.
 - Thêm history DH theo migration SQLite tuyến tính, bảo toàn dữ liệu và tương thích active change SQLite/RSA.
 
 **Non-Goals:**

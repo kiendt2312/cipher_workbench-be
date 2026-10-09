@@ -14,7 +14,7 @@
 - **THEN** có đúng sáu POST operation DH nêu trên với JSON schemas và response schemas tương ứng
 
 ### Requirement: DH standalone và integration Caesar tách biệt
-Năm operation params/key/exchange SHALL tạo thành workflow DH standalone với dữ liệu số học được tính thật. `/caesar` SHALL là integration tiêu thụ DH shared key; các route Caesar standalone MUST không đổi. (Truy vết: Tài liệu thuật toán DH §§3–6,11–12; Scope DH §API; quyết định chủ sở hữu follow-up standalone/integration)
+Năm operation params/key/exchange SHALL tạo thành workflow DH standalone với dữ liệu số học được tính thật. `/caesar` SHALL là integration tiêu thụ DH shared key. Các route Caesar standalone MUST giữ nguyên route, response và behavior của JSON integer key; compatibility bổ sung duy nhất là nhận decimal string ASCII canonical `"0"` / `[1-9][0-9]*` từ `sharedKey` DH. (Truy vết: Tài liệu thuật toán DH §§3–6,11–12; Scope DH §API; quyết định chủ sở hữu follow-up standalone/integration; fix interoperability ngày 2026-10-09)
 
 #### Scenario: Standalone exchange không phụ thuộc Caesar
 - **WHEN** client hoàn tất params, keypair, shared-secret và exchange mà không gọi `/api/dh/caesar`
@@ -82,7 +82,7 @@ Các private/public/shared keys, `match` và grouped trace của `/exchange` SHA
 - **AND** result cuối của bốn grouped traces bằng output tương ứng
 
 ### Requirement: DH Caesar JSON
-`/caesar` với `application/json` SHALL nhận đúng `q,privateKey,otherPublicKey,action,data`, trong đó action là `encrypt|decrypt`, tính shared key DH thật rồi dùng `K mod 26` với Caesar core, và luôn trả JSON `success,sharedKey,shift,result,warning?`. Đây là integration DH–Caesar; Caesar standalone và năm DH operation standalone MUST giữ contract riêng. Không có attachment hoặc `response_mode`. (Truy vết: Tài liệu thuật toán DH §11; Scope DH BE-06 và §API, TC-11–TC-12; quyết định chủ sở hữu DH)
+`/caesar` với `application/json` SHALL nhận đúng `q,privateKey,otherPublicKey,action,data`, trong đó action là `encrypt|decrypt`, tính shared key DH thật rồi dùng `K mod 26` với Caesar core, và luôn trả JSON `success,sharedKey,shift,result,warning?`. Đây là integration DH–Caesar; Caesar standalone và năm DH operation standalone MUST giữ contract riêng, ngoại trừ compatibility input decimal string canonical đã nêu trên. Không có attachment hoặc `response_mode`. (Truy vết: Tài liệu thuật toán DH §11; Scope DH BE-06 và §API, TC-11–TC-12; quyết định chủ sở hữu DH)
 
 #### Scenario: Encrypt JSON TC-11
 - **WHEN** gửi q `"353"`, privateKey `"97"`, otherPublicKey `"248"`, action `encrypt`, data `Hello World`

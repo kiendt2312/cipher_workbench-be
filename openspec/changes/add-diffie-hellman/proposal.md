@@ -12,7 +12,7 @@ Backend cần cung cấp Diffie–Hellman như một feature độc lập ngang 
 - `/params` manual giữ trần `q <= 10^12`; tham số sinh 16/32/64/128 bit dùng được end-to-end ở các endpoint sau, được kiểm tra độc lập, không provenance token hay server state.
 - Khi thiếu `alpha`, `/params` chỉ trả gợi ý và không tự chọn; khi `alpha` được gửi nhưng sai, trả lỗi kèm gợi ý, không silent substitution.
 - `/exchange` trả cả `privateKeyA` và `privateKeyB` để minh họa và đối chiếu phép tính thật, kèm cảnh báo không gửi/lưu khóa riêng ngoài bên sở hữu và phải xác thực khóa công khai để chống MITM trong hệ thống thực tế.
-- `/caesar` là integration riêng nhận JSON text hoặc multipart `.txt`, luôn trả JSON; nó tính DH shared key thật rồi dùng đúng Caesar hiện hành với `K mod 26`, giới hạn file chính xác 5 MiB, UTF-8/BOM, không attachment hay `response_mode`. Các route Caesar standalone giữ nguyên.
+- `/caesar` là integration riêng nhận JSON text hoặc multipart `.txt`, luôn trả JSON; nó tính DH shared key thật rồi dùng đúng Caesar hiện hành với `K mod 26`, giới hạn file chính xác 5 MiB, UTF-8/BOM, không attachment hay `response_mode`. Các route Caesar standalone giữ nguyên route/response/integer behavior và nhận thêm decimal string canonical từ `sharedKey` DH.
 - Dùng error envelope `{success:false,code,message,field}` và status 422/413/415/500 theo precedent RSA/repository thay cho quy tắc HTTP 400 trong tài liệu scope.
 - Chỉ ghi metadata history cho `/api/dh/caesar`; không ghi năm endpoint DH còn lại và không bao giờ lưu tham số, khóa, nội dung, file, trace hoặc warning.
 - Không thay đổi contract Caesar, RSA hoặc các cipher hiện hữu.

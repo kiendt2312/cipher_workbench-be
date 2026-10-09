@@ -67,7 +67,8 @@ và được phủ chéo bởi `test_dh_endpoints.py`, `test_dh_resources.py`,
 Đối chiếu lại đầy đủ hai tài liệu owner xác nhận năm endpoint params/key/exchange là
 workflow DH standalone: output gồm tham số, private/public keys, shared secrets,
 `match` và trace lũy thừa modulo được tính từ input. `/api/dh/caesar` là integration
-thứ sáu dùng `K mod 26`; các route Caesar standalone không đổi.
+thứ sáu dùng `K mod 26`. Follow-up 2026-10-09 giữ nguyên route/response/integer
+behavior của Caesar standalone và chỉ thêm decimal string canonical từ `sharedKey` DH.
 
 Warning `/exchange` giữ code `EDUCATIONAL_PRIVATE_KEYS` và private keys theo D3,
 nhưng message không còn dùng câu “Chỉ dùng để học”. Message mới nói rõ response trả

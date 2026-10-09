@@ -32,7 +32,7 @@ TEXT_CIPHER_API_SCENARIOS = (
     "10 boolean false key is rejected",
     "11 integral float key is rejected",
     "12 fractional float key is rejected",
-    "13 numeric string key is rejected",
+    "13 decimal integer string key is accepted",
     "14 nonnumeric string key is rejected",
     "15 null key is missing",
     "16 array and object keys are rejected",
@@ -169,6 +169,29 @@ def test_encrypt_then_decrypt_round_trip(client: TestClient) -> None:
     _assert_success(decrypted, original)
 
 
+@pytest.mark.parametrize(
+    ("key", "encrypted_result"),
+    [
+        pytest.param(160, "Lipps Asvph", id="integer"),
+        pytest.param("160", "Lipps Asvph", id="dh-shared-key-string"),
+        pytest.param("0", "Hello World", id="canonical-zero-string"),
+    ],
+)
+def test_text_endpoints_accept_shared_key_string_and_round_trip(
+    client: TestClient, key: int | str, encrypted_result: str
+) -> None:
+    original = "Hello World"
+
+    encrypted = client.post(ENCRYPT_PATH, json={"text": original, "key": key})
+    _assert_success(encrypted, encrypted_result)
+
+    decrypted = client.post(
+        DECRYPT_PATH,
+        json={"text": encrypted.json()["result"], "key": key},
+    )
+    _assert_success(decrypted, original)
+
+
 # Scenario 07: both endpoints use the same missing-key validation.
 def test_both_endpoints_share_validation_rules(client: TestClient) -> None:
     payload = {"text": "abc"}
@@ -177,7 +200,7 @@ def test_both_endpoints_share_validation_rules(client: TestClient) -> None:
         _assert_error(client.post(path, json=payload), 422, messages.MISSING_KEY)
 
 
-# Scenarios 09-16: exact JSON key typing and missing/null/empty precedence.
+# Scenarios 09-16: key typing and missing/null/empty precedence.
 @pytest.mark.parametrize(
     ("path", "key", "expected_message"),
     [
@@ -185,8 +208,6 @@ def test_both_endpoints_share_validation_rules(client: TestClient) -> None:
         pytest.param(ENCRYPT_PATH, False, messages.INVALID_KEY, id="10-false"),
         pytest.param(ENCRYPT_PATH, 3.0, messages.INVALID_KEY, id="11-3.0"),
         pytest.param(DECRYPT_PATH, 3.5, messages.INVALID_KEY, id="12-3.5"),
-        pytest.param(ENCRYPT_PATH, "3", messages.INVALID_KEY, id="13-numeric-string"),
-        pytest.param(ENCRYPT_PATH, "ba", messages.INVALID_KEY, id="14-text-string"),
         pytest.param(ENCRYPT_PATH, None, messages.MISSING_KEY, id="15-null"),
         pytest.param(ENCRYPT_PATH, "", messages.MISSING_KEY, id="30-empty-string"),
     ],
@@ -197,6 +218,28 @@ def test_key_validation_precedence(
     response = client.post(path, json={"text": "Hello", "key": key})
 
     _assert_error(response, 422, expected_message)
+
+
+@pytest.mark.parametrize("path", [ENCRYPT_PATH, DECRYPT_PATH])
+@pytest.mark.parametrize(
+    "key",
+    [
+        pytest.param("ba", id="nonnumeric"),
+        pytest.param("160.0", id="float-string"),
+        pytest.param("1e2", id="exponent-string"),
+        pytest.param("+160", id="leading-plus"),
+        pytest.param("-160", id="leading-minus"),
+        pytest.param("0160", id="leading-zero"),
+        pytest.param(" 160 ", id="whitespace"),
+        pytest.param("١٦٠", id="unicode-digits"),
+    ],
+)
+def test_non_integer_key_strings_keep_invalid_key_message(
+    client: TestClient, path: str, key: str
+) -> None:
+    response = client.post(path, json={"text": "Hello", "key": key})
+
+    _assert_error(response, 422, messages.INVALID_KEY)
 
 
 @pytest.mark.parametrize(
@@ -258,7 +301,7 @@ def test_missing_key_variants_use_missing_message(
 # Scenario 31: missing key and present-but-invalid key remain distinct.
 def test_missing_key_differs_from_invalid_key(client: TestClient) -> None:
     missing = client.post(ENCRYPT_PATH, json={"text": "Hello"})
-    invalid = client.post(ENCRYPT_PATH, json={"text": "Hello", "key": "3"})
+    invalid = client.post(ENCRYPT_PATH, json={"text": "Hello", "key": "ba"})
 
     _assert_error(missing, 422, messages.MISSING_KEY)
     _assert_error(invalid, 422, messages.INVALID_KEY)
@@ -270,7 +313,7 @@ def test_missing_key_differs_from_invalid_key(client: TestClient) -> None:
     [
         pytest.param({"text": ""}, id="32-missing-key"),
         pytest.param({}, id="33-empty-object"),
-        pytest.param({"text": "", "key": "3"}, id="34-invalid-key"),
+        pytest.param({"text": "", "key": "160.0"}, id="34-invalid-key"),
         pytest.param({"text": "", "key": None}, id="35-null-key"),
     ],
 )
@@ -397,5 +440,9 @@ def test_openapi_documents_both_text_routes(client: TestClient) -> None:
     assert DECRYPT_PATH in paths
     for path in (ENCRYPT_PATH, DECRYPT_PATH):
         operation = paths[path]["post"]
-        assert operation["requestBody"]["content"]["application/json"]
+        request_schema = operation["requestBody"]["content"]["application/json"]["schema"]
+        assert request_schema["properties"]["key"]["oneOf"] == [
+            {"type": "integer"},
+            {"type": "string", "pattern": r"^(?:0|[1-9][0-9]*)$"},
+        ]
         assert operation["responses"]["200"]

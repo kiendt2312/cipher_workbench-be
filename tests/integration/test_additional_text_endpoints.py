@@ -187,15 +187,20 @@ def test_openapi_documents_four_string_key_routes(client: TestClient) -> None:
     assert set(decrypt_model["required"]) == {"success", "result", "padding"}
 
 
-def test_caesar_integer_contract_remains_unchanged(client: TestClient) -> None:
+@pytest.mark.parametrize(
+    ("key", "expected"),
+    [
+        pytest.param(3, "Khoor Zruog", id="integer"),
+        pytest.param(-23, "Khoor Zruog", id="signed-integer"),
+        pytest.param("3", "Khoor Zruog", id="canonical-decimal-string"),
+    ],
+)
+def test_caesar_integer_contract_is_preserved_with_shared_key_compatibility(
+    client: TestClient, key: int | str, expected: str
+) -> None:
     _assert_success(
-        client.post("/api/caesar/encrypt", json={"text": "Hello World", "key": 3}),
-        "Khoor Zruog",
-    )
-    _assert_error(
-        client.post("/api/caesar/encrypt", json={"text": "Hello", "key": "3"}),
-        422,
-        messages.INVALID_KEY,
+        client.post("/api/caesar/encrypt", json={"text": "Hello World", "key": key}),
+        expected,
     )
 
 

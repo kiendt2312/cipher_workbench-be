@@ -1159,8 +1159,9 @@ export interface AttachmentResult {
 }
 ```
 
-Wire request Caesar/Affine text bắt buộc là JSON integer token, không phải JSON
-string. Backend chấp nhận token tùy độ lớn; đây không phải contract string thay thế.
+Wire request Caesar text ưu tiên JSON integer token, đồng thời nhận decimal string
+ASCII canonical `"0"` / `[1-9][0-9]*` để có thể chuyển nguyên vẹn `sharedKey` DH.
+Affine vẫn bắt buộc JSON integer token và không có compatibility string này.
 Vì JavaScript `number` có thể làm tròn, giữ raw UI state dạng string và ghép token
 đã kiểm tra vào JSON mà không parse qua `number`. Chỉ dùng `CaesarTextRequest` hoặc
 `AffineTextRequest` với `Number.isSafeInteger(...)`; không gọi `JSON.stringify()`
@@ -1268,7 +1269,7 @@ async function readJsonSuccess(response: Response): Promise<SuccessResponse> {
 
 | Cipher | JSON body | Key hợp lệ |
 |---|---|---|
-| Caesar | `{"text":"...","key":3}` | JSON integer thật; âm, 0, >25 và integer rất lớn đều hợp lệ |
+| Caesar | `{"text":"...","key":3}` hoặc `{"text":"...","key":"160"}` | JSON integer thật; hoặc decimal string DH canonical không âm |
 | Vigenère | `{"text":"...","key":"LEMON"}` | String không rỗng, toàn bộ khớp `[A-Za-z]+` |
 | Playfair | `{"text":"...","key":"PLAYFAIR EXAMPLE"}` | String không rỗng và còn ít nhất một ASCII letter sau normalization |
 | Affine | `{"text":"...","a":5,"b":8}` | Hai JSON integer thật; `a'` khả nghịch; không có default |
@@ -1280,7 +1281,8 @@ OpenAPI hiện chỉ advertise `application/json`.
 Playfair đi tiếp qua normalization rồi bị từ chối vì không còn ASCII letter.
 FE gửi nguyên `text`; không trim, normalize newline hoặc thay Unicode trước request.
 
-Caesar từ chối boolean, float, numeric string, array và object làm key. Vigenère/
+Caesar từ chối boolean, float, decimal string không canonical, string không phải số,
+array và object làm key; riêng `"0"` / `[1-9][0-9]*` được nhận để tương thích DH. Vigenère/
 Playfair từ chối key JSON có giá trị nhưng không phải string bằng message
 `Khóa phải là chuỗi.` FE gửi key string nguyên trạng: Vigenère không trim; Playfair
 normalization là trách nhiệm của server và không phải lý do để FE rewrite key.
@@ -1721,7 +1723,7 @@ từ `Content-Disposition` (`filename*` UTF-8 được ưu tiên), không tự d
 | `422` | Sai media type, JSON/multipart không đọc được, body không phải object | `Dữ liệu gửi lên không hợp lệ.` |
 | `422` | Text thiếu, null, rỗng hoặc sai kiểu | `Văn bản không được để trống.` |
 | `422` | Key thiếu, null hoặc chuỗi rỗng | `Thiếu khóa.` |
-| `422` | Caesar key có giá trị nhưng không phải integer | `Khóa phải là số nguyên.` |
+| `422` | Caesar key không phải JSON integer hoặc decimal string DH canonical | `Khóa phải là số nguyên.` |
 | `422` | Affine JSON thiếu/null `a`; multipart thiếu/null/trim-rỗng `a` | `Thiếu khóa a.` |
 | `422` | Affine JSON `a` sai kiểu; multipart `a` sai grammar/length | `Khóa a phải là số nguyên.` |
 | `422` | Affine `a'` không khả nghịch | `Khóa a phải nguyên tố cùng nhau với 26.` |
@@ -3474,7 +3476,8 @@ Phần này được nhúng trực tiếp để guide chung tự chứa đủ co
 DH là feature standalone ngang cấp Caesar. Năm endpoint params/key/exchange trả
 parameters, private/public keys, shared secrets, match và trace từ số học DH thực;
 không phải mock hay sample-only output. `/api/dh/caesar` là integration thứ sáu tính
-shared key DH rồi dùng `K mod 26`; nó không thay thế hoặc thay đổi Caesar standalone.
+shared key DH rồi dùng `K mod 26`; nó không thay thế Caesar standalone. Hai route
+standalone chỉ nhận thêm decimal string canonical để dùng trực tiếp `sharedKey` DH.
 
 - Có đúng sáu endpoint DH, tất cả là `POST` dưới `/api/dh`.
 - Mọi đại lượng mật mã và `shift` là **decimal string ASCII canonical**: `"0"` hoặc
@@ -3834,7 +3837,8 @@ function decimal(value: string): DecimalString {
 }
 
 const shift = BigInt(response.sharedKey) % 26n;
-// Khi gửi lại: shift.toString(), không gửi shift bigint trực tiếp.
+// Có thể gửi thẳng response.sharedKey làm key standalone; hoặc gửi shift.toString().
+// Không gửi bigint trực tiếp vì JSON.stringify không hỗ trợ bigint.
 ```
 
 `response.ok === false` là error. `warning` trong HTTP 200 là kết quả thành công có

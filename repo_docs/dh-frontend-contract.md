@@ -5,8 +5,9 @@ và có quyền cao hơn cho FE là [`frontend-integration.md`](frontend-integra
 đặc biệt mục 19. Không suy ra endpoint hoặc field ngoài contract canonical.
 
 DH là feature standalone ngang cấp Caesar. Năm endpoint params/key/exchange trả dữ
-liệu số học DH được tính thật; `/api/dh/caesar` là integration riêng dùng shared key,
-không biến DH thành Caesar mode và không thay đổi Caesar standalone.
+liệu số học DH được tính thật; `/api/dh/caesar` là integration riêng dùng shared key
+và không biến DH thành Caesar mode. Caesar standalone giữ nguyên route/response và
+integer behavior, đồng thời nhận thêm decimal string canonical từ `sharedKey` DH.
 
 > **Giới hạn an toàn bắt buộc:** Contract này không có xác thực chống MITM, ECDH,
 > KDF, nhóm production hoặc lưu khóa server-side. `/exchange` cố ý trả khóa riêng để
@@ -276,6 +277,11 @@ const decrypted = await dhCaesarJson({
 Caesar chỉ đổi ASCII `A-Z/a-z`; Unicode, dấu câu và line ending được giữ nguyên.
 Nếu `K mod 26 == 0`, request vẫn thành công và `warning.code == "SHIFT_ZERO"`; warning
 không phải error và text không đổi.
+
+`/api/dh/caesar` vẫn là đường tích hợp ưu tiên. Khi một caller đã lấy `sharedKey`
+từ `/shared-secret` và cần dùng hai route Caesar standalone, có thể gửi nguyên decimal
+string canonical đó làm `key`; backend giảm modulo 26 an toàn ở adapter. Không đổi
+qua JavaScript `number`, vì shared key có thể vượt `Number.MAX_SAFE_INTEGER`.
 
 ## 7. `/api/dh/caesar`: JSON và multipart
 

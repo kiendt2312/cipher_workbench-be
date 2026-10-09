@@ -151,9 +151,9 @@ Sau tầng 0, endpoint text mới SHALL kiểm theo thứ tự: body phải là 
 
 ### Requirement: Không thay đổi endpoint Caesar
 
-Việc thêm bốn endpoint text mới MUST NOT thay đổi route, request schema, response schema, status, message, key integer hoặc kết quả của `POST /api/caesar/encrypt` và `POST /api/caesar/decrypt`. (Truy vết: quyết định chủ sở hữu cho change này; completed change `caesar-cipher-week1-mvp`)
+Việc thêm bốn endpoint text mới MUST NOT thay đổi route, response schema, status, message, key integer hoặc kết quả của `POST /api/caesar/encrypt` và `POST /api/caesar/decrypt`. Caesar chỉ có thêm compatibility input cho decimal string ASCII canonical do DH trả về; đây không phải string-key contract của Vigenère/Playfair. (Truy vết: quyết định chủ sở hữu cho change này; completed change `caesar-cipher-week1-mvp`; tương thích `sharedKey` DH ngày 2026-10-09)
 
 #### Scenario: Caesar vẫn dùng key integer
 - **WHEN** client gửi request Caesar đã hợp lệ trước change
 - **THEN** response sau change giống hệt baseline Week 1
-- **AND** Caesar không nhận key chuỗi chỉ vì Vigenère/Playfair dùng key chuỗi
+- **AND** Caesar không nhận arbitrary string key chỉ vì Vigenère/Playfair dùng key chuỗi; ngoại lệ duy nhất là decimal string DH canonical `"0"` / `[1-9][0-9]*`

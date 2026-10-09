@@ -41,7 +41,7 @@ Hệ thống SHALL cung cấp endpoint `POST /api/caesar/decrypt` nhận JSON bo
 
 ### Requirement: Hợp đồng request JSON của hai endpoint văn bản
 
-Hai endpoint văn bản SHALL nhận request với `Content-Type: application/json` và body là một JSON object gồm hai trường: `text` (chuỗi) và `key` (số nguyên). Hệ thống MUST xử lý hai endpoint theo cùng một bộ quy tắc validate, để cùng một body sai lệch cho cùng HTTP status và cùng thông báo trên cả `encrypt` lẫn `decrypt`. (Truy vết: docx §4.1, §4.2, §5)
+Hai endpoint văn bản SHALL nhận request với `Content-Type: application/json` và body là một JSON object gồm hai trường: `text` (chuỗi) và `key` (JSON integer, hoặc decimal string ASCII canonical do DH trả về). Hệ thống MUST xử lý hai endpoint theo cùng một bộ quy tắc validate, để cùng một body sai lệch cho cùng HTTP status và cùng thông báo trên cả `encrypt` lẫn `decrypt`. (Truy vết: docx §4.1, §4.2, §5; tương thích `sharedKey` DH ngày 2026-10-09)
 
 #### Scenario: Chấp nhận body JSON với Content-Type application/json
 - **WHEN** client gửi `POST /api/caesar/encrypt` với header `Content-Type: application/json` và body `{"text": "abc", "key": 1}`
@@ -64,9 +64,9 @@ Khi request hợp lệ, hai endpoint văn bản SHALL trả HTTP 200 với body 
 - **AND** `result` là chuỗi `"Khoor Zruog"`
 - **AND** phản hồi có `Content-Type` là `application/json`
 
-### Requirement: Khóa phải là số nguyên JSON
+### Requirement: Khóa phải là số nguyên JSON hoặc shared key DH canonical
 
-Trường `key` trong request body SHALL là một JSON integer khi nó có giá trị thực. Hệ thống MUST từ chối mọi kiểu dữ liệu khác — boolean, số thực (kể cả số thực có phần thập phân bằng 0), chuỗi chứa chữ số, mảng, object và các kiểu còn lại — bằng HTTP 422 kèm thông báo `"Khóa phải là số nguyên."` theo khuôn dạng error response chuẩn. Hệ thống MUST NOT tự ép kiểu chuỗi hay số thực về số nguyên. Hai trường hợp `key` bằng `null` và `key` là chuỗi rỗng MUST NOT dùng thông báo này: chúng được coi là thiếu khóa và nhận `"Thiếu khóa."` theo requirement bắt buộc có trường key. (Truy vết: docx §4.2, §5)
+Trường `key` trong request body SHALL nhận JSON integer, hoặc decimal string ASCII canonical `"0"` / `[1-9][0-9]*` để có thể dùng trực tiếp `sharedKey` từ DH. Decimal string hợp lệ được giảm modulo 26 mà không đổi qua số thực hoặc JavaScript `number`. Hệ thống MUST từ chối boolean, số thực (kể cả số thực có phần thập phân bằng 0), chuỗi không canonical, chuỗi không phải số nguyên, mảng, object và các kiểu còn lại bằng HTTP 422 kèm thông báo `"Khóa phải là số nguyên."` theo khuôn dạng error response chuẩn. Hai trường hợp `key` bằng `null` và `key` là chuỗi rỗng MUST NOT dùng thông báo này: chúng được coi là thiếu khóa và nhận `"Thiếu khóa."` theo requirement bắt buộc có trường key. (Truy vết: docx §4.2, §5; contract DH decimal string)
 
 #### Scenario: Từ chối khóa là boolean true
 - **WHEN** client gửi `POST /api/caesar/encrypt` với body `{"text": "Hello", "key": true}`
@@ -88,8 +88,13 @@ Trường `key` trong request body SHALL là một JSON integer khi nó có giá
 - **THEN** hệ thống trả HTTP 422
 - **AND** body phản hồi là `{"success": false, "message": "Khóa phải là số nguyên."}`
 
-#### Scenario: Từ chối khóa là chuỗi chứa chữ số
-- **WHEN** client gửi `POST /api/caesar/encrypt` với body `{"text": "Hello", "key": "3"}`
+#### Scenario: Chấp nhận shared key DH dạng decimal string
+- **WHEN** client gửi `POST /api/caesar/encrypt` với body `{"text": "Hello World", "key": "160"}`
+- **THEN** hệ thống trả HTTP 200
+- **AND** body phản hồi là `{"success": true, "result": "Lipps Asvph"}`
+
+#### Scenario: Từ chối decimal string không canonical
+- **WHEN** client gửi `POST /api/caesar/encrypt` với `key` là `"0160"`, `"+160"`, `"-160"` hoặc `" 160 "`
 - **THEN** hệ thống trả HTTP 422
 - **AND** body phản hồi là `{"success": false, "message": "Khóa phải là số nguyên."}`
 
@@ -111,7 +116,7 @@ Trường `key` trong request body SHALL là một JSON integer khi nó có giá
 
 ### Requirement: Chấp nhận khóa âm, khóa bằng 0 và khóa lớn hơn 25
 
-Hai endpoint văn bản SHALL chấp nhận mọi JSON integer làm `key`, bao gồm khóa âm, khóa bằng 0 và khóa lớn hơn 25, và trả HTTP 200 với kết quả đúng. Hệ thống MUST NOT giới hạn `key` trong khoảng 0–25 ở tầng API; quy tắc chuẩn hóa khóa thuộc về capability `caesar-core`. (Truy vết: docx §2.1, §7)
+Hai endpoint văn bản SHALL chấp nhận mọi JSON integer làm `key`, bao gồm khóa âm, khóa bằng 0 và khóa lớn hơn 25, cùng mọi decimal string DH canonical không âm, và trả HTTP 200 với kết quả đúng. Hệ thống MUST NOT giới hạn `key` trong khoảng 0–25 ở tầng API; quy tắc chuẩn hóa khóa thuộc về capability `caesar-core` hoặc adapter an toàn cho decimal string không giới hạn. (Truy vết: docx §2.1, §7; tương thích `sharedKey` DH ngày 2026-10-09)
 
 #### Scenario: Chấp nhận khóa âm
 - **WHEN** client gửi `POST /api/caesar/encrypt` với body `{"text": "Hello World", "key": -23}`

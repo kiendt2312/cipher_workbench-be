@@ -40,6 +40,8 @@ from app.errors.exceptions import (
 MISSING: Final = object()
 MULTIPART_KEY_MAX_LENGTH = 32
 _MULTIPART_KEY_PATTERN = re.compile(r"^[+-]?[0-9]+$")
+_CANONICAL_DECIMAL_KEY_PATTERN = r"^(?:0|[1-9][0-9]*)$"
+_CANONICAL_DECIMAL_KEY_RE = re.compile(_CANONICAL_DECIMAL_KEY_PATTERN, re.ASCII)
 _VIGENERE_KEY_PATTERN = re.compile(r"^[A-Za-z]+$")
 
 
@@ -62,7 +64,15 @@ class TextCipherRequest(BaseModel):
     )
 
     text: Any = Field(default_factory=lambda: MISSING, json_schema_extra={"type": "string"})
-    key: Any = Field(default_factory=lambda: MISSING, json_schema_extra={"type": "integer"})
+    key: Any = Field(
+        default_factory=lambda: MISSING,
+        json_schema_extra={
+            "oneOf": [
+                {"type": "integer"},
+                {"type": "string", "pattern": _CANONICAL_DECIMAL_KEY_PATTERN},
+            ]
+        },
+    )
 
 
 class StringKeyCipherRequest(BaseModel):
@@ -146,17 +156,28 @@ class PlayfairDecryptResponse(BaseModel):
     padding: PaddingInfo
 
 
+def _parse_decimal_key(value: str) -> int:
+    """Normalize a validated decimal token without converting huge values to Python ints."""
+
+    negative = value.startswith("-")
+    digits = value[1:] if value[:1] in "+-" else value
+    normalized = 0
+    for digit in digits:
+        normalized = (normalized * 10 + ord(digit) - ord("0")) % 26
+    return -normalized if negative else normalized
+
+
 def parse_key(value: Any) -> int:
-    """Validate a key value decoded from a JSON request body."""
+    """Validate a JSON integer or canonical unsigned decimal-string key."""
 
     if value is MISSING or value is None or (type(value) is str and value == ""):
         raise MissingKeyError()
     if type(value) is JsonIntegerToken:
-        digits = value.removeprefix("-")
-        normalized = 0
-        for digit in digits:
-            normalized = (normalized * 10 + ord(digit) - ord("0")) % 26
-        return -normalized if value.startswith("-") else normalized
+        return _parse_decimal_key(value)
+    if type(value) is str:
+        if _CANONICAL_DECIMAL_KEY_RE.fullmatch(value) is None:
+            raise InvalidKeyError()
+        return _parse_decimal_key(value)
     if type(value) is not int:
         raise InvalidKeyError()
     return value

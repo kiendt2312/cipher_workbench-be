@@ -98,6 +98,34 @@ def test_shared_secret_stallings_vector(client: TestClient) -> None:
     assert response.json()["steps"][-1]["result"] == "160"
 
 
+def test_shared_secret_string_round_trips_through_standalone_caesar(
+    client: TestClient,
+) -> None:
+    shared_secret = client.post(
+        "/api/dh/shared-secret",
+        json={"q": "353", "privateKey": "97", "otherPublicKey": "248"},
+    )
+    assert shared_secret.status_code == 200
+    shared_key = shared_secret.json()["sharedKey"]
+    assert shared_key == "160"
+    assert type(shared_key) is str
+
+    plaintext = "Xin chào, Việt Nam!"
+    encrypted = client.post(
+        "/api/caesar/encrypt",
+        json={"text": plaintext, "key": shared_key},
+    )
+    assert encrypted.status_code == 200
+    assert encrypted.json() == {"success": True, "result": "Bmr glàs, Zmệx Req!"}
+
+    decrypted = client.post(
+        "/api/caesar/decrypt",
+        json={"text": encrypted.json()["result"], "key": shared_key},
+    )
+    assert decrypted.status_code == 200
+    assert decrypted.json() == {"success": True, "result": plaintext}
+
+
 def test_exchange_exposes_educational_private_keys(client: TestClient) -> None:
     response = client.post(
         "/api/dh/exchange",
