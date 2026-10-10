@@ -1,9 +1,9 @@
 # Runbook chuyển history PostgreSQL sang SQLite
 
-Runbook này dành cho một máy backend chạy đúng một app process. Máy frontend chỉ
-gọi HTTP `/api`; không mount hoặc đọc file SQLite. Các lệnh rollout thật chỉ được
-chạy sau khi operator điền và xác minh target cụ thể. Implementation/test dùng file
-SQLite tạm và không phải bằng chứng cho dữ liệu production.
+Runbook này dành cho một máy backend chạy đúng một app process và một retention
+worker độc lập. Máy frontend chỉ gọi HTTP `/api`; không mount hoặc đọc file SQLite.
+Các lệnh rollout thật chỉ được chạy sau khi operator điền và xác minh target cụ thể.
+Implementation/test dùng file SQLite tạm và không phải bằng chứng cho dữ liệu production.
 
 ## 1. Input bắt buộc trước rollout
 
@@ -68,7 +68,7 @@ redact URL/path và không chứa payload.
 3. Chạy lại source measurement và transfer prepare/verify từ snapshot cuối.
 4. Chỉ first-publish staging bằng atomic no-overwrite khi runtime chưa tồn tại,
    staging cùng filesystem và expected manifest digest khớp.
-5. Chạy migrate/head check rồi khởi động đúng một app process.
+5. Chạy migrate/head check rồi khởi động đúng một app process và một retention worker.
 6. Kiểm tra `/api/health`, `/api/history`, cursor/filter/order/UTC, một cipher smoke
    và RSA transform/keygen exclusion. Quan sát warning lock/disk trước khi đóng cửa
    sổ maintenance.
@@ -121,10 +121,32 @@ canonical UTF-8 envelope của từng row; đây không phải giới hạn kíc
 FIFO eviction và TTL năm giờ giữ live logical data bounded. SQLite mặc định đưa page
 đã DELETE vào freelist để write sau tái sử dụng, nhưng file không nhất thiết co lại.
 
+Retention worker chạy `python -m app.history.retention --daemon`. Nó purge ngay khi
+khởi động, lấy deadline từ `MIN(created_at)` của cả hai bảng bằng UTC clock SQLite,
+rồi ngủ tới deadline đó; không có polling grace năm phút sau expiry. Khi DB rỗng,
+worker chỉ kiểm tra lại mỗi 60 giây để phát hiện row đầu tiên, vốn còn đủ năm giờ kể
+từ lúc ghi. Nếu SQLite lock/không ghi được, worker không báo đã xóa: nó log message đã
+redact và retry mỗi một giây (cộng thời gian SQLite busy timeout/tác vụ). Compose chạy
+worker tách khỏi API với `restart: always`, nên dừng riêng service `app` không dừng xóa.
+
+Operating assumption để đạt xóa tại deadline là ít nhất một retention process luôn
+chạy, host clock đã qua preflight, process được schedule và SQLite ghi được. Không có
+worst-case latency hữu hạn khi toàn bộ stack/host dừng hoặc storage tiếp tục read-only,
+full, mất mount hay hỏng: live operational row/payload vẫn tồn tại; read/download vẫn
+không truy cập được sau đúng năm giờ và startup/recovery sẽ purge overdue row ngay.
+SQLite không tự chạy TTL khi không có process. Đây là exception cần owner quyết định
+trước release, không phải grace period được ngầm chấp thuận. Hai hướng vận hành là:
+
+- chấp thuận assumption trên và coi thời gian worker/storage outage là contract breach
+  phải alert/remediate; hoặc
+- cấp một trusted retention scheduler/storage TTL độc lập với lifecycle của stack/host
+  này và SLA availability phù hợp (mở rộng infrastructure/deployment scope).
+
 Không chạy `VACUUM` trong request, startup hay purge loop: SQLite cần writer lock và
 có thể cần khoảng gấp đôi dung lượng file tạm thời. Khi operator cần thu nhỏ file,
-hãy dừng app, tạo và verify backup, kiểm tra free space, chạy `VACUUM` trên exact
-runtime file, rồi chạy `PRAGMA integrity_check` và smoke test trước khi mở traffic.
+hãy dừng cả app lẫn retention worker, tạo và verify backup, kiểm tra free space, chạy
+`VACUUM` trên exact runtime file, rồi chạy `PRAGMA integrity_check` và smoke test trước
+khi mở traffic.
 Việc này là space reclamation vận hành, không mở rộng cam kết xóa forensic/backups.
 Sau restore, giữ nguyên `created_at`; read predicate chặn row quá năm giờ ngay cả
 trước khi purge vật lý chạy.

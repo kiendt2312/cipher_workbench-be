@@ -46,6 +46,8 @@ def test_history_retention_and_logical_caps_are_fixed() -> None:
     assert config.HISTORY_RETENTION_SECONDS == 5 * 60 * 60
     assert config.HISTORY_PROFILE_LIMIT_BYTES == 50 * 1024 * 1024
     assert config.HISTORY_SYSTEM_LIMIT_BYTES == 500 * 1024 * 1024
+    assert retention.PURGE_RETRY_SECONDS == 1.0
+    assert retention.EMPTY_DATABASE_DISCOVERY_SECONDS == 60.0
 
 
 def test_legacy_retention_environment_cannot_extend_lifetime(
@@ -135,6 +137,7 @@ def test_purge_loop_survives_failures(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     attempts: list[int] = []
+    sleeps: list[float] = []
 
     async def failing_purge(database: object, days: int) -> int:
         attempts.append(days)
@@ -142,18 +145,65 @@ def test_purge_loop_survives_failures(
 
     monkeypatch.setattr(retention, "purge_expired", failing_purge)
 
+    async def capture_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+        if len(sleeps) == 3:
+            raise asyncio.CancelledError
+
+    monkeypatch.setattr(retention.asyncio, "sleep", capture_sleep)
+
     async def run() -> None:
-        task = asyncio.create_task(retention.purge_periodically(object(), 30, 0.01))  # type: ignore[arg-type]
-        await asyncio.sleep(0.05)
-        task.cancel()
         with pytest.raises(asyncio.CancelledError):
-            await task
+            await retention.purge_periodically(  # type: ignore[arg-type]
+                object(),
+                30,
+                retry_seconds=0.01,
+            )
 
     with caplog.at_level(logging.WARNING):
         asyncio.run(run())
-    assert len(attempts) >= 2
+    assert len(attempts) == 3
+    assert sleeps == [0.01, 0.01, 0.01]
     assert "Could not purge expired cipher operation history" in caplog.text
     assert "topsecret" not in caplog.text
+
+
+def test_purge_loop_sleeps_to_the_next_record_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    sleeps: list[float] = []
+
+    async def successful_purge(database: object, retention_seconds: int) -> int:
+        calls.append(f"purge:{retention_seconds}")
+        return 0
+
+    async def deadline(database: object) -> float:
+        calls.append("deadline")
+        return 123.456
+
+    async def stop_after_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(retention, "purge_expired", successful_purge)
+    monkeypatch.setattr(retention, "next_expiry_delay_seconds", deadline)
+    monkeypatch.setattr(retention.asyncio, "sleep", stop_after_sleep)
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(retention.purge_periodically(object(), 30))  # type: ignore[arg-type]
+
+    assert calls == ["purge:30", "deadline"]
+    assert sleeps == [123.456]
+
+
+def test_compose_runs_retention_independently_from_the_api() -> None:
+    compose = (PROJECT_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+
+    assert "  retention:\n" in compose
+    assert 'command: ["python", "-m", "app.history.retention", "--daemon"]' in compose
+    assert "    restart: always\n" in compose
+    assert compose.count("      - history-data:/data") == 3
 
 
 def test_purge_command_requires_database_url() -> None:

@@ -769,9 +769,10 @@ curl -sS -o /dev/null -w '%{http_code}\n' http://localhost:8000/openapi.json
 
 ### 9.1 docker-compose với SQLite local trên backend
 
-`docker-compose.yml` chạy migration SQLite một lần rồi khởi động đúng một process
-`app`; hai service dùng cùng named volume local ở `/data`. Stack mặc định không
-khởi động PostgreSQL. Frontend ở máy khác vẫn chỉ gọi HTTP API.
+`docker-compose.yml` chạy migration SQLite một lần rồi khởi động một process
+`app` và một process `retention` độc lập; cả ba service dùng cùng named volume
+local ở `/data`. Stack mặc định không khởi động PostgreSQL. Frontend ở máy khác
+vẫn chỉ gọi HTTP API. Việc dừng riêng API không dừng retention worker.
 
 ```bash
 cp .env.example .env
@@ -825,8 +826,20 @@ Mọi deployment HTTPS phải giữ `HISTORY_COOKIE_SECURE=true`; FE cross-origi
 credentials và dùng một origin nằm trong allow-list.
 `/api/health` trả thêm `history: "enabled" | "disabled"`.
 
-App lọc mọi read/download theo cutoff gốc và tự xóa bản ghi quá năm giờ lúc khởi
-động rồi định kỳ. Quota logical là 50 MiB/profile và 500 MiB/system với FIFO eviction.
+App lọc mọi read/download theo cutoff gốc. App và retention worker đều purge ngay
+khi khởi động; sau đó scheduler lấy `MIN(created_at)` và ngủ tới deadline gần nhất,
+không cộng grace period năm phút. Khi DB đang lock/không ghi được, worker retry sau
+một giây; crypto API vẫn phục vụ và history write vẫn trả trạng thái saved/not-saved
+thật. Quota logical là 50 MiB/profile và 500 MiB/system với FIFO eviction.
+
+Cơ chế này chỉ có thể xóa tại deadline khi ít nhất một worker đang chạy, được CPU
+schedule và SQLite ghi được. Nếu toàn bộ stack/host dừng hoặc storage không ghi được,
+row/payload operational vẫn còn trong live DB; access vẫn bị chặn ở đúng cutoff và
+worker xóa row quá hạn ngay khi chạy/ghi lại được. Không có worst-case deletion latency
+hữu hạn trong outage như vậy. Đây là giới hạn vận hành cần owner chấp thuận hoặc thay
+bằng một retention service/storage luôn hoạt động bên ngoài stack trước release; không
+được hiểu là grace đã được chấp thuận.
+
 Chạy purge ngay bằng tay:
 
 ```bash

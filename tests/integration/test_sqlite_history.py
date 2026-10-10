@@ -716,6 +716,188 @@ def test_retention_uses_sqlite_utc_database_clock(migrated_sqlite) -> None:
     assert remaining_ages == [4]
 
 
+def test_deadline_delay_uses_oldest_original_creation_time(migrated_sqlite) -> None:
+    path, url = migrated_sqlite
+    now_epoch_us = time.time_ns() // 1_000
+    three_seconds_before_expiry = (
+        now_epoch_us - retention.FIXED_RETENTION_SECONDS * 1_000_000 + 3_000_000
+    )
+    later_private_row = three_seconds_before_expiry + 1_000_000
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "INSERT INTO cipher_operations "
+            "(created_at, cipher, operation, source, http_status, succeeded, duration_ms) "
+            "VALUES (?, 'caesar', 'encrypt', 'text', 200, 1, 1)",
+            (three_seconds_before_expiry,),
+        )
+        _seed_private_rows(connection, [(1, later_private_row, "rsa", "verify")])
+        connection.commit()
+
+    database = create_database(url)
+
+    async def measure() -> float | None:
+        try:
+            return await retention.next_expiry_delay_seconds(database)
+        finally:
+            await database.engine.dispose()
+
+    delay = asyncio.run(measure())
+    assert delay is not None
+    assert 1.5 < delay <= 3.0
+
+
+def test_deadline_worker_deletes_at_the_record_deadline_without_a_polling_grace(
+    migrated_sqlite, monkeypatch
+) -> None:
+    path, url = migrated_sqlite
+    monkeypatch.setattr(retention, "FIXED_RETENTION_SECONDS", 1)
+    created_at = time.time_ns() // 1_000
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "INSERT INTO cipher_operations "
+            "(created_at, cipher, operation, source, http_status, succeeded, duration_ms) "
+            "VALUES (?, 'caesar', 'encrypt', 'text', 200, 1, 1)",
+            (created_at,),
+        )
+        connection.commit()
+
+    database = create_database(url)
+
+    async def wait_for_deadline_deletion() -> float:
+        started = time.monotonic()
+        task = asyncio.create_task(retention.purge_periodically(database))
+        try:
+            for _ in range(300):
+                async with database.sessions() as session:
+                    count = (
+                        await session.execute(text("SELECT count(*) FROM cipher_operations"))
+                    ).scalar_one()
+                if count == 0:
+                    return time.monotonic() - started
+                await asyncio.sleep(0.01)
+            pytest.fail("retention worker did not delete the row at its deadline")
+        finally:
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            await database.engine.dispose()
+
+    elapsed = asyncio.run(wait_for_deadline_deletion())
+    assert 0.5 <= elapsed < 2.5
+
+
+def test_expired_operational_payload_remains_without_worker_then_daemon_deletes_on_restart(
+    migrated_sqlite,
+) -> None:
+    path, url = migrated_sqlite
+    expired_at = time.time_ns() // 1_000 - retention.FIXED_RETENTION_SECONDS * 1_000_000 - 1_000_000
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "INSERT INTO cipher_operations "
+            "(created_at, cipher, operation, source, http_status, succeeded, duration_ms) "
+            "VALUES (?, 'caesar', 'encrypt', 'text', 200, 1, 1)",
+            (expired_at,),
+        )
+        _seed_private_rows(connection, [(1, expired_at, "rsa", "sign")])
+        connection.execute(
+            "UPDATE private_history_records SET content_bytes = ? WHERE id = 1",
+            (b"expired-operational-payload",),
+        )
+        connection.commit()
+        # SQLite has no autonomous wall-clock TTL.  This is deliberate
+        # counterevidence: with every retention process stopped, the expired
+        # row and payload remain in the live database.
+        assert connection.execute("SELECT count(*) FROM cipher_operations").fetchone() == (1,)
+        assert connection.execute(
+            "SELECT content_bytes FROM private_history_records"
+        ).fetchone() == (b"expired-operational-payload",)
+
+    database = create_database(url)
+
+    async def restart_worker() -> None:
+        task = asyncio.create_task(
+            retention.purge_periodically(
+                database,
+                retry_seconds=0.01,
+                empty_database_discovery_seconds=0.01,
+            )
+        )
+        try:
+            for _ in range(100):
+                async with database.sessions() as session:
+                    legacy_count = (
+                        await session.execute(text("SELECT count(*) FROM cipher_operations"))
+                    ).scalar_one()
+                    private_count = (
+                        await session.execute(text("SELECT count(*) FROM private_history_records"))
+                    ).scalar_one()
+                if legacy_count == private_count == 0:
+                    return
+                await asyncio.sleep(0.01)
+            pytest.fail("retention worker did not delete overdue rows after restart")
+        finally:
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            await database.engine.dispose()
+
+    asyncio.run(restart_worker())
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("SELECT count(*) FROM cipher_operations").fetchone() == (0,)
+        assert connection.execute("SELECT count(*) FROM private_history_records").fetchone() == (0,)
+
+
+def test_retention_retries_until_a_locked_database_becomes_writable(
+    migrated_sqlite, caplog
+) -> None:
+    path, url = migrated_sqlite
+    expired_at = time.time_ns() // 1_000 - retention.FIXED_RETENTION_SECONDS * 1_000_000 - 1_000_000
+    lock_owner = sqlite3.connect(path, timeout=0)
+    lock_owner.execute(
+        "INSERT INTO cipher_operations "
+        "(created_at, cipher, operation, source, http_status, succeeded, duration_ms) "
+        "VALUES (?, 'caesar', 'encrypt', 'text', 200, 1, 1)",
+        (expired_at,),
+    )
+    lock_owner.commit()
+    lock_owner.execute("BEGIN EXCLUSIVE")
+    lock_owner.execute("UPDATE cipher_operations SET duration_ms = 2")
+    database = create_database(url)
+
+    async def recover_after_lock() -> None:
+        task = asyncio.create_task(
+            retention.purge_periodically(
+                database,
+                retry_seconds=0.01,
+                empty_database_discovery_seconds=0.01,
+            )
+        )
+        try:
+            await asyncio.sleep(0.3)
+            assert lock_owner.execute("SELECT count(*) FROM cipher_operations").fetchone() == (1,)
+            lock_owner.commit()
+            for _ in range(100):
+                async with database.sessions() as session:
+                    count = (
+                        await session.execute(text("SELECT count(*) FROM cipher_operations"))
+                    ).scalar_one()
+                if count == 0:
+                    return
+                await asyncio.sleep(0.01)
+            pytest.fail("retention worker did not recover after the database lock cleared")
+        finally:
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            await database.engine.dispose()
+            lock_owner.close()
+
+    with caplog.at_level("WARNING", logger="app.history.retention"):
+        asyncio.run(recover_after_lock())
+    assert "Could not purge expired cipher operation history" in caplog.text
+    assert str(path) not in caplog.text
+
+
 def test_rollout_clock_preflight_enforces_sixty_second_limit(migrated_sqlite) -> None:
     _, url = migrated_sqlite
     database = create_database(url)

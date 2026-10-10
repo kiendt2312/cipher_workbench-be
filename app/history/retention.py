@@ -20,7 +20,12 @@ from app.history.store import purge_private_expired
 
 logger = logging.getLogger(__name__)
 
-PURGE_INTERVAL_SECONDS = 5 * 60
+# The daemon does not intentionally add a grace period after a record's
+# deadline.  These intervals only control recovery from an unavailable writer
+# and discovery while the database is empty.  Once a row exists, its exact
+# creation-time deadline determines the next sleep.
+PURGE_RETRY_SECONDS = 1.0
+EMPTY_DATABASE_DISCOVERY_SECONDS = 60.0
 MAX_CLOCK_SKEW_SECONDS = 60
 FIXED_RETENTION_SECONDS = int(getattr(config, "HISTORY_RETENTION_SECONDS", 5 * 60 * 60))
 
@@ -32,7 +37,13 @@ async def _database_now_epoch_us(database: Database) -> int:
         try:
             dialect = session.get_bind().dialect.name
             if dialect == "sqlite":
-                expression = cast(func.strftime("%s", "now"), BigInteger) * 1_000_000
+                # julianday() is available on every supported SQLite runtime
+                # and retains sub-second precision.  unixepoch('subsec') would
+                # require SQLite 3.42+, which the base image does not promise.
+                expression = cast(
+                    (func.julianday("now") - 2_440_587.5) * 86_400_000_000,
+                    BigInteger,
+                )
             elif dialect == "postgresql":
                 expression = cast(func.extract("epoch", func.now()) * 1_000_000, BigInteger)
             else:
@@ -117,31 +128,95 @@ async def purge_expired(database: Database, retention: int | float | None = None
     return private_deleted + (result.rowcount or 0)
 
 
+async def next_expiry_delay_seconds(database: Database) -> float | None:
+    """Return seconds until the oldest live row expires, or ``None`` if empty.
+
+    The database clock and both minima are read in one SQLite statement.  Raw
+    SQL is deliberate here: both SQLite tables store epoch microseconds, while
+    the legacy ORM type also has historical PostgreSQL conversion behavior.
+    ``create_database`` already rejects every non-SQLite runtime.
+    """
+
+    async with database.sessions() as session:
+        try:
+            dialect = session.get_bind().dialect.name
+            if dialect != "sqlite":
+                raise RuntimeError("history retention does not support this database backend")
+            row = (
+                await session.execute(
+                    text(
+                        "SELECT "
+                        "CAST((julianday('now') - 2440587.5) * 86400000000 AS INTEGER) "
+                        "AS now_epoch_us, "
+                        "MIN(created_at) AS oldest_created_at "
+                        "FROM ("
+                        "SELECT created_at FROM cipher_operations "
+                        "UNION ALL "
+                        "SELECT created_at FROM private_history_records"
+                        ")"
+                    )
+                )
+            ).one()
+        except BaseException:
+            with suppress(BaseException):
+                await session.rollback()
+            with suppress(BaseException):
+                await session.invalidate()
+            raise
+
+    now_epoch_us, oldest_created_at = row
+    if oldest_created_at is None:
+        return None
+    try:
+        deadline_epoch_us = int(oldest_created_at) + FIXED_RETENTION_SECONDS * 1_000_000
+        return max(0.0, (deadline_epoch_us - int(now_epoch_us)) / 1_000_000)
+    except (TypeError, ValueError, OverflowError):
+        raise RuntimeError("history retention deadline is unavailable") from None
+
+
 async def purge_periodically(
     database: Database,
-    retention: int | float,
-    interval_seconds: float | None = None,
+    retention: int | float | None = None,
+    *,
+    retry_seconds: float = PURGE_RETRY_SECONDS,
+    empty_database_discovery_seconds: float = EMPTY_DATABASE_DISCOVERY_SECONDS,
 ) -> None:
-    """Purge now and then every ``interval_seconds``; failures are logged, never raised."""
+    """Purge at creation-time deadlines and retry while the database is unavailable.
 
-    if interval_seconds is None:
-        interval_seconds = PURGE_INTERVAL_SECONDS
+    A failure cannot be converted into a false deletion claim: the row remains
+    in the operational database and this loop retries until a write succeeds.
+    Cipher operations keep running because cleanup failure is isolated here.
+    """
+
+    if retry_seconds <= 0 or empty_database_discovery_seconds <= 0:
+        raise ValueError("retention scheduler intervals must be positive")
 
     while True:
         try:
             await purge_expired(database, retention)
+            deadline_delay = await next_expiry_delay_seconds(database)
+            sleep_seconds = (
+                empty_database_discovery_seconds if deadline_delay is None else deadline_delay
+            )
         except Exception:
             # The exception text can contain connection details, so it is not logged.
             logger.warning("Could not purge expired cipher operation history")
-        await asyncio.sleep(interval_seconds)
+            sleep_seconds = retry_seconds
+        await asyncio.sleep(sleep_seconds)
 
 
 def _cli_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="SQLite history retention maintenance")
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         "--check-clock-only",
         action="store_true",
         help="check the SQLite/process UTC clock skew without deleting history",
+    )
+    mode.add_argument(
+        "--daemon",
+        action="store_true",
+        help="run the deadline-driven retention worker until stopped",
     )
     return parser
 
@@ -166,6 +241,9 @@ async def _main(argv: Sequence[str] = ()) -> int:
     try:
         if args.check_clock_only:
             skew = await require_database_clock_sync(database)
+        elif args.daemon:
+            await purge_periodically(database, retention)
+            raise AssertionError("retention daemon returned unexpectedly")
         else:
             assert retention is not None
             deleted = await purge_expired(database, retention)

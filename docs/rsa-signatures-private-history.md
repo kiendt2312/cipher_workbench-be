@@ -194,6 +194,16 @@ before five hours. User deletion and expiry cover live operational rows and payl
 or forensic removal of old disk bytes. Expired restored rows remain inaccessible and are purged
 using their original creation time.
 
+Operational deletion is driven by the oldest row's original-creation deadline, not by a periodic
+five-minute grace. The API process and the independent Compose `retention` service both purge on
+startup and schedule the next live deadline; a transient write failure is retried after one second.
+Stopping only the API leaves the independent worker running. This mechanism has no finite deletion
+bound while every retention process is stopped, the host is down, or SQLite cannot write: rows and
+payloads remain physically present, although every API read/download rejects them at the five-hour
+cutoff, and overdue rows are deleted when a worker can write again. SQLite has no autonomous TTL.
+That outage behavior is a disclosed release decision, not an implicit relaxation of the five-hour
+operational-deletion requirement.
+
 ## Error envelope
 
 Malformed requests, invalid key/domain inputs, unsupported media/encoding, size failures, and
