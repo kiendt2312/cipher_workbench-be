@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import config
+from app.api.history_profile import HistoryProfileMiddleware
 from app.api.history_recorder import OperationHistoryRecorder
 from app.api.request_size_guard import MultipartCompletionGuard, RequestSizeGuard
 from app.api.routes_additional_file import playfair_file_router, vigenere_file_router
@@ -26,6 +27,7 @@ from app.api.routes_health import router as health_router
 from app.api.routes_hill import router as hill_router
 from app.api.routes_history import router as history_router
 from app.api.routes_rsa import router as rsa_router
+from app.api.routes_rsa_signatures import router as rsa_signatures_router
 from app.api.routes_text import router as text_router
 from app.db.engine import create_database
 from app.errors.handlers import register_exception_handlers
@@ -36,16 +38,17 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    retention_days = config.history_retention_days()  # Fail fast on a bad value.
+    config.history_cookie_secure()  # Fail fast on a bad cookie-security setting.
+    url = config.database_url()
+    config.history_profile_signing_key(database_enabled=url is not None)
     if config.history_api_enabled():
         logger.warning(
-            "HISTORY_API_ENABLED is on: GET /api/history is readable by anyone without "
-            "authentication. Turn it off on any shared or public deployment."
+            "HISTORY_API_ENABLED is on: history is protected by an anonymous browser-profile "
+            "bearer cookie; people sharing that browser profile share its records."
         )
-    url = config.database_url()
     app.state.db = create_database(url) if url else None
     purge_task = (
-        asyncio.create_task(purge_periodically(app.state.db, retention_days))
+        asyncio.create_task(purge_periodically(app.state.db, config.HISTORY_RETENTION_SECONDS))
         if app.state.db is not None
         else None
     )
@@ -65,20 +68,23 @@ app.add_middleware(RequestSizeGuard, max_bytes=config.MAX_REQUEST_BYTES)
 app.add_middleware(MultipartCompletionGuard)
 # Outside the guards, so requests rejected by them are recorded too.
 app.add_middleware(OperationHistoryRecorder)
+app.add_middleware(HistoryProfileMiddleware)
 cors_origins = config.cors_allow_origins()
 if cors_origins:
     # Outermost, so guard rejections such as 413 still carry CORS headers.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(cors_origins),
-        allow_methods=["GET", "POST"],
+        allow_methods=["GET", "POST", "DELETE"],
         allow_headers=["Content-Type"],
+        allow_credentials=True,
         expose_headers=["Content-Disposition"],
     )
 register_exception_handlers(app)
 app.include_router(health_router)
 app.include_router(history_router)
 app.include_router(rsa_router)
+app.include_router(rsa_signatures_router)
 app.include_router(dh_router)
 app.include_router(hill_router)
 app.include_router(des_router)

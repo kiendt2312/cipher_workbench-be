@@ -13,8 +13,8 @@ chính `result` server trả về. Client chỉ nên kiểm tra sơ bộ để h
 
 Đội Frontend dùng
 [`repo_docs/frontend-integration.md`](repo_docs/frontend-integration.md) làm contract
-canonical, self-contained duy nhất cho cả 32 POST endpoint cipher, health và lịch sử.
-Tổng snapshot là 35 operations: 32 POST và ba GET (random Hill, health, history).
+canonical cho các cipher cũ. Contract mới về chữ ký RSA và lịch sử riêng tư nằm tại
+[`docs/rsa-signatures-private-history.md`](docs/rsa-signatures-private-history.md).
 Các file [`repo_docs/rsa-frontend-contract.md`](repo_docs/rsa-frontend-contract.md) và
 [`repo_docs/dh-frontend-contract.md`](repo_docs/dh-frontend-contract.md) chỉ là
 supporting reference theo feature.
@@ -22,10 +22,10 @@ supporting reference theo feature.
 ## 1. Tổng quan hành vi
 
 Ứng dụng chạy trong một tiến trình FastAPI trên cổng `8000`. Runtime phục vụ API
-và OpenAPI; không có authentication hay session, và không lưu
-input, key, tên file, nội dung file hay kết quả sau request. Khi đặt `DATABASE_URL`,
-app ghi thêm **metadata** của mỗi request cipher vào SQLite cục bộ trên backend
-(xem mục 9.1).
+và OpenAPI; không có account/login. Khi đặt `DATABASE_URL`, app lưu lịch sử riêng
+theo anonymous browser-profile cookie: cipher cũ chỉ lưu metadata, còn RSA sign/verify
+lưu payload public cần thiết và bytes đã ký nhưng không bao giờ lưu private key, `d`,
+passphrase hay trace bí mật (xem mục 9.1).
 
 ```text
 JSON text hoặc multipart .txt
@@ -211,8 +211,8 @@ Hello World      + 133457799BBCDFF1 (text, CBC, IV 0…0)     → B1CA74BB351426
 
 ### 2.7 Textbook RSA (chỉ dùng để học)
 
-RSA dùng số nguyên Python và phép lũy thừa modulo trực tiếp, không OAEP, không
-PKCS#1 v1.5, không chữ ký và không serialization khóa. Khóa ngẫu nhiên chỉ có
+Các route encrypt/decrypt RSA cũ dùng số nguyên Python và phép lũy thừa modulo trực
+tiếp, không OAEP hay serialization khóa. Khóa ngẫu nhiên chỉ có
 modulus đúng 16/32/64/128 bit, vì vậy **không an toàn cho dữ liệu thật**. Server
 không thể xác thực ciphertext, private key hoặc metadata; khóa/metadata sai vẫn có
 thể tạo plaintext hợp lệ quan sát được.
@@ -243,6 +243,12 @@ POST /api/rsa/decrypt
 Lỗi RSA có đúng `{success:false,code,message,field}` với status 413/415/422/500;
 field lạ, trùng hoặc không áp dụng đều bị từ chối.
 
+RSA còn có bốn route chữ ký: `/api/rsa/sign/raw`, `/api/rsa/verify/raw`,
+`/api/rsa/sign`, `/api/rsa/verify`. Raw mode minh họa `m^d mod n`; standard mode dùng
+RSA-PSS/SHA-256 với PEM import và ký đúng UTF-8/original `.txt` bytes. Xem contract,
+examples và OpenSSL interop tại
+[`docs/rsa-signatures-private-history.md`](docs/rsa-signatures-private-history.md).
+
 ### 2.8 Diffie–Hellman standalone và integration Caesar
 
 DH là feature độc lập ngang cấp Caesar: năm endpoint đầu sinh/kiểm tra tham số,
@@ -263,7 +269,7 @@ tái dùng claim deterministic `<2^64` của RSA. Factorization tham số tùy �
 tài nguyên dù đã bounded và chạy ngoài event loop; xem
 [`docs/dh-engineering-evidence.md`](docs/dh-engineering-evidence.md).
 
-## 3. API: 33 endpoint (32 POST, 1 GET)
+## 3. API
 
 | Cipher | Method và path | Request | Vai trò |
 |---|---|---|---|
@@ -294,6 +300,10 @@ tài nguyên dù đã bounded và chạy ngoài event loop; xem
 | RSA | `POST /api/rsa/keys/random` | JSON | Sinh modulus đúng 16/32/64/128 bit |
 | RSA | `POST /api/rsa/encrypt` | JSON hoặc multipart | Mã hóa number/text hoặc plaintext `.txt` |
 | RSA | `POST /api/rsa/decrypt` | JSON | Giải mã number/text từ cipher package |
+| RSA signature | `POST /api/rsa/sign/raw` | JSON | Ký integer textbook và trả trace |
+| RSA signature | `POST /api/rsa/verify/raw` | JSON | Kiểm tra integer textbook và trả trace |
+| RSA signature | `POST /api/rsa/sign` | JSON hoặc multipart | RSA-PSS/SHA-256 cho text hoặc `.txt` bytes |
+| RSA signature | `POST /api/rsa/verify` | JSON hoặc multipart | Verify RSA-PSS; mismatch trả `valid=false` |
 | DH | `POST /api/dh/params` | JSON | Kiểm tra q/alpha thủ công, alpha có thể bỏ để lấy suggestion |
 | DH | `POST /api/dh/params/random` | JSON | Sinh safe-prime group 16/32/64/128 bit |
 | DH | `POST /api/dh/keypair` | JSON | Sinh hoặc kiểm tra private key và trả public key/trace |
@@ -317,9 +327,9 @@ encrypt/decrypt/file (content mode) trả `{success,result,warnings}`; `/trace` 
 thêm `trace`. Lỗi DES dùng envelope hai trường `{success,message}` như năm cipher cổ
 điển, không có `code`. Chi tiết ở §3.3 và §4.1.
 
-RSA chỉ có đúng bốn POST route trên, không có `/file`, `/trace`, download hay history
-route riêng; metadata transform được đọc qua `GET /api/history` chung. `/encrypt` là
-route duy nhất nhận cả JSON và multipart; mọi response RSA kể cả file encrypt đều là JSON.
+Các route RSA encrypt/decrypt cũ giữ nguyên contract. Bốn route signature mới dùng
+contract riêng và history owner-scoped; file sign/verify dùng multipart nhưng response
+vẫn là JSON.
 
 ### 3.1 Text JSON
 
@@ -644,8 +654,8 @@ preview thành file thay thế.
 - Health: `GET /api/health` trả `{"success":true,"result":{"app":"ok","database":…}}`
   với `database` là `ok`, `unavailable` (HTTP 503) hoặc `disabled` (không có
   `DATABASE_URL`).
-- Lịch sử: `GET /api/history?limit=&cursor=&cipher=&operation=` trả metadata thao
-  tác, mới nhất trước; contract chi tiết nằm trong `repo_docs/frontend-integration.md`.
+- Lịch sử: list/detail/content download/delete được owner-scope bằng browser-profile
+  cookie; contract chi tiết nằm trong `docs/rsa-signatures-private-history.md`.
 - Request guard có trần hạ tầng `64 MiB` cho một `Content-Length` decimal hợp lệ;
   trần này không thay đổi giới hạn nghiệp vụ file 5 MiB. Cả sáu route file (năm cipher
   cổ điển và DES) được phân loại bằng file-size message và multipart-completion guard;
@@ -778,47 +788,50 @@ volume là dữ liệu history, còn PostgreSQL legacy chỉ được retire the
 project-scoped sau backup/restore/reconciliation. Xem
 [`docs/sqlite-history-runbook.md`](docs/sqlite-history-runbook.md).
 
-Bảng `cipher_operations` chỉ lưu metadata: cipher, operation, nguồn text/file,
-response mode, độ dài input/output (code point cho text, byte UTF-8 cho file),
-HTTP status, thành công hay lỗi và thời gian xử lý. Không lưu plaintext,
-ciphertext, key, tên file, nội dung file, IP hay user agent. Với RSA, bảng cũng không
-lưu `p/q/e/d`, public/private key, `data`, cipher array, `textMetadata`,
-`originalUtf8ByteLength` hoặc trace Euclid/per-bit. Ghi lịch sử là
-best-effort: DB lỗi hoặc chậm quá 500 ms thì bản ghi bị bỏ qua, response cipher
-không đổi.
+Bảng legacy `cipher_operations` chỉ còn chứa metadata chưa hết hạn từ trước migration
+và không được gán cho phiên mới. Bảng `private_history_records` chứa metadata có
+`owner_id` cho mọi route được ghi. Chỉ RSA sign/verify được lưu thêm original content,
+signature, public key và kết quả; không bảng nào lưu private key, `d`, passphrase hoặc
+secret-bearing trace. Ghi metadata của cipher cũ vẫn best-effort; RSA sign/verify trả
+trạng thái `history.saved/reason` quan sát được và không làm mất kết quả crypto khi DB lỗi.
 
-Có 23 route biến đổi được ghi: encrypt/decrypt/file của năm cipher cổ điển và DES,
+Có 23 route biến đổi cũ được ghi: encrypt/decrypt/file của năm cipher cổ điển và DES,
 encrypt/decrypt của Hill, cùng hai transform RSA. RSA encrypt JSON có `source=text`,
 encrypt multipart `.txt` có `source=file`, decrypt có `source=text`; `responseMode`
 luôn null. JSON RSA text encrypt chỉ ghi `inputLength` code point, text decrypt chỉ
 ghi `outputLength` code point, multipart chỉ ghi `inputLength` raw byte; phía cipher
 array và number để length null. Chỉ `/api/dh/caesar` ghi metadata DH; năm route DH
 còn lại không ghi, và không tham số/khóa/content/file/trace/warning nào được lưu.
-Hai route khóa Hill/RSA và `/api/des/trace` không ghi.
+Hai route khóa Hill/RSA và `/api/des/trace` không ghi. Bốn route RSA sign/verify mới
+ghi các kết quả hoàn tất, gồm cả verification `valid=false`; request bị reject hoặc
+key không hợp lệ không ghi payload.
 
 SQLite dùng baseline riêng ở effective schema có đủ `des` và `rsa`; không chạy hoặc
 stamp chuỗi PostgreSQL `0001`–`0004` trên file SQLite. PostgreSQL legacy chỉ được đọc
 trong transfer/reconciliation. Cutover và rollback/retirement theo runbook, không
 dùng destructive SQLite downgrade làm production rollback.
 
-Project không có authentication, nên việc đọc lịch sử được khóa bằng cấu hình:
+Project không có account/login. Lịch sử dùng anonymous server-issued bearer cookie:
 
 | Biến | Mặc định | Ý nghĩa |
 |---|---|---|
-| `HISTORY_API_ENABLED` | tắt | `true`/`1`/`yes`/`on` mới bật `GET /api/history`; khi tắt endpoint trả 404, việc ghi lịch sử vẫn chạy. Khi bật, app log một cảnh báo lúc khởi động vì endpoint không có xác thực |
-| `HISTORY_RETENTION_DAYS` | `30` | Bản ghi cũ hơn số ngày này bị xóa (1 đến 3650; giá trị sai làm app không khởi động) |
+| `HISTORY_API_ENABLED` | tắt | `true`/`1`/`yes`/`on` bật API list/detail/download/delete; khi tắt endpoint trả 404, việc ghi vẫn chạy |
+| `HISTORY_COOKIE_SECURE` | `true` | Chỉ gửi owner cookie qua HTTPS; chỉ đặt `false` cho local HTTP |
+| `HISTORY_PROFILE_SIGNING_KEY` | bắt buộc khi có DB | 64 ký tự hex (256 bit) ký anonymous profile cookie; giữ ổn định qua restart và xoay key sẽ làm cookie cũ mất quyền truy cập |
 | `CORS_ALLOW_ORIGINS` | rỗng | Danh sách origin FE chính xác, cách nhau bằng dấu phẩy, ví dụ `https://app.example.com,http://localhost:5173`. Rỗng thì không gửi header CORS. Không nhận `*`, wildcard hay dấu `/` cuối; giá trị sai làm app không khởi động |
 
-`.env.example` bật `HISTORY_API_ENABLED=true` cho môi trường dev. **Trên mọi môi
-trường dùng chung hoặc public, để biến này tắt** (không đặt hoặc `false`).
+`.env.example` bật `HISTORY_API_ENABLED=true` và tắt Secure cookie cho local HTTP.
+Mọi deployment HTTPS phải giữ `HISTORY_COOKIE_SECURE=true`; FE cross-origin phải gửi
+credentials và dùng một origin nằm trong allow-list.
 `/api/health` trả thêm `history: "enabled" | "disabled"`.
 
-App tự xóa bản ghi quá hạn lúc khởi động và mỗi 6 giờ, nên một bản ghi có thể tồn
-tại tối đa 30 ngày + 6 giờ. Chạy xóa ngay bằng tay:
+App lọc mọi read/download theo cutoff gốc và tự xóa bản ghi quá năm giờ lúc khởi
+động rồi định kỳ. Quota logical là 50 MiB/profile và 500 MiB/system với FIFO eviction.
+Chạy purge ngay bằng tay:
 
 ```bash
 docker compose exec app python -m app.history.retention
-# Deleted 0 history rows older than 30 days
+# Deleted 0 expired history rows
 ```
 
 Container chạy trực tiếp Uvicorn; repository không cấu hình production reverse
@@ -857,10 +870,13 @@ app/
 │   ├── routes_des.py               # DES encrypt/decrypt/trace JSON
 │   ├── routes_des_file.py          # DES multipart strict
 │   ├── des_schemas.py              # decoder/validator DES strict
-│   ├── routes_rsa.py               # bốn endpoint RSA JSON/multipart
+│   ├── routes_rsa.py               # bốn endpoint RSA encrypt/decrypt/key
+│   ├── routes_rsa_signatures.py    # raw + RSA-PSS sign/verify
+│   ├── rsa_signature_schemas.py    # contract chữ ký strict
 │   ├── rsa_schemas.py              # decoder/validator RSA strict
 │   ├── routes_health.py            # GET /api/health
-│   ├── routes_history.py           # GET /api/history
+│   ├── routes_history.py           # list/detail/download/delete history riêng tư
+│   ├── history_profile.py          # anonymous profile cookie middleware
 │   ├── history_recorder.py         # middleware ghi metadata sau response
 │   ├── schemas.py                  # parse/validation và response schema
 │   └── request_size_guard.py       # 64 MiB + multipart completion guards
@@ -868,17 +884,18 @@ app/
 │   └── file_processing.py          # size, UTF-8/BOM và filename helpers
 ├── db/
 │   ├── engine.py                   # async engine, session factory, ping
-│   └── models.py                   # bảng cipher_operations
+│   └── models.py                   # legacy + private history tables
 ├── history/
-│   ├── routes.py                   # 23 route biến đổi được ghi lịch sử
+│   ├── routes.py                   # 23 route biến đổi cũ được ghi lịch sử
 │   ├── cursor.py                   # cursor phân trang opaque
-│   └── store.py                    # ghi/đọc cipher_operations
+│   ├── signatures.py               # adapter lưu kết quả RSA signature
+│   └── store.py                    # TTL/quota/FIFO/ownership storage
 └── errors/
     ├── messages.py                 # message public canonical
     ├── exceptions.py               # lỗi ứng dụng có status
     └── handlers.py                 # JSON envelope và log an toàn
 
-alembic/                            # chuỗi migration PostgreSQL legacy 0001-0004
+alembic/                            # PostgreSQL legacy source migrations (retired runtime)
 alembic_sqlite/                     # baseline/migration SQLite riêng
 alembic_sqlite.ini                  # uv run alembic -c ... upgrade head
 docker-compose.yml                  # migrate + one-process app + local data volume
@@ -901,14 +918,17 @@ UI thuộc project FE riêng, là consumer tách biệt tích hợp theo
 
 Ngoài phạm vi hiện tại:
 
-- authentication, authorization, session và lịch sử theo từng user trên server;
-- lưu nội dung người dùng (input, key, file, kết quả) vào database;
+- account/login, PKI identity và lịch sử theo user; history chỉ dùng anonymous signed
+  browser-profile credential;
+- lưu nội dung người dùng cho các cipher cũ; ngoại lệ có chủ đích là RSA sign/verify
+  lưu original content/signature/public key/result tối đa 5 giờ;
 - cipher khác ngoài tám cipher này, autokey Vigenère, Playfair 6×6 hoặc Playfair Unicode/lossless;
 - 3DES, AES, các chế độ CFB/OFB/CTR, sinh khóa từ mật khẩu (KDF), xác thực bản mã
   (MAC), kiểm tra/tự sửa bit chẵn lẻ của khóa DES và demo thám mã DES;
 - phục hồi format hoặc `J` khi decrypt Playfair, và phân biệt chữ thật với ký tự đệm
   trùng mẫu (bản lọc `padding.filtered` có thể bỏ nhầm; `result` luôn là bản thô);
-- CORS có credentials (cookie) hoặc mở cho mọi origin;
+- CORS wildcard/mọi origin; credentialed CORS chỉ hỗ trợ exact origin trong
+  `CORS_ALLOW_ORIGINS`;
 - production reverse proxy, TLS, rate limiting, cloud deployment và CI/CD;
 - streaming file lớn hơn giới hạn nghiệp vụ.
 

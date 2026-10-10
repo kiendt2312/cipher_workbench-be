@@ -58,7 +58,7 @@ def test_cipher_route_inventory_includes_hill_without_a_file_route() -> None:
     }
     post_count = sum("post" in operations for operations in cipher_paths.values())
     get_count = sum("get" in operations for operations in cipher_paths.values())
-    assert post_count == 32
+    assert post_count == 36
     assert get_count == 1
     assert "/api/hill/file" not in cipher_paths
     assert {
@@ -72,6 +72,10 @@ def test_cipher_route_inventory_includes_hill_without_a_file_route() -> None:
         "/api/rsa/keys/random",
         "/api/rsa/encrypt",
         "/api/rsa/decrypt",
+        "/api/rsa/sign/raw",
+        "/api/rsa/verify/raw",
+        "/api/rsa/sign",
+        "/api/rsa/verify",
     } <= cipher_paths.keys()
 
 
@@ -130,15 +134,18 @@ def test_additional_cipher_results_are_stateless() -> None:
     )
 
 
-def test_no_session_cookie_or_stored_state_is_created() -> None:
+def test_only_history_scoped_requests_receive_anonymous_profile_cookie() -> None:
     with TestClient(app) as client:
         docs = client.get("/docs")
         response = client.post("/api/caesar/encrypt", json={"text": "Hi", "key": 1})
-    for headers in (docs.headers, response.headers):
-        assert "set-cookie" not in headers
+    assert "set-cookie" not in docs.headers
+    cookie = response.headers["set-cookie"]
+    assert cookie.startswith("cw_history_profile=")
+    assert "HttpOnly" in cookie
+    assert "SameSite=Lax" in cookie
 
 
-def test_only_metadata_history_route_exists_and_no_previous_results() -> None:
+def test_private_history_routes_expose_metadata_and_scoped_detail() -> None:
     with TestClient(app) as client:
         schema = client.get("/openapi.json").json()
         missing = client.get("/api/caesar/encrypt")
@@ -147,7 +154,11 @@ def test_only_metadata_history_route_exists_and_no_previous_results() -> None:
         for path in schema["paths"]
         if any(token in path.lower() for token in ("history", "record", "log", "session"))
     }
-    assert stateful == {"/api/history"}
+    assert stateful == {
+        "/api/history",
+        "/api/history/{operation_id}",
+        "/api/history/{operation_id}/content",
+    }
     item_fields = set(schema["components"]["schemas"]["HistoryItem"]["properties"])
-    assert not item_fields & {"text", "result", "key", "a", "b", "filename", "content"}
+    assert not item_fields & {"text", "payload", "key", "a", "b", "filename", "content"}
     assert missing.status_code == 405

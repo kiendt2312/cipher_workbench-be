@@ -20,6 +20,10 @@ RSA_PATHS = frozenset(
         "/api/rsa/keys/random",
         "/api/rsa/encrypt",
         "/api/rsa/decrypt",
+        "/api/rsa/sign/raw",
+        "/api/rsa/verify/raw",
+        "/api/rsa/sign",
+        "/api/rsa/verify",
     }
 )
 DH_PATHS = frozenset(

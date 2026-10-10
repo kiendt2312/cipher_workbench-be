@@ -307,7 +307,7 @@ def test_media_type_framework_and_unexpected_errors_use_rsa_envelope(
     assert "secret operand" not in failed.text
 
 
-def test_openapi_has_exact_four_rsa_posts_and_contract_shapes(client: TestClient) -> None:
+def test_openapi_has_rsa_transform_and_signature_contract_shapes(client: TestClient) -> None:
     schema = client.get("/openapi.json").json()
     rsa_paths = {
         path: value for path, value in schema["paths"].items() if path.startswith("/api/rsa")
@@ -317,6 +317,10 @@ def test_openapi_has_exact_four_rsa_posts_and_contract_shapes(client: TestClient
         "/api/rsa/keys/random",
         "/api/rsa/encrypt",
         "/api/rsa/decrypt",
+        "/api/rsa/sign/raw",
+        "/api/rsa/verify/raw",
+        "/api/rsa/sign",
+        "/api/rsa/verify",
     }
     assert all(set(operations) == {"post"} for operations in rsa_paths.values())
     encrypt_content = rsa_paths["/api/rsa/encrypt"]["post"]["requestBody"]["content"]

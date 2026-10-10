@@ -749,6 +749,20 @@ def test_existing_sqlite_baseline_can_be_verified_with_injected_manifest(tmp_pat
     )
     assert report.manifest == manifest
 
+    backup_path = tmp_path / "baseline-backup.sqlite3"
+    backup = backup_sqlite_live(
+        path,
+        backup_path,
+        expected_manifest=manifest,
+        expected_manifest_digest=manifest.digest,
+    )
+    backed_up = verify_staging(
+        backup_path,
+        expected_manifest_digest=backup.backup_digest,
+        expected_schema_revision="sqlite_0002",
+    )
+    assert backed_up.manifest.private_count is None
+
 
 def test_corrupt_backup_is_rejected_without_touching_separate_target(tmp_path: Path) -> None:
     original = _import(tmp_path / "source.sqlite3", [_row(1)])

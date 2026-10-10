@@ -67,6 +67,30 @@ RESPONSE_MODES: Final = ("content", "file")
 
 ROWS_STREAM_HEADER: Final = b"cipher-workbench/history-rows/v1\n"
 IDS_STREAM_HEADER: Final = b"cipher-workbench/history-id-set/v1\n"
+PRIVATE_ROWS_STREAM_HEADER: Final = b"cipher-workbench/private-history-rows/v1\n"
+PRIVATE_HISTORY_COLUMNS: Final = (
+    "id",
+    "owner_id",
+    "created_at",
+    "cipher",
+    "operation",
+    "source",
+    "response_mode",
+    "input_length",
+    "output_length",
+    "http_status",
+    "succeeded",
+    "duration_ms",
+    "content_bytes",
+    "content_kind",
+    "numeric_input_json",
+    "signature_json",
+    "public_key_json",
+    "result_json",
+    "validity",
+    "processing_state",
+    "logical_size",
+)
 
 # The table intentionally uses INTEGER PRIMARY KEY AUTOINCREMENT.  It is not
 # enough to rely on SQLite affinity for transfer validation, so every value also
@@ -106,6 +130,46 @@ CREATE INDEX ix_cipher_operations_created_at_id
     ON cipher_operations (created_at DESC, id DESC);
 CREATE INDEX ix_cipher_operations_cipher_created_at
     ON cipher_operations (cipher, created_at DESC, id DESC);
+
+CREATE TABLE private_history_records (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_id TEXT,
+    created_at BIGINT NOT NULL,
+    cipher TEXT NOT NULL CHECK(cipher IN (
+        'caesar', 'vigenere', 'playfair', 'affine', 'columnar',
+        'hill', 'des', 'rsa', 'dh'
+    )),
+    operation TEXT
+        CHECK(operation IS NULL OR operation IN ('encrypt', 'decrypt', 'sign', 'verify')),
+    source TEXT NOT NULL CHECK(source IN ('text', 'file')),
+    response_mode TEXT CHECK(response_mode IS NULL OR response_mode IN ('content', 'file')),
+    input_length INTEGER CHECK(input_length IS NULL OR input_length >= 0),
+    output_length INTEGER CHECK(output_length IS NULL OR output_length >= 0),
+    http_status INTEGER NOT NULL,
+    succeeded INTEGER NOT NULL CHECK(succeeded IN (0, 1)),
+    duration_ms INTEGER NOT NULL CHECK(duration_ms >= 0),
+    content_bytes BLOB,
+    content_kind TEXT,
+    numeric_input_json TEXT,
+    signature_json TEXT,
+    public_key_json TEXT,
+    result_json TEXT,
+    validity INTEGER CHECK(validity IS NULL OR validity IN (0, 1)),
+    processing_state TEXT,
+    logical_size BIGINT NOT NULL CHECK(logical_size >= 0),
+    CONSTRAINT ck_private_history_rsa_operation CHECK(
+        operation IS NULL OR operation IN ('encrypt', 'decrypt')
+        OR (cipher = 'rsa' AND operation IN ('sign', 'verify'))
+    ),
+    CONSTRAINT ck_private_history_owner_nonempty CHECK(
+        owner_id IS NULL OR length(owner_id) > 0
+    )
+);
+
+CREATE INDEX ix_private_history_owner_created_at_id
+    ON private_history_records (owner_id, created_at DESC, id DESC);
+CREATE INDEX ix_private_history_created_at_id
+    ON private_history_records (created_at ASC, id ASC);
 
 CREATE TABLE history_continuity_meta (
     key TEXT PRIMARY KEY
@@ -435,7 +499,7 @@ def _canonical_integer(value: int) -> bytes:
 
 
 def _frame(type_tag: bytes, payload: bytes) -> bytes:
-    if len(type_tag) != 1 or type_tag not in b"Risbnt":
+    if len(type_tag) != 1 or type_tag not in b"Risbntx":
         raise ValueError("invalid canonical type tag")
     return type_tag + _canonical_integer(len(payload)) + b":" + payload
 
@@ -491,6 +555,35 @@ def row_digest(rows: Iterable[HistoryInput]) -> str:
     return hashlib.sha256(canonical_rows_bytes(rows)).hexdigest()
 
 
+def _private_value_frame(value: object) -> bytes:
+    if value is None:
+        return _frame(b"n", b"")
+    if type(value) is int:
+        return _frame(b"i", _canonical_integer(value))
+    if type(value) is str:
+        return _frame(b"s", value.encode("utf-8"))
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return _frame(b"x", bytes(value))
+    raise VerificationError("private history row contains an unsupported SQLite value")
+
+
+def private_history_digest(rows: Iterable[Sequence[object]]) -> str:
+    """Digest every stored private-history field without exposing payload data."""
+
+    normalized = tuple(tuple(row) for row in rows)
+    previous_id = 0
+    frames: list[bytes] = []
+    for row in normalized:
+        if len(row) != len(PRIVATE_HISTORY_COLUMNS):
+            raise VerificationError("private history row shape is invalid")
+        row_id = row[0]
+        if type(row_id) is not int or row_id <= previous_id:
+            raise VerificationError("private history rows are not strictly ordered")
+        previous_id = row_id
+        frames.append(_frame(b"R", b"".join(_private_value_frame(value) for value in row)))
+    return hashlib.sha256(PRIVATE_ROWS_STREAM_HEADER + b"".join(frames)).hexdigest()
+
+
 def id_set_digest(rows_or_ids: Iterable[HistoryInput] | Iterable[int]) -> str:
     values = tuple(rows_or_ids)
     if all(isinstance(value, int) and type(value) is not bool for value in values):
@@ -526,6 +619,8 @@ class Manifest:
     identity_last_issued: int
     id_set_digest: str
     row_digest: str
+    private_count: int | None = None
+    private_row_digest: str | None = None
     format_version: str = FORMAT_VERSION
     identity_source: str = "postgresql"
 
@@ -563,6 +658,13 @@ class Manifest:
             raise ValueError("manifest identity last-issued value is invalid")
         _validate_digest(self.id_set_digest, "id_set_digest")
         _validate_digest(self.row_digest, "row_digest")
+        if (self.private_count is None) != (self.private_row_digest is None):
+            raise ValueError("private history manifest fields must be supplied together")
+        if self.private_count is not None:
+            if type(self.private_count) is not int or self.private_count < 0:
+                raise ValueError("private history count must be non-negative")
+            assert self.private_row_digest is not None
+            _validate_digest(self.private_row_digest, "private_row_digest")
 
     @classmethod
     def from_rows(
@@ -580,6 +682,7 @@ class Manifest:
             if isinstance(identity, IdentityState)
             else IdentityState.from_mapping(identity)
         )
+        include_private = schema_revision == "sqlite_0003"
         return cls(
             source_revision=_validate_revision(source_revision, "source_revision"),
             schema_revision=_validate_revision(schema_revision, "schema_revision"),
@@ -593,6 +696,8 @@ class Manifest:
             identity_last_issued=state.last_issued_high_water,
             id_set_digest=id_set_digest(normalized),
             row_digest=row_digest(normalized),
+            private_count=0 if include_private else None,
+            private_row_digest=private_history_digest(()) if include_private else None,
         )
 
     @classmethod
@@ -605,6 +710,7 @@ class Manifest:
         schema_revision: str | None,
         snapshot_epoch_us: int,
         identity_source: str = "sqlite",
+        private_rows: Iterable[Sequence[object]] | None = None,
     ) -> Manifest:
         """Build a manifest from a completed SQLite snapshot.
 
@@ -616,6 +722,9 @@ class Manifest:
         normalized = normalize_history_rows(rows)
         if type(sequence) is not int or not 0 <= sequence <= MAX_ROW_ID:
             raise VerificationError("SQLite sequence is outside the supported range")
+        normalized_private = (
+            None if private_rows is None else tuple(tuple(row) for row in private_rows)
+        )
         return cls(
             source_revision=source_revision,
             schema_revision=schema_revision,
@@ -629,6 +738,10 @@ class Manifest:
             identity_last_issued=sequence,
             id_set_digest=id_set_digest(normalized),
             row_digest=row_digest(normalized),
+            private_count=None if normalized_private is None else len(normalized_private),
+            private_row_digest=(
+                None if normalized_private is None else private_history_digest(normalized_private)
+            ),
             identity_source=identity_source,
         )
 
@@ -639,7 +752,7 @@ class Manifest:
         return hashlib.sha256(self.canonical_bytes()).hexdigest()
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        value: dict[str, object] = {
             "format_version": self.format_version,
             "source_revision": self.source_revision,
             "schema_revision": self.schema_revision,
@@ -657,6 +770,12 @@ class Manifest:
             "id_set_digest": self.id_set_digest,
             "row_digest": self.row_digest,
         }
+        if self.private_count is not None:
+            value["private_history"] = {
+                "count": self.private_count,
+                "row_digest": self.private_row_digest,
+            }
+        return value
 
     def canonical_bytes(self) -> bytes:
         return json.dumps(
@@ -673,6 +792,9 @@ class Manifest:
             identity = value["identity"]
             if not isinstance(identity, Mapping):
                 raise ValueError("manifest identity must be an object")
+            private = value.get("private_history")
+            if private is not None and not isinstance(private, Mapping):
+                raise ValueError("manifest private_history must be an object")
             return cls(
                 format_version=value["format_version"],
                 source_revision=value.get("source_revision"),
@@ -687,6 +809,8 @@ class Manifest:
                 identity_last_issued=identity["last_issued"],
                 id_set_digest=value["id_set_digest"],
                 row_digest=value["row_digest"],
+                private_count=None if private is None else private["count"],
+                private_row_digest=None if private is None else private["row_digest"],
                 identity_source=identity.get("source", "postgresql"),
             )
         except (KeyError, TypeError) as exc:
@@ -1055,6 +1179,15 @@ def _check_schema(connection: sqlite3.Connection) -> None:
         sql_row = connection.execute(
             "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'cipher_operations'"
         ).fetchone()
+        private_columns = connection.execute(
+            "PRAGMA table_info(private_history_records)"
+        ).fetchall()
+        private_indexes = {
+            row[1] for row in connection.execute("PRAGMA index_list(private_history_records)")
+        }
+        schema_revisions = {
+            row[0] for row in connection.execute("SELECT version_num FROM alembic_version")
+        }
     except sqlite3.Error as exc:
         raise VerificationError("SQLite schema inspection failed") from exc
     expected_types = {
@@ -1072,6 +1205,40 @@ def _check_schema(connection: sqlite3.Connection) -> None:
     }
     if [row[1] for row in columns] != list(HISTORY_COLUMNS):
         raise VerificationError("history schema columns do not match the eleven-field contract")
+    expected_private_columns = [
+        "id",
+        "owner_id",
+        "created_at",
+        "cipher",
+        "operation",
+        "source",
+        "response_mode",
+        "input_length",
+        "output_length",
+        "http_status",
+        "succeeded",
+        "duration_ms",
+        "content_bytes",
+        "content_kind",
+        "numeric_input_json",
+        "signature_json",
+        "public_key_json",
+        "result_json",
+        "validity",
+        "processing_state",
+        "logical_size",
+    ]
+    if schema_revisions == {"sqlite_0003"}:
+        if [row[1] for row in private_columns] != expected_private_columns:
+            raise VerificationError("private history schema columns are incomplete")
+        if (
+            not {
+                "ix_private_history_owner_created_at_id",
+                "ix_private_history_created_at_id",
+            }
+            <= private_indexes
+        ):
+            raise VerificationError("private history schema indexes are incomplete")
     expected_nullability = {
         "id": False,
         "created_at": True,
@@ -1206,6 +1373,22 @@ def _rows_from_connection(connection: sqlite3.Connection) -> tuple[HistoryRow, .
         raise VerificationError("history row violates the continuity contract") from exc
 
 
+def _private_rows_from_connection(
+    connection: sqlite3.Connection,
+) -> tuple[tuple[object, ...], ...]:
+    try:
+        values = connection.execute(
+            f"SELECT {', '.join(PRIVATE_HISTORY_COLUMNS)} "
+            "FROM private_history_records ORDER BY id ASC"
+        ).fetchall()
+    except sqlite3.Error as exc:
+        raise VerificationError("private history rows are unavailable") from exc
+    rows = tuple(tuple(row) for row in values)
+    # Canonicalization is also the strict row-shape/type/order check.
+    private_history_digest(rows)
+    return rows
+
+
 def _manifest_from_metadata(metadata: Mapping[str, str]) -> Manifest:
     try:
         manifest = Manifest.from_dict(json.loads(metadata["manifest_json"]))
@@ -1255,6 +1438,13 @@ def verify_staging(
             raise VerificationError("continuity manifest evidence is missing")
         _check_revision_presence(connection, manifest)
         rows = _rows_from_connection(connection)
+        private_rows = (
+            _private_rows_from_connection(connection)
+            if manifest.private_count is not None or manifest.schema_revision == "sqlite_0003"
+            else None
+        )
+        if manifest.schema_revision == "sqlite_0003" and manifest.private_count is None:
+            raise VerificationError("private history manifest evidence is missing")
         actual_count = len(rows)
         actual_min = rows[0].id if rows else None
         actual_max = rows[-1].id if rows else None
@@ -1266,6 +1456,11 @@ def verify_staging(
             or manifest.row_digest != row_digest(rows)
         ):
             raise VerificationError("history row count, range, ID set, or digest mismatch")
+        if private_rows is not None and (
+            manifest.private_count != len(private_rows)
+            or manifest.private_row_digest != private_history_digest(private_rows)
+        ):
+            raise VerificationError("private history row count or digest mismatch")
         try:
             sequence_row = connection.execute(
                 "SELECT seq FROM sqlite_sequence WHERE name = 'cipher_operations'"
@@ -1561,6 +1756,11 @@ def backup_sqlite_live(
         )
         remaining_backup_time()
         source_rows = _rows_from_connection(source_connection)
+        source_private_rows = (
+            _private_rows_from_connection(source_connection)
+            if schema_provenance == "sqlite_0003"
+            else None
+        )
         remaining_backup_time()
         source_sequence = _read_sqlite_sequence(source_connection)
         remaining_backup_time()
@@ -1578,6 +1778,9 @@ def backup_sqlite_live(
                 schema_revision=schema_provenance,
                 snapshot_epoch_us=guard_manifest.snapshot_epoch_us,
                 identity_source=guard_identity_source,
+                private_rows=(
+                    source_private_rows if guard_manifest.private_count is not None else None
+                ),
             )
             if guard.digest != expected_manifest_digest:
                 raise VerificationError("optional pre-backup manifest guard failed")
@@ -1613,7 +1816,6 @@ def backup_sqlite_live(
         _check_schema(destination_connection)
         remaining_backup_time()
         destination_rows = _rows_from_connection(destination_connection)
-        remaining_backup_time()
         destination_sequence = _read_sqlite_sequence(destination_connection)
         remaining_backup_time()
         destination_source, destination_schema, _ = _snapshot_provenance(
@@ -1623,12 +1825,21 @@ def backup_sqlite_live(
             schema_revision=schema_provenance,
         )
         remaining_backup_time()
+        destination_private_rows = (
+            _private_rows_from_connection(destination_connection)
+            if destination_schema == "sqlite_0003"
+            else None
+        )
+        remaining_backup_time()
         destination_manifest = Manifest.from_sqlite_snapshot(
             destination_rows,
             destination_sequence,
             source_revision=destination_source,
             schema_revision=destination_schema,
             snapshot_epoch_us=datetime_to_epoch_microseconds(datetime.now(UTC)),
+            private_rows=(
+                destination_private_rows if destination_schema == "sqlite_0003" else None
+            ),
         )
         _set_sqlite_sequence(destination_connection, destination_sequence)
         _write_manifest_metadata(destination_connection, destination_manifest)
@@ -1727,6 +1938,12 @@ def restore_sqlite_backup(
                 "input_length, output_length, http_status, succeeded, duration_ms "
                 "FROM cipher_operations ORDER BY created_at DESC, id DESC LIMIT 1"
             ).fetchone()
+            if source_report.manifest.private_count is not None:
+                connection.execute(
+                    "SELECT id, owner_id, created_at, content_bytes, signature_json, "
+                    "public_key_json, result_json FROM private_history_records "
+                    "ORDER BY created_at DESC, id DESC LIMIT 1"
+                ).fetchone()
         finally:
             connection.close()
     except Exception:

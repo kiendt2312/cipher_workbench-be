@@ -8,6 +8,12 @@ backend này. Hai tài liệu [`rsa-frontend-contract.md`](rsa-frontend-contract
 [`dh-frontend-contract.md`](dh-frontend-contract.md) được giữ làm supporting reference
 theo feature; khi wording khác nhau, tài liệu hiện tại thắng và phải được cập nhật trước.
 
+> **RSA sign/verify và private history (2026-10-11):** đọc
+> [`../docs/rsa-signatures-private-history.md`](../docs/rsa-signatures-private-history.md).
+> Contract mới này thay thế mọi mô tả lịch sử public/30 ngày/không-cookie cũ còn nằm
+> trong các mục có ngày 2026-09-28 bên dưới. History hiện private theo browser profile,
+> giữ tối đa 5 giờ và hỗ trợ list/detail/download/delete.
+
 - Cập nhật: `2026-10-08`. Snapshot có đúng **35 operations**: 32 POST route cipher
   (gồm bốn RSA và sáu DH), `GET /api/hill/key/random`, `GET /api/health` và
   `GET /api/history` (history tùy chọn, dùng SQLite cục bộ trên backend).
@@ -80,6 +86,10 @@ Swagger để thử API: <http://localhost:8080/docs>.
 | POST | `/api/rsa/keys/random` | JSON integer `bits=16|32|64|128` | Key material gồm `p,q` |
 | POST | `/api/rsa/encrypt` | JSON number/text hoặc multipart plaintext | Full blocks/cipher + optional selected trace |
 | POST | `/api/rsa/decrypt` | JSON cipher package | Full blocks/plaintext + optional selected trace |
+| POST | `/api/rsa/sign/raw` | JSON `m,d,e,n` decimal string | Raw integer signature + bounded trace + history status |
+| POST | `/api/rsa/verify/raw` | JSON `m,signature,e,n` | Recovered integer + `valid` + bounded trace + history status |
+| POST | `/api/rsa/sign` | JSON UTF-8 text hoặc multipart `.txt` + PEM private key | RSASSA-PSS signature + derived public PEM + history status |
+| POST | `/api/rsa/verify` | JSON UTF-8 text hoặc multipart `.txt` + signature/public PEM | HTTP 200 `valid=true|false` + history status |
 | POST | `/api/dh/params` | JSON `q,alpha?` decimal string | Kiểm tham số; thiếu alpha chỉ trả suggestion |
 | POST | `/api/dh/params/random` | JSON integer `bits=16|32|64|128` | Safe-prime q/p, alpha và checks |
 | POST | `/api/dh/keypair` | JSON `q,alpha,privateKey?` | Private/public key và left-to-right trace |
@@ -93,9 +103,9 @@ POST analyze, không có `/api/hill/file`. DES có đủ encrypt/decrypt/file v�
 `/api/des/trace`. `action` là `encrypt`/`decrypt`; `response_mode` là `content`
 (mặc định) hoặc `file` và dùng cho năm cipher cũ và DES.
 
-RSA chỉ dùng bốn route exact ở bảng, không có route file/trace/history riêng. Hai
-transform xuất hiện trong `GET /api/history` chung; keygen không xuất hiện. File RSA
-chỉ là plaintext `.txt` gửi thẳng tới `/api/rsa/encrypt`; response luôn JSON.
+RSA transform cũ dùng bốn route keys/encrypt/decrypt; bốn route sign/verify mới theo
+contract riêng được link ở đầu tài liệu. Encrypt file gửi `.txt` tới `/api/rsa/encrypt`;
+sign/verify file dùng multipart trên `/api/rsa/sign|verify`. Keygen không ghi history.
 
 ### A.3 Khóa theo cipher
 
@@ -475,7 +485,8 @@ CORS_ALLOW_ORIGINS=https://app.example.com,http://localhost:5173
 ```
 
 - Chỉ đúng các origin trong danh sách được phép; không có `*`.
-- Chỉ `GET`, `POST` và header `Content-Type`; không gửi cookie/credentials.
+- Cho phép `GET`, `POST`, `DELETE` và header `Content-Type`; FE cross-origin phải gửi
+  cookie bằng `credentials: "include"` để giữ đúng browser-profile history.
 - Header `Content-Disposition` được expose, nên FE đọc được tên file từ response
   `response_mode=file`.
 - Response lỗi từ guard (ví dụ 413) vẫn có header CORS. Riêng lỗi 500 ngoài dự
@@ -503,7 +514,7 @@ curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080/   # 404
 
 FE không phải đổi code vì thay đổi này.
 
-### 0.1 Khóa lịch sử server, retention 30 ngày, lịch sử trên trình duyệt (`2026-09-28`)
+### 0.1 Lịch sử cũ (`2026-09-28`, đã bị contract 2026-10-11 thay thế)
 
 Project không có đăng nhập, nên:
 
@@ -511,10 +522,9 @@ Project không có đăng nhập, nên:
   "Lịch sử không được bật trên máy chủ này.". Môi trường dev (`.env.example`) bật
   sẵn; môi trường dùng chung hoặc public sẽ tắt.
 - `GET /api/health` có thêm `result.history`: `"enabled"` hoặc `"disabled"`.
-- Lịch sử server mặc định giữ 30 ngày; cấu hình `HISTORY_RETENTION_DAYS` cho phép
-  1–3650 ngày.
-- Lịch sử **cá nhân** của người dùng (xem lại input/kết quả của chính họ) do FE lưu
-  trên trình duyệt, không gửi lên server (mục 17).
+- Retention hiện cố định tối đa 5 giờ từ thời điểm tạo; read/reload/download không gia hạn.
+- Backend cấp cookie ẩn danh có chữ ký để cô lập lịch sử theo browser profile. FE không
+  tự khai báo owner và phải gửi credentials khi khác origin.
 
 **FE cần làm:**
 
@@ -2374,10 +2384,8 @@ Lỗi dùng envelope chung `{"success": false, "message": …}`:
 Lưu ý cho FE:
 
 - Lịch sử là best-effort: nếu DB lỗi đúng lúc, request đó có thể không xuất hiện.
-- Endpoint không có xác thực và trả lịch sử chung của cả instance, không theo user.
-  Vì vậy nó mặc định tắt; chỉ bật ở môi trường dev hoặc nội bộ.
-- Server mặc định giữ 30 ngày gần nhất, có thể cấu hình 1–3650 ngày bằng
-  `HISTORY_RETENTION_DAYS` (purge có thể lệch tối đa 6 giờ). Không có API xóa.
+- Endpoint dùng anonymous signed browser-profile credential; không trả dữ liệu profile khác.
+- Retention cố định tối đa 5 giờ, quota FIFO có thể xóa sớm hơn; có API xóa một hoặc tất cả.
 
 ### 16.4 Gợi ý UI cho màn hình lịch sử
 
@@ -3393,14 +3401,11 @@ FE lọc bằng URL tương đối:
 GET /api/history?cipher=rsa
 ```
 
-History không lưu plaintext, ciphertext, `p/q/e/d`, public/private key, `data`, cipher
-array, `originalUtf8ByteLength`, filename, file content, IP/user-agent, trace hoặc
-error message. Ghi là best-effort: DB tắt/lỗi/timeout hoặc schema chưa migrate có thể
-bỏ lỡ row nhưng không được làm thay đổi response RSA.
-
-`GET /api/history` là API chung, không có authentication và mặc định tắt trên môi
-trường dùng chung. Contract query, pagination, error và privacy chung nằm tại
-[mục 16 của guide](frontend-integration.md#16-health-và-lịch-sử-thao-tác).
+Đoạn trên chỉ mô tả RSA encrypt/decrypt metadata. RSA sign/verify lưu original bytes,
+signature, public key và result, nhưng không lưu private key, `d`, passphrase hay trace.
+`GET /api/history` được cô lập bằng anonymous signed browser-profile credential; xem
+contract private history mới được link ở đầu tài liệu cho list/detail/download/delete,
+TTL 5 giờ, quota và error behavior.
 
 ### 14. Giới hạn phát hiện khóa sai và tính giáo dục
 

@@ -54,7 +54,7 @@ uv run python -m app.history.postgres_source prepare \
   --staging "$STAGING_PATH" --runtime "$RUNTIME_PATH"
 uv run python -m app.history.continuity verify \
   --database "$STAGING_PATH" --expected-manifest-digest "$MANIFEST_DIGEST" \
-  --schema-revision sqlite_0001
+  --schema-revision sqlite_0003
 ```
 
 Hai command trên fail-closed nếu staging đã tồn tại, nguồn không ở revision `0004`,
@@ -108,11 +108,26 @@ uv run python -m app.history.continuity backup \
 uv run python -m app.history.continuity restore \
   --backup "$BACKUP_PATH" --target "$RESTORE_REHEARSAL_PATH" \
   --expected-manifest-digest "$BACKUP_MANIFEST_DIGEST" \
-  --schema-revision sqlite_0001
+  --schema-revision sqlite_0003
 ```
 
 Named volume giúp container restart nhưng không thay thế backup ngoài volume. Theo
 dõi dung lượng, inode, lỗi permission và tỷ lệ history write bị bỏ do contention.
+
+### Private history capacity và reclaim
+
+Runtime áp quota logical 50 MiB/browser profile và 500 MiB/toàn hệ thống, tính trên
+canonical UTF-8 envelope của từng row; đây không phải giới hạn kích thước file SQLite.
+FIFO eviction và TTL năm giờ giữ live logical data bounded. SQLite mặc định đưa page
+đã DELETE vào freelist để write sau tái sử dụng, nhưng file không nhất thiết co lại.
+
+Không chạy `VACUUM` trong request, startup hay purge loop: SQLite cần writer lock và
+có thể cần khoảng gấp đôi dung lượng file tạm thời. Khi operator cần thu nhỏ file,
+hãy dừng app, tạo và verify backup, kiểm tra free space, chạy `VACUUM` trên exact
+runtime file, rồi chạy `PRAGMA integrity_check` và smoke test trước khi mở traffic.
+Việc này là space reclamation vận hành, không mở rộng cam kết xóa forensic/backups.
+Sau restore, giữ nguyên `created_at`; read predicate chặn row quá năm giờ ngay cả
+trước khi purge vật lý chạy.
 
 ## 5. Rollback và fix-forward
 

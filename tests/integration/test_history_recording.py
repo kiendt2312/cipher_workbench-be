@@ -26,7 +26,9 @@ SENSITIVE_URL = "sqlite+aiosqlite:////tmp/missing-history.sqlite3"
 def recorded(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[OperationEntry]]:
     entries: list[OperationEntry] = []
 
-    async def fake_record(database: object, entry: OperationEntry) -> None:
+    async def fake_record(
+        database: object, entry: OperationEntry, *, owner_id: str | None = None
+    ) -> None:
         entries.append(entry)
 
     monkeypatch.setattr(history_recorder, "record_operation", fake_record)
@@ -535,7 +537,9 @@ def test_unexpected_error_is_recorded_as_500(
 def test_unexpected_error_response_does_not_wait_for_recording(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    async def slow_record(database: object, entry: OperationEntry) -> None:
+    async def slow_record(
+        database: object, entry: OperationEntry, *, owner_id: str | None = None
+    ) -> None:
         await asyncio.sleep(1)
 
     def broken_transform(*args: object) -> str:
@@ -620,7 +624,9 @@ def test_nothing_is_recorded_without_database(client_without_db: TestClient, rec
 def test_recording_failure_leaves_response_untouched(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    async def failing_record(database: object, entry: OperationEntry) -> None:
+    async def failing_record(
+        database: object, entry: OperationEntry, *, owner_id: str | None = None
+    ) -> None:
         raise ConnectionError(f"cannot reach {SENSITIVE_URL}")
 
     monkeypatch.setattr(history_recorder, "record_operation", failing_record)
@@ -646,7 +652,9 @@ def test_dh_recording_failure_leaves_response_untouched_and_redacted(
     }
     expected = client.post("/api/dh/caesar", json=payload)
 
-    async def failing_record(database: object, entry: OperationEntry) -> None:
+    async def failing_record(
+        database: object, entry: OperationEntry, *, owner_id: str | None = None
+    ) -> None:
         raise ConnectionError(f"cannot reach {SENSITIVE_URL}")
 
     monkeypatch.setattr(history_recorder, "record_operation", failing_record)
@@ -663,7 +671,9 @@ def test_dh_recording_failure_leaves_response_untouched_and_redacted(
 def test_simulated_disk_full_is_best_effort_bounded_and_redacted(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    async def disk_full(database: object, entry: OperationEntry) -> None:
+    async def disk_full(
+        database: object, entry: OperationEntry, *, owner_id: str | None = None
+    ) -> None:
         raise sqlite3.OperationalError(f"database or disk is full: {SENSITIVE_URL}")
 
     monkeypatch.setattr(history_recorder, "record_operation", disk_full)
@@ -684,7 +694,9 @@ def test_simulated_disk_full_is_best_effort_bounded_and_redacted(
 def test_hill_response_is_unchanged_when_recording_fails(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    async def failing_record(database: object, entry: OperationEntry) -> None:
+    async def failing_record(
+        database: object, entry: OperationEntry, *, owner_id: str | None = None
+    ) -> None:
         raise ConnectionError(f"cannot reach {SENSITIVE_URL}")
 
     monkeypatch.setattr(history_recorder, "record_operation", failing_record)
@@ -704,7 +716,9 @@ def test_rsa_response_is_unchanged_when_recording_fails(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    async def failing_record(database: object, entry: OperationEntry) -> None:
+    async def failing_record(
+        database: object, entry: OperationEntry, *, owner_id: str | None = None
+    ) -> None:
         raise ConnectionError(f"cannot reach {SENSITIVE_URL}")
 
     payload = {
@@ -733,7 +747,9 @@ def test_rsa_response_is_unchanged_when_recording_fails(
 def test_slow_recording_is_abandoned(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    async def slow_record(database: object, entry: OperationEntry) -> None:
+    async def slow_record(
+        database: object, entry: OperationEntry, *, owner_id: str | None = None
+    ) -> None:
         await asyncio.sleep(5)
 
     monkeypatch.setattr(history_recorder, "RECORD_TIMEOUT_SECONDS", 0.05)

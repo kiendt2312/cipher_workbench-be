@@ -42,33 +42,17 @@ def test_history_flag_is_off_otherwise(monkeypatch: pytest.MonkeyPatch, value: s
     assert config.history_api_enabled() is False
 
 
-@pytest.mark.parametrize(("value", "expected"), [(None, 30), ("", 30), ("1", 1), (" 90 ", 90)])
-def test_retention_days_valid(
-    monkeypatch: pytest.MonkeyPatch, value: str | None, expected: int
+def test_history_retention_and_logical_caps_are_fixed() -> None:
+    assert config.HISTORY_RETENTION_SECONDS == 5 * 60 * 60
+    assert config.HISTORY_PROFILE_LIMIT_BYTES == 50 * 1024 * 1024
+    assert config.HISTORY_SYSTEM_LIMIT_BYTES == 500 * 1024 * 1024
+
+
+def test_legacy_retention_environment_cannot_extend_lifetime(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if value is None:
-        monkeypatch.delenv("HISTORY_RETENTION_DAYS", raising=False)
-    else:
-        monkeypatch.setenv("HISTORY_RETENTION_DAYS", value)
-    assert config.history_retention_days() == expected
-
-
-def test_retention_days_upper_bound(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HISTORY_RETENTION_DAYS", "3650")
-    assert config.history_retention_days() == 3650
-
-
-@pytest.mark.parametrize("value", ["0", "3651", "-1", "abc", "1.5", "\uff13\uff10"])
-def test_retention_days_invalid(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
-    monkeypatch.setenv("HISTORY_RETENTION_DAYS", value)
-    with pytest.raises(ValueError, match="HISTORY_RETENTION_DAYS"):
-        config.history_retention_days()
-
-
-def test_invalid_retention_stops_startup(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("HISTORY_RETENTION_DAYS", "0")
-    with pytest.raises(ValueError, match="HISTORY_RETENTION_DAYS"), TestClient(app):
-        pass
+    assert config.HISTORY_RETENTION_SECONDS == 5 * 60 * 60
 
 
 @pytest.fixture
@@ -101,7 +85,7 @@ def test_disabled_flag_still_records(monkeypatch: pytest.MonkeyPatch, tmp_path: 
 
     recorded: list[object] = []
 
-    async def fake_record(database: object, entry: object) -> None:
+    async def fake_record(database: object, entry: object, *, owner_id: str | None = None) -> None:
         recorded.append(entry)
 
     monkeypatch.setattr(history_recorder, "record_operation", fake_record)
@@ -128,10 +112,9 @@ def test_purge_task_runs_with_database_and_is_cancelled(
 
     monkeypatch.setattr(app_main, "purge_periodically", fake_purge_periodically)
     monkeypatch.setenv("DATABASE_URL", _missing_sqlite_url(tmp_path / "missing.sqlite3"))
-    monkeypatch.setenv("HISTORY_RETENTION_DAYS", "7")
     with TestClient(app) as client:
         client.get("/api/health")
-    assert calls == [7]
+    assert calls == [config.HISTORY_RETENTION_SECONDS]
     assert cancelled.is_set()
 
 

@@ -13,6 +13,7 @@ from app import config
 from app.api.request_size_guard import (
     DH_MULTIPART_MAX_BODY_BYTES,
     FILE_ROUTE_PATHS,
+    RSA_MULTIPART_MAX_BODY_BYTES,
     MultipartCompletionGuard,
     RequestSizeGuard,
 )
@@ -413,6 +414,53 @@ def test_dh_multipart_chunked_body_is_bounded_during_receive() -> None:
     )
     assert events[0]["status"] == 413
     assert json.loads(_response_body(events))["code"] == "FILE_INVALID"
+
+
+@pytest.mark.parametrize("path", ["/api/rsa/sign", "/api/rsa/verify"])
+def test_rsa_signature_multipart_content_length_is_bounded_before_receive(path: str) -> None:
+    events, receive_calls = _run_asgi(
+        app,
+        [
+            (b"content-type", b"multipart/form-data; boundary=x"),
+            (b"content-length", str(RSA_MULTIPART_MAX_BODY_BYTES + 1).encode("ascii")),
+        ],
+        path,
+    )
+    assert receive_calls == 0
+    assert events[0]["status"] == 413
+    assert json.loads(_response_body(events))["code"] == "REQUEST_TOO_LARGE"
+
+
+def test_rsa_signature_chunked_body_is_bounded_during_receive() -> None:
+    events: list[Message] = []
+    chunks = iter(
+        [
+            {
+                "type": "http.request",
+                "body": b"x" * (RSA_MULTIPART_MAX_BODY_BYTES + 1),
+                "more_body": False,
+            }
+        ]
+    )
+
+    async def receive() -> Message:
+        return next(chunks)
+
+    async def send(message: Message) -> None:
+        events.append(message)
+
+    asyncio.run(
+        app(
+            _scope(
+                [(b"content-type", b"multipart/form-data; boundary=x")],
+                "/api/rsa/sign",
+            ),
+            receive,
+            send,
+        )
+    )
+    assert events[0]["status"] == 413
+    assert json.loads(_response_body(events))["code"] == "REQUEST_TOO_LARGE"
 
 
 def test_multipart_completion_guard_ignores_routes_outside_exact_file_set() -> None:

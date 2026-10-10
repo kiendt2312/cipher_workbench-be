@@ -10,6 +10,7 @@ from typing import Any
 from fastapi import Request
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from app.api.history_profile import OWNER_STATE_KEY
 from app.db.engine import Database, app_database
 from app.history.routes import match_cipher_route
 from app.history.store import OperationEntry, record_operation
@@ -72,6 +73,7 @@ class OperationHistoryRecorder:
 
         notes: dict[str, Any] = {}
         scope.setdefault("state", {})[_NOTES_KEY] = notes
+        owner_id = scope["state"].get(OWNER_STATE_KEY)
         status = 500
         started = time.perf_counter()
 
@@ -99,23 +101,25 @@ class OperationHistoryRecorder:
         except BaseException:
             # ServerErrorMiddleware sends the 500 only after this re-raise, so the
             # write must not hold it back.
-            _record_in_background(database, entry())
+            _record_in_background(database, entry(), owner_id)
             raise
-        await _record_quietly(database, entry())
+        await _record_quietly(database, entry(), owner_id)
 
 
 _background_records: set[asyncio.Task[None]] = set()
 
 
-def _record_in_background(database: Database, entry: OperationEntry) -> None:
-    task = asyncio.create_task(_record_quietly(database, entry))
+def _record_in_background(database: Database, entry: OperationEntry, owner_id: str | None) -> None:
+    task = asyncio.create_task(_record_quietly(database, entry, owner_id))
     _background_records.add(task)
     task.add_done_callback(_background_records.discard)
 
 
-async def _record_quietly(database: Database, entry: OperationEntry) -> None:
+async def _record_quietly(database: Database, entry: OperationEntry, owner_id: str | None) -> None:
     try:
-        await asyncio.wait_for(record_operation(database, entry), RECORD_TIMEOUT_SECONDS)
+        await asyncio.wait_for(
+            record_operation(database, entry, owner_id=owner_id), RECORD_TIMEOUT_SECONDS
+        )
     except Exception:
         # The exception text can contain connection details, so it is not logged.
         logger.warning("Could not record cipher operation history")

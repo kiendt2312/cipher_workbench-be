@@ -16,6 +16,8 @@ from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 
 from alembic import command as alembic_command
+from app import config
+from app.api.history_profile import owner_id_for_token, profile_token_for_nonce
 from app.db.engine import create_database
 from app.db.types import datetime_to_epoch_microseconds
 from app.history import retention, store
@@ -38,6 +40,27 @@ EXPECTED_COLUMNS = [
     "succeeded",
     "duration_ms",
 ]
+PROFILE_TOKEN = profile_token_for_nonce("A" * 43)
+PROFILE_OWNER_ID = owner_id_for_token(PROFILE_TOKEN)
+
+
+def _seed_private_rows(
+    connection: sqlite3.Connection,
+    rows: list[tuple[int, int, str, str]],
+) -> None:
+    connection.executemany(
+        "INSERT INTO private_history_records "
+        "(id, owner_id, created_at, cipher, operation, source, http_status, succeeded, "
+        "duration_ms, logical_size) VALUES (?, ?, ?, ?, ?, 'text', 200, 1, 1, 1)",
+        [
+            (row_id, PROFILE_OWNER_ID, created_at, cipher, operation)
+            for row_id, created_at, cipher, operation in rows
+        ],
+    )
+
+
+def _use_profile(client: TestClient) -> None:
+    client.cookies.set(config.HISTORY_COOKIE_NAME, PROFILE_TOKEN)
 
 
 def _url(path: Path) -> str:
@@ -80,7 +103,7 @@ def test_sqlite_history_has_exact_schema_and_is_repeatable(migrated_sqlite) -> N
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='cipher_operations'"
         ).fetchone()[0]
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "sqlite_0002",
+            "sqlite_0003",
         )
     assert columns == EXPECTED_COLUMNS
     assert not_null == {
@@ -167,7 +190,7 @@ def test_dh_migration_preserves_rows_indexes_sequence_and_guards_downgrade(
             "SELECT seq FROM sqlite_sequence WHERE name = 'cipher_operations'"
         ).fetchone() == (77,)
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "sqlite_0002",
+            "sqlite_0003",
         )
         assert (
             "'dh'"
@@ -197,7 +220,7 @@ def test_dh_migration_preserves_rows_indexes_sequence_and_guards_downgrade(
         _migrate(url, "downgrade", "sqlite_0001")
 
     with sqlite3.connect(path) as connection:
-        assert (
+        after_failed_downgrade = (
             connection.execute("SELECT * FROM cipher_operations ORDER BY id").fetchall(),
             connection.execute(
                 "SELECT name, sql FROM sqlite_master WHERE type = 'index' "
@@ -206,8 +229,15 @@ def test_dh_migration_preserves_rows_indexes_sequence_and_guards_downgrade(
             connection.execute(
                 "SELECT seq FROM sqlite_sequence WHERE name = 'cipher_operations'"
             ).fetchone(),
-            connection.execute("SELECT version_num FROM alembic_version").fetchone(),
-        ) == failed_downgrade_state
+        )
+        assert after_failed_downgrade[:3] == failed_downgrade_state[:3]
+        assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
+            "sqlite_0002",
+        )
+        assert connection.execute(
+            "SELECT count(*) FROM sqlite_master "
+            "WHERE type = 'table' AND name = 'private_history_records'"
+        ).fetchone() == (0,)
         connection.execute("DELETE FROM cipher_operations WHERE cipher = 'dh'")
         connection.commit()
 
@@ -259,7 +289,7 @@ def test_empty_sqlite_baseline_can_downgrade_and_reupgrade(tmp_path: Path) -> No
     _migrate(url, "upgrade", "head")
     with sqlite3.connect(path) as connection:
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "sqlite_0002",
+            "sqlite_0003",
         )
         assert connection.execute(
             "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'cipher_operations'"
@@ -395,6 +425,7 @@ def test_exclusive_lock_keeps_health_bounded_and_cipher_response_available(
     path, url = migrated_sqlite
     monkeypatch.setenv("DATABASE_URL", url)
     monkeypatch.setenv("HISTORY_API_ENABLED", "true")
+    monkeypatch.setenv("HISTORY_COOKIE_SECURE", "false")
     locker = sqlite3.connect(path, timeout=0)
     try:
         locker.execute("BEGIN EXCLUSIVE")
@@ -487,20 +518,19 @@ def test_history_keyset_pagination_preserves_tied_timestamp_order(
     migrated_sqlite, monkeypatch
 ) -> None:
     path, url = migrated_sqlite
-    timestamp = datetime(2026, 10, 7, 0, 0, 0, 123456, tzinfo=UTC)
+    timestamp = datetime.now(UTC).replace(microsecond=123456)
     encoded_timestamp = datetime_to_epoch_microseconds(timestamp)
     with sqlite3.connect(path) as connection:
-        connection.executemany(
-            "INSERT INTO cipher_operations "
-            "(id, created_at, cipher, operation, source, http_status, succeeded, duration_ms) "
-            "VALUES (?, ?, 'rsa', 'encrypt', 'text', 200, 1, 1)",
-            [(row_id, encoded_timestamp) for row_id in range(1, 26)],
+        _seed_private_rows(
+            connection,
+            [(row_id, encoded_timestamp, "rsa", "encrypt") for row_id in range(1, 26)],
         )
         connection.commit()
 
     monkeypatch.setenv("DATABASE_URL", url)
     monkeypatch.setenv("HISTORY_API_ENABLED", "true")
     with TestClient(app) as client:
+        _use_profile(client)
         first = client.get("/api/history?limit=20").json()["result"]
         second = client.get(f"/api/history?limit=20&cursor={first['nextCursor']}").json()["result"]
     assert [item["id"] for item in first["items"]] == list(range(25, 5, -1))
@@ -511,17 +541,15 @@ def test_history_keyset_pagination_preserves_tied_timestamp_order(
 
 def test_postgres_era_wire_cursor_continues_on_sqlite(migrated_sqlite, monkeypatch) -> None:
     path, url = migrated_sqlite
-    timestamp = datetime(2026, 10, 7, 0, 0, 0, 123456, tzinfo=UTC)
+    timestamp = datetime.now(UTC).replace(microsecond=123456)
     encoded_timestamp = datetime_to_epoch_microseconds(timestamp)
     with sqlite3.connect(path) as connection:
-        connection.executemany(
-            "INSERT INTO cipher_operations "
-            "(id, created_at, cipher, operation, source, http_status, succeeded, duration_ms) "
-            "VALUES (?, ?, 'caesar', 'encrypt', 'text', 200, 1, 1)",
+        _seed_private_rows(
+            connection,
             [
-                (1, encoded_timestamp - 1),
-                (2, encoded_timestamp),
-                (3, encoded_timestamp + 1),
+                (1, encoded_timestamp - 1, "caesar", "encrypt"),
+                (2, encoded_timestamp, "caesar", "encrypt"),
+                (3, encoded_timestamp + 1, "caesar", "encrypt"),
             ],
         )
         connection.commit()
@@ -530,6 +558,7 @@ def test_postgres_era_wire_cursor_continues_on_sqlite(migrated_sqlite, monkeypat
     monkeypatch.setenv("DATABASE_URL", url)
     monkeypatch.setenv("HISTORY_API_ENABLED", "true")
     with TestClient(app) as client:
+        _use_profile(client)
         response = client.get("/api/history", params={"limit": 20, "cursor": postgres_era_cursor})
 
     assert response.status_code == 200
@@ -540,12 +569,10 @@ def test_history_cursor_ignores_newer_interleaved_insert_and_filters_persisted_r
     migrated_sqlite, monkeypatch
 ) -> None:
     path, url = migrated_sqlite
-    base = datetime_to_epoch_microseconds(datetime(2026, 10, 7, tzinfo=UTC))
+    base = datetime_to_epoch_microseconds(datetime.now(UTC).replace(microsecond=0))
     with sqlite3.connect(path) as connection:
-        connection.executemany(
-            "INSERT INTO cipher_operations "
-            "(id, created_at, cipher, operation, source, http_status, succeeded, duration_ms) "
-            "VALUES (?, ?, ?, ?, 'text', 200, 1, 1)",
+        _seed_private_rows(
+            connection,
             [
                 (1, base + 1, "caesar", "encrypt"),
                 (2, base + 2, "rsa", "encrypt"),
@@ -557,13 +584,12 @@ def test_history_cursor_ignores_newer_interleaved_insert_and_filters_persisted_r
     monkeypatch.setenv("DATABASE_URL", url)
     monkeypatch.setenv("HISTORY_API_ENABLED", "true")
     with TestClient(app) as client:
+        _use_profile(client)
         first = client.get("/api/history?limit=2").json()["result"]
         with sqlite3.connect(path) as connection:
-            connection.execute(
-                "INSERT INTO cipher_operations "
-                "(id, created_at, cipher, operation, source, http_status, succeeded, duration_ms) "
-                "VALUES (?, ?, 'rsa', 'encrypt', 'text', 200, 1, 1)",
-                (4, base + 4),
+            _seed_private_rows(
+                connection,
+                [(4, base + 4, "rsa", "encrypt")],
             )
             connection.commit()
         second_response = client.get(
@@ -586,6 +612,7 @@ def test_sqlite_persists_rsa_metadata_without_payload_and_excludes_keygen_and_tr
     filename = "rsa-sensitive-name.txt"
     monkeypatch.setenv("DATABASE_URL", url)
     monkeypatch.setenv("HISTORY_API_ENABLED", "true")
+    monkeypatch.setenv("HISTORY_COOKIE_SECURE", "false")
 
     with TestClient(app) as client:
         json_response = client.post(
@@ -623,15 +650,18 @@ def test_sqlite_persists_rsa_metadata_without_payload_and_excludes_keygen_and_tr
     ]
     assert all(item["responseMode"] is None for item in page["items"])
     with sqlite3.connect(path) as connection:
-        assert connection.execute("SELECT count(*) FROM cipher_operations").fetchone() == (2,)
+        assert connection.execute("SELECT count(*) FROM cipher_operations").fetchone() == (0,)
+        assert connection.execute("SELECT count(*) FROM private_history_records").fetchone() == (2,)
         dumped = " ".join(
             row[0]
             for row in connection.execute(
                 "SELECT quote(id) || ' ' || quote(created_at) || ' ' || quote(cipher) || ' ' || "
                 "quote(operation) || ' ' || quote(source) || ' ' || quote(response_mode) || ' ' || "
                 "quote(input_length) || ' ' || quote(output_length) || ' ' || "
-                "quote(http_status) || ' ' || quote(succeeded) || ' ' || quote(duration_ms) "
-                "FROM cipher_operations"
+                "quote(http_status) || ' ' || quote(succeeded) || ' ' || quote(duration_ms) || "
+                "' ' || quote(content_bytes) || ' ' || quote(numeric_input_json) || ' ' || "
+                "quote(signature_json) || ' ' || quote(public_key_json) || ' ' || "
+                "quote(result_json) FROM private_history_records"
             )
         )
     assert marker not in dumped
@@ -647,9 +677,9 @@ def test_retention_uses_sqlite_utc_database_clock(migrated_sqlite) -> None:
             "VALUES (CAST(strftime('%s', 'now') AS INTEGER) * 1000000 - ?, "
             "'caesar', 'encrypt', 'text', 200, 1, 1)",
             [
-                (29 * 86_400 * 1_000_000,),
-                (30 * 86_400 * 1_000_000,),
-                (31 * 86_400 * 1_000_000,),
+                (4 * 60 * 60 * 1_000_000,),
+                (5 * 60 * 60 * 1_000_000,),
+                (6 * 60 * 60 * 1_000_000,),
             ],
         )
         connection.commit()
@@ -667,7 +697,7 @@ def test_retention_uses_sqlite_utc_database_clock(migrated_sqlite) -> None:
     if hasattr(time, "tzset"):
         time.tzset()
     try:
-        assert asyncio.run(purge()) == 1
+        assert asyncio.run(purge()) == 2
     finally:
         if previous_timezone is None:
             os.environ.pop("TZ", None)
@@ -680,10 +710,10 @@ def test_retention_uses_sqlite_utc_database_clock(migrated_sqlite) -> None:
             row[0]
             for row in connection.execute(
                 "SELECT (CAST(strftime('%s', 'now') AS INTEGER) * 1000000 - created_at) "
-                "/ 86400000000 FROM cipher_operations ORDER BY created_at DESC"
+                "/ 3600000000 FROM cipher_operations ORDER BY created_at DESC"
             )
         ]
-    assert remaining_ages == [29, 30]
+    assert remaining_ages == [4]
 
 
 def test_rollout_clock_preflight_enforces_sixty_second_limit(migrated_sqlite) -> None:
@@ -725,14 +755,13 @@ def test_retention_cli_uses_sqlite_runtime_and_redacts_configuration_errors(
         connection.commit()
 
     monkeypatch.setenv("DATABASE_URL", url)
-    monkeypatch.setenv("HISTORY_RETENTION_DAYS", "30")
     assert asyncio.run(retention._main(["--check-clock-only"])) == 0
     assert capsys.readouterr().out.startswith("SQLite clock preflight passed (")
     with sqlite3.connect(path) as connection:
         assert connection.execute("SELECT count(*) FROM cipher_operations").fetchone() == (1,)
 
     assert asyncio.run(retention._main()) == 0
-    assert capsys.readouterr().out == "Deleted 1 history rows older than 30 days\n"
+    assert capsys.readouterr().out == "Deleted 1 history rows older than 5 hours\n"
 
     private_value = "postgresql+asyncpg://operator:secret@private.invalid/history"
     monkeypatch.setenv("DATABASE_URL", private_value)

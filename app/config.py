@@ -2,6 +2,7 @@
 
 import os
 import re
+import secrets
 import sys
 from pathlib import Path
 from urllib.parse import quote, unquote, urlsplit
@@ -14,7 +15,7 @@ PORT = 8000
 
 DATABASE_CONFIGURATION_ERROR = "DATABASE_URL must be an absolute local SQLite file URL"
 SQLITE_DRIVER = "sqlite+aiosqlite"
-SQLITE_SCHEMA_REVISION = "sqlite_0002"
+SQLITE_SCHEMA_REVISION = "sqlite_0003"
 
 _REMOTE_FILESYSTEMS = {
     "9p",
@@ -159,8 +160,13 @@ def database_url() -> str | None:
 
 
 _TRUE_VALUES = {"true", "1", "yes", "on"}
-DEFAULT_HISTORY_RETENTION_DAYS = 30
-MAX_HISTORY_RETENTION_DAYS = 3650
+HISTORY_RETENTION_SECONDS = 5 * 60 * 60
+HISTORY_PROFILE_LIMIT_BYTES = 50 * 1024 * 1024
+HISTORY_SYSTEM_LIMIT_BYTES = 500 * 1024 * 1024
+HISTORY_COOKIE_NAME = "cw_history_profile"
+HISTORY_COOKIE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
+HISTORY_PROFILE_SIGNING_KEY_ENV = "HISTORY_PROFILE_SIGNING_KEY"
+_EPHEMERAL_HISTORY_PROFILE_SIGNING_KEY = secrets.token_bytes(32)
 
 
 def history_api_enabled() -> bool:
@@ -185,15 +191,38 @@ def cors_allow_origins() -> tuple[str, ...]:
     return origins
 
 
-def history_retention_days() -> int:
-    """Return ``HISTORY_RETENTION_DAYS`` (1 to 3650, default 30); invalid values raise."""
+def history_cookie_secure() -> bool:
+    """Keep the anonymous owner credential HTTPS-only unless explicitly in local test mode."""
 
-    raw = os.environ.get("HISTORY_RETENTION_DAYS", "").strip()
-    if not raw:
-        return DEFAULT_HISTORY_RETENTION_DAYS
-    days = parse_bounded_int(raw, 1, MAX_HISTORY_RETENTION_DAYS)
-    if days is None:
-        raise ValueError(
-            f"HISTORY_RETENTION_DAYS must be an integer from 1 to {MAX_HISTORY_RETENTION_DAYS}"
-        )
-    return days
+    raw = os.environ.get("HISTORY_COOKIE_SECURE", "true").strip().lower()
+    if raw in _TRUE_VALUES:
+        return True
+    if raw in {"false", "0", "no", "off"}:
+        return False
+    raise ValueError("HISTORY_COOKIE_SECURE must be a boolean")
+
+
+def history_profile_signing_key(*, database_enabled: bool | None = None) -> bytes:
+    """Return the HMAC key for anonymous profile credentials.
+
+    A persistent history database requires an explicit 256-bit key so browser
+    credentials remain valid across backend restarts.  A process-local key is
+    sufficient only when persistence is disabled.
+    """
+
+    raw = os.environ.get(HISTORY_PROFILE_SIGNING_KEY_ENV, "").strip()
+    if raw:
+        try:
+            key = bytes.fromhex(raw)
+        except ValueError:
+            key = b""
+        if len(key) != 32:
+            raise ValueError(
+                "HISTORY_PROFILE_SIGNING_KEY must be exactly 64 hexadecimal characters"
+            )
+        return key
+    if database_enabled is None:
+        database_enabled = database_url() is not None
+    if database_enabled:
+        raise ValueError("HISTORY_PROFILE_SIGNING_KEY is required when DATABASE_URL is configured")
+    return _EPHEMERAL_HISTORY_PROFILE_SIGNING_KEY

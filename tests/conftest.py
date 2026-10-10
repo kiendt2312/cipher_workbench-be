@@ -13,6 +13,13 @@ from alembic import command as alembic_command
 from app import config
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+TEST_HISTORY_PROFILE_SIGNING_KEY = "11" * 32
+os.environ.setdefault("HISTORY_PROFILE_SIGNING_KEY", TEST_HISTORY_PROFILE_SIGNING_KEY)
+
+
+@pytest.fixture(autouse=True)
+def _history_profile_signing_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HISTORY_PROFILE_SIGNING_KEY", TEST_HISTORY_PROFILE_SIGNING_KEY)
 
 
 @pytest.fixture

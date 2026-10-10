@@ -9,7 +9,7 @@ from starlette.types import Message as ASGIMessage
 
 from app import config
 from app.errors import messages
-from app.errors.exceptions import DhError
+from app.errors.exceptions import DhError, RsaError
 
 FILE_ROUTE_PATHS = frozenset(
     {
@@ -27,6 +27,10 @@ RSA_ROUTE_PATHS = frozenset(
         "/api/rsa/keys/random",
         "/api/rsa/encrypt",
         "/api/rsa/decrypt",
+        "/api/rsa/sign/raw",
+        "/api/rsa/verify/raw",
+        "/api/rsa/sign",
+        "/api/rsa/verify",
     }
 )
 DH_ROUTE_PATHS = frozenset(
@@ -39,9 +43,19 @@ DH_ROUTE_PATHS = frozenset(
         "/api/dh/caesar",
     }
 )
-MULTIPART_ROUTE_PATHS = FILE_ROUTE_PATHS | {"/api/rsa/encrypt", "/api/dh/caesar"}
+MULTIPART_ROUTE_PATHS = FILE_ROUTE_PATHS | {
+    "/api/rsa/encrypt",
+    "/api/rsa/sign",
+    "/api/rsa/verify",
+    "/api/dh/caesar",
+}
 DH_MULTIPART_BODY_OVERHEAD_BYTES = 64 * 1024
 DH_MULTIPART_MAX_BODY_BYTES = config.MAX_FILE_BYTES + DH_MULTIPART_BODY_OVERHEAD_BYTES
+RSA_SIGNATURE_ROUTE_PATHS = frozenset(
+    {"/api/rsa/sign/raw", "/api/rsa/verify/raw", "/api/rsa/sign", "/api/rsa/verify"}
+)
+RSA_MULTIPART_BODY_OVERHEAD_BYTES = 256 * 1024
+RSA_MULTIPART_MAX_BODY_BYTES = config.MAX_FILE_BYTES + RSA_MULTIPART_BODY_OVERHEAD_BYTES
 
 
 def _content_length(scope: Scope) -> bytes | None:
@@ -119,6 +133,15 @@ def _is_dh_multipart(scope: Scope) -> bool:
     )
 
 
+def _is_rsa_signature_multipart(scope: Scope) -> bool:
+    content_type = _header(scope, b"content-type")
+    return bool(
+        scope.get("path") in {"/api/rsa/sign", "/api/rsa/verify"}
+        and content_type
+        and content_type.partition(b";")[0].strip().lower() == b"multipart/form-data"
+    )
+
+
 class RequestSizeGuard:
     """Reject over-ceiling Content-Length values before downstream body access."""
 
@@ -144,6 +167,44 @@ class RequestSizeGuard:
             response = JSONResponse(status_code=413, content=content)
             await response(scope, receive, send)
             return
+
+        if scope["type"] == "http" and scope.get("path") in RSA_SIGNATURE_ROUTE_PATHS:
+            receive_limit = (
+                RSA_MULTIPART_MAX_BODY_BYTES
+                if _is_rsa_signature_multipart(scope)
+                else self.max_bytes
+            )
+            if _exceeds_limit(_content_length(scope), receive_limit):
+                response = JSONResponse(
+                    status_code=413,
+                    content={
+                        "success": False,
+                        "code": "REQUEST_TOO_LARGE",
+                        "message": messages.RSA_REQUEST_TOO_LARGE,
+                        "field": None,
+                    },
+                )
+                await response(scope, receive, send)
+                return
+
+            received = 0
+            original_receive = receive
+
+            async def receive_with_rsa_cap() -> ASGIMessage:
+                nonlocal received
+                message = await original_receive()
+                if message["type"] == "http.request":
+                    received += len(message.get("body", b""))
+                    if received > receive_limit:
+                        raise RsaError(
+                            413,
+                            "REQUEST_TOO_LARGE",
+                            messages.RSA_REQUEST_TOO_LARGE,
+                            None,
+                        )
+                return message
+
+            receive = receive_with_rsa_cap
 
         if scope["type"] == "http" and _is_dh_multipart(scope):
             if _exceeds_limit(_content_length(scope), DH_MULTIPART_MAX_BODY_BYTES):

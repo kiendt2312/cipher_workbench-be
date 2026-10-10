@@ -20,6 +20,7 @@ from app import config
 PING_TIMEOUT_SECONDS = 1.0
 BUSY_TIMEOUT_SECONDS = 0.2
 BUSY_TIMEOUT_MILLISECONDS = 200
+REQUIRED_SQLITE_SCHEMA_REVISION = config.SQLITE_SCHEMA_REVISION
 
 
 @dataclass(frozen=True)
@@ -75,12 +76,20 @@ def create_database(url: str) -> Database:
                 raise RuntimeError("SQLite full synchronous mode could not be configured")
             async with connection.execute("SELECT version_num FROM alembic_version") as cursor:
                 revisions = {row[0] async for row in cursor}
-            if revisions != {config.SQLITE_SCHEMA_REVISION}:
+            if revisions != {REQUIRED_SQLITE_SCHEMA_REVISION}:
                 raise RuntimeError("SQLite schema is not at the supported revision")
             async with connection.execute(
                 "SELECT id, created_at, cipher, operation, source, response_mode, "
                 "input_length, output_length, http_status, succeeded, duration_ms "
                 "FROM cipher_operations LIMIT 1"
+            ) as cursor:
+                await cursor.fetchone()
+            async with connection.execute(
+                "SELECT id, owner_id, created_at, cipher, operation, source, response_mode, "
+                "input_length, output_length, http_status, succeeded, duration_ms, "
+                "content_bytes, content_kind, numeric_input_json, signature_json, "
+                "public_key_json, result_json, validity, processing_state, logical_size "
+                "FROM private_history_records LIMIT 1"
             ) as cursor:
                 await cursor.fetchone()
 
@@ -95,13 +104,22 @@ async def ping(database: Database) -> bool:
     async def _select_one() -> None:
         async with database.engine.connect() as connection:
             revision = await connection.execute(text("SELECT version_num FROM alembic_version"))
-            if {row[0] for row in revision} != {config.SQLITE_SCHEMA_REVISION}:
+            if {row[0] for row in revision} != {REQUIRED_SQLITE_SCHEMA_REVISION}:
                 raise RuntimeError("SQLite schema is not at the supported revision")
             await connection.execute(
                 text(
                     "SELECT id, created_at, cipher, operation, source, response_mode, "
                     "input_length, output_length, http_status, succeeded, duration_ms "
                     "FROM cipher_operations LIMIT 1"
+                )
+            )
+            await connection.execute(
+                text(
+                    "SELECT id, owner_id, created_at, cipher, operation, source, response_mode, "
+                    "input_length, output_length, http_status, succeeded, duration_ms, "
+                    "content_bytes, content_kind, numeric_input_json, signature_json, "
+                    "public_key_json, result_json, validity, processing_state, logical_size "
+                    "FROM private_history_records LIMIT 1"
                 )
             )
 

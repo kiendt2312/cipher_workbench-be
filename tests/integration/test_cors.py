@@ -56,10 +56,10 @@ def test_allowed_origin_gets_cors_headers(cors_client: TestClient) -> None:
     assert response.json() == {"success": True, "result": "Ij"}
     assert response.headers["access-control-allow-origin"] == FE_ORIGIN
     assert response.headers["access-control-expose-headers"] == "Content-Disposition"
-    assert "access-control-allow-credentials" not in response.headers
+    assert response.headers["access-control-allow-credentials"] == "true"
 
 
-def test_preflight_allows_only_get_post_and_content_type(cors_client: TestClient) -> None:
+def test_preflight_allows_history_delete_and_content_type(cors_client: TestClient) -> None:
     response = cors_client.options(
         "/api/caesar/encrypt",
         headers={
@@ -70,13 +70,17 @@ def test_preflight_allows_only_get_post_and_content_type(cors_client: TestClient
     )
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
-    assert set(response.headers["access-control-allow-methods"].split(", ")) == {"GET", "POST"}
+    assert set(response.headers["access-control-allow-methods"].split(", ")) == {
+        "DELETE",
+        "GET",
+        "POST",
+    }
 
     rejected = cors_client.options(
         "/api/caesar/encrypt",
         headers={"Origin": FE_ORIGIN, "Access-Control-Request-Method": "DELETE"},
     )
-    assert rejected.status_code == 400
+    assert rejected.status_code == 200
 
 
 def test_other_origins_get_no_cors_headers(cors_client: TestClient) -> None:
