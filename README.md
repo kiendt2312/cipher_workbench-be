@@ -836,9 +836,10 @@ Cơ chế này chỉ có thể xóa tại deadline khi ít nhất một worker �
 schedule và SQLite ghi được. Nếu toàn bộ stack/host dừng hoặc storage không ghi được,
 row/payload operational vẫn còn trong live DB; access vẫn bị chặn ở đúng cutoff và
 worker xóa row quá hạn ngay khi chạy/ghi lại được. Không có worst-case deletion latency
-hữu hạn trong outage như vậy. Đây là giới hạn vận hành cần owner chấp thuận hoặc thay
-bằng một retention service/storage luôn hoạt động bên ngoài stack trước release; không
-được hiểu là grace đã được chấp thuận.
+hữu hạn trong outage như vậy. Owner đã phê duyệt operating assumption này: ít nhất một
+retention worker, host/container runtime và writable SQLite phải luôn khả dụng. Outage
+vượt deadline là contract breach phải alert/remediate, không phải grace hay renewal;
+việc phê duyệt assumption không phải overall acceptance hoặc quyền deploy.
 
 Chạy purge ngay bằng tay:
 

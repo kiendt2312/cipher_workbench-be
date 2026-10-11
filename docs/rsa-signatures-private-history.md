@@ -201,8 +201,10 @@ Stopping only the API leaves the independent worker running. This mechanism has 
 bound while every retention process is stopped, the host is down, or SQLite cannot write: rows and
 payloads remain physically present, although every API read/download rejects them at the five-hour
 cutoff, and overdue rows are deleted when a worker can write again. SQLite has no autonomous TTL.
-That outage behavior is a disclosed release decision, not an implicit relaxation of the five-hour
-operational-deletion requirement.
+The owner approved the operating assumption that at least one retention worker, its host/container
+runtime, and writable SQLite remain available. An outage crossing a record deadline is a contract
+breach that must be alerted and remediated, not an authorized grace period or renewal; deletion
+resumes immediately on recovery. This approval is not overall acceptance or deployment authority.
 
 ## Error envelope
 

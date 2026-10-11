@@ -134,13 +134,11 @@ chạy, host clock đã qua preflight, process được schedule và SQLite ghi 
 worst-case latency hữu hạn khi toàn bộ stack/host dừng hoặc storage tiếp tục read-only,
 full, mất mount hay hỏng: live operational row/payload vẫn tồn tại; read/download vẫn
 không truy cập được sau đúng năm giờ và startup/recovery sẽ purge overdue row ngay.
-SQLite không tự chạy TTL khi không có process. Đây là exception cần owner quyết định
-trước release, không phải grace period được ngầm chấp thuận. Hai hướng vận hành là:
-
-- chấp thuận assumption trên và coi thời gian worker/storage outage là contract breach
-  phải alert/remediate; hoặc
-- cấp một trusted retention scheduler/storage TTL độc lập với lifecycle của stack/host
-  này và SLA availability phù hợp (mở rộng infrastructure/deployment scope).
+SQLite không tự chạy TTL khi không có process. Owner đã phê duyệt operating assumption
+trên: outage vượt deadline là contract breach phải alert/remediate, không phải grace
+period hay renewal; deletion tiếp tục ngay khi recovery. Quyết định này không mở rộng
+scope sang external retention infrastructure và không phải overall acceptance hoặc
+quyền deploy.
 
 Không chạy `VACUUM` trong request, startup hay purge loop: SQLite cần writer lock và
 có thể cần khoảng gấp đôi dung lượng file tạm thời. Khi operator cần thu nhỏ file,
