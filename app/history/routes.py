@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.db.models import CIPHERS
+from app.db.models import CIPHERS, DH_OPERATIONS
 
 
 @dataclass(frozen=True)
@@ -34,6 +34,11 @@ CIPHER_ROUTES.update(
         "/api/rsa/encrypt": CipherRoute("rsa", "text", "encrypt"),
         "/api/rsa/decrypt": CipherRoute("rsa", "text", "decrypt"),
         "/api/dh/caesar": CipherRoute("dh", "text", None),
+        "/api/dh/params": CipherRoute("dh", "text", DH_OPERATIONS[0]),
+        "/api/dh/params/random": CipherRoute("dh", "text", DH_OPERATIONS[1]),
+        "/api/dh/keypair": CipherRoute("dh", "text", DH_OPERATIONS[2]),
+        "/api/dh/shared-secret": CipherRoute("dh", "text", DH_OPERATIONS[3]),
+        "/api/dh/exchange": CipherRoute("dh", "text", DH_OPERATIONS[4]),
     }
 )
 

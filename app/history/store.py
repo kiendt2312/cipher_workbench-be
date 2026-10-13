@@ -23,7 +23,9 @@ from app import config
 from app.db.engine import Database
 from app.db.models import (
     CIPHERS,
+    DH_OPERATIONS,
     PRIVATE_OPERATIONS,
+    RSA_OPERATIONS,
     CipherOperation,
     PrivateHistoryRecord,
 )
@@ -229,12 +231,15 @@ def _validate_created_at(created_at: datetime) -> datetime:
     return created_at.astimezone(UTC)
 
 
-def _validate_entry(entry: OperationEntry) -> None:
+def _validate_entry(entry: OperationEntry, *, private: bool = False) -> None:
     if entry.cipher not in CIPHERS:
         raise ValueError("cipher is not supported")
-    if entry.operation is not None and entry.operation not in PRIVATE_OPERATIONS:
+    allowed_operations = PRIVATE_OPERATIONS if private else (*DH_OPERATIONS, "encrypt", "decrypt")
+    if entry.operation is not None and entry.operation not in allowed_operations:
         raise ValueError("operation is not supported")
-    if entry.operation in {"sign", "verify"} and entry.cipher != "rsa":
+    if entry.operation in DH_OPERATIONS and entry.cipher != "dh":
+        raise ValueError("Diffie-Hellman history operations require DH")
+    if entry.operation in RSA_OPERATIONS and entry.cipher != "rsa":
         raise ValueError("sign and verify history operations require RSA")
     if entry.source not in ("text", "file"):
         raise ValueError("source is not supported")
@@ -452,6 +457,8 @@ async def record_operation(
     silently unsaved result.
     """
 
+    _validate_entry(entry, private=owner_id is not None)
+
     if owner_id is None and payload is None:
         timestamp = _validate_created_at(created_at or datetime.now(UTC))
         async with database.sessions() as session:
@@ -466,7 +473,6 @@ async def record_operation(
     if owner_id is None:
         raise ValueError("owner_id is required for private history")
     _validate_owner_id(owner_id)
-    _validate_entry(entry)
     timestamp = _validate_created_at(created_at or datetime.now(UTC))
     stored_payload = _normalize_payload(entry.cipher, payload)
     logical_size = logical_history_bytes(

@@ -35,10 +35,13 @@ hạn tài nguyên có chủ đích trong phạm vi giáo dục, không phải b
 
 ## Migration SQLite
 
-Targeted migration/continuity suite kiểm tra tuyến tính `sqlite_0001 → sqlite_0002`,
-giữ 11 cột, hai index, row, `sqlite_sequence`, cho phép `rsa` và `dh`, và downgrade
-fail trước mutation khi còn row `cipher='dh'`. PostgreSQL revision không được chạy
-trên SQLite.
+Targeted migration/continuity suite kiểm tra tuyến tính `sqlite_0001 → sqlite_0002 →
+sqlite_0003 → sqlite_0004`, giữ 11 cột, hai index, row, `sqlite_sequence`, cho phép
+`rsa` và các operation DH mới, và downgrade fail trước mutation khi còn row operation
+DH standalone ở một trong hai bảng. PostgreSQL revision không được chạy trên SQLite.
+Migration `sqlite_0004` rebuild cả `cipher_operations` và `private_history_records`,
+giữ toàn bộ columns/indexes/rows/sequences. App mới yêu cầu `sqlite_0004`; app phải
+được dừng trong lúc migrate và chỉ khởi động sau khi health/schema check đạt.
 
 ## Ma trận test nguồn TC-01–TC-13
 
@@ -76,6 +79,30 @@ khóa riêng để minh họa/đối chiếu phép tính thật, đồng thời 
 key không rời bên sở hữu và public key phải được xác thực để chống MITM trong hệ thống
 thực tế. Integration test đối chiếu output `q=353, alpha=3, X_A=97, X_B=233` với
 `Y_A=40`, `Y_B=248`, `K_A=K_B=160` và result cuối của từng trace.
+
+## History expansion follow-up (2026-10-12)
+
+Change `expand-dh-operation-history` supersedes only D8 from the earlier DH snapshot:
+the five standalone routes now create owner-scoped, metadata-only rows in addition to
+`/api/dh/caesar`. The exact mapping is `/params` → `validate_params`, `/params/random` →
+`generate_params`, `/keypair` → `generate_keypair`, `/shared-secret` →
+`derive_shared_secret`, and `/exchange` → `exchange`; Caesar remains `encrypt|decrypt`.
+Success and error paths are covered by regression tests. Standalone rows have
+`source=text`, null input/output lengths, no payload columns, and no sensitive marker in
+SQLite dumps or redacted best-effort warnings. Query coverage includes
+`cipher=dh&operation=exchange`, an empty valid filter, and invalid operation rejection.
+The compatibility test confirms an app using the new matcher still returns the DH response
+on `sqlite_0003`; the write is best-effort and emits only the fixed redacted warning.
+
+This change does not backfill old requests, run a live migration, or touch a real database.
+Any production migration requires backup/restore rehearsal and explicit operator approval.
+
+Validation follow-up ngày 2026-10-13 trên SQLite disposable trong worktree cô lập:
+
+- Targeted history/migration/continuity: 179 passed.
+- Full suite: 1.696 passed, 20 PostgreSQL tests skipped; coverage 90,39% (gate 90%).
+- Ruff check/format, compileall, `git diff --check` và OpenSpec strict: exit 0.
+- Không chạy migration DB thật, backfill, deploy hoặc external runtime.
 
 Validation follow-up ngày 2026-10-08:
 

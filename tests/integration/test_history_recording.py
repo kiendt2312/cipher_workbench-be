@@ -123,37 +123,67 @@ def test_rsa_key_routes_never_record_history(
     assert recorded == []
 
 
-def test_only_dh_caesar_records_private_metadata(
+def test_all_dh_operations_record_private_metadata(
     client: TestClient, recorded: list[OperationEntry]
 ) -> None:
-    client.post("/api/dh/params", json={"q": "23"})
-    client.post("/api/dh/keypair", json={"q": "23", "alpha": "5", "privateKey": "6"})
-    response = client.post(
-        "/api/dh/caesar",
-        json={
-            "q": "353",
-            "privateKey": "97",
-            "otherPublicKey": "248",
-            "action": "encrypt",
-            "data": "Hello World",
-        },
+    requests = [
+        ("/api/dh/params", {"q": "23"}),
+        ("/api/dh/params/random", {"bits": 16}),
+        ("/api/dh/keypair", {"q": "353", "alpha": "3", "privateKey": "97"}),
+        (
+            "/api/dh/shared-secret",
+            {"q": "353", "privateKey": "97", "otherPublicKey": "248"},
+        ),
+        (
+            "/api/dh/exchange",
+            {"q": "353", "alpha": "3", "privateKeyA": "97", "privateKeyB": "233"},
+        ),
+        (
+            "/api/dh/caesar",
+            {
+                "q": "353",
+                "privateKey": "97",
+                "otherPublicKey": "248",
+                "action": "encrypt",
+                "data": "Hello World",
+            },
+        ),
+    ]
+    for path, payload in requests:
+        assert client.post(path, json=payload).status_code == 200
+
+    assert [(entry.cipher, entry.source, entry.operation) for entry in recorded] == [
+        ("dh", "text", "validate_params"),
+        ("dh", "text", "generate_params"),
+        ("dh", "text", "generate_keypair"),
+        ("dh", "text", "derive_shared_secret"),
+        ("dh", "text", "exchange"),
+        ("dh", "text", "encrypt"),
+    ]
+    assert all(
+        (entry.input_length, entry.output_length, entry.response_mode) == (None, None, None)
+        for entry in recorded[:-1]
     )
-    assert response.status_code == 200
-    assert len(recorded) == 1
-    entry = recorded[0]
-    assert (entry.cipher, entry.source, entry.operation) == ("dh", "text", "encrypt")
-    assert (entry.input_length, entry.output_length, entry.response_mode) == (11, 11, None)
-    assert set(entry.__dict__) == {
-        "cipher",
-        "source",
-        "operation",
-        "response_mode",
-        "input_length",
-        "output_length",
-        "http_status",
-        "succeeded",
-        "duration_ms",
-    }
+    assert (
+        recorded[-1].input_length,
+        recorded[-1].output_length,
+        recorded[-1].response_mode,
+    ) == (11, 11, None)
+    assert all(
+        set(entry.__dict__)
+        == {
+            "cipher",
+            "source",
+            "operation",
+            "response_mode",
+            "input_length",
+            "output_length",
+            "http_status",
+            "succeeded",
+            "duration_ms",
+        }
+        for entry in recorded
+    )
 
 
 def test_dh_file_bom_history_uses_raw_and_output_bytes(

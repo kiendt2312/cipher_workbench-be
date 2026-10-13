@@ -61,7 +61,18 @@ CIPHERS: Final = (
     "rsa",
     "dh",
 )
-OPERATIONS: Final = ("encrypt", "decrypt")
+TRANSFORM_OPERATIONS: Final = ("encrypt", "decrypt")
+DH_OPERATIONS: Final = (
+    "validate_params",
+    "generate_params",
+    "generate_keypair",
+    "derive_shared_secret",
+    "exchange",
+)
+RSA_OPERATIONS: Final = ("sign", "verify")
+OPERATIONS: Final = (*TRANSFORM_OPERATIONS, *DH_OPERATIONS)
+PRIVATE_OPERATIONS: Final = (*OPERATIONS, *RSA_OPERATIONS)
+PRIVATE_SCHEMA_REVISIONS: Final = frozenset({"sqlite_0003", "sqlite_0004"})
 SOURCES: Final = ("text", "file")
 RESPONSE_MODES: Final = ("content", "file")
 
@@ -106,7 +117,11 @@ CREATE TABLE cipher_operations (
             ('caesar', 'vigenere', 'playfair', 'affine', 'columnar', 'hill', 'des', 'rsa', 'dh')),
     operation TEXT
         CHECK(operation IS NULL OR
-            (typeof(operation) = 'text' AND operation IN ('encrypt', 'decrypt'))),
+            (typeof(operation) = 'text' AND
+                (operation IN ('encrypt', 'decrypt') OR
+                 (cipher = 'dh' AND operation IN
+                    ('validate_params', 'generate_params', 'generate_keypair',
+                     'derive_shared_secret', 'exchange'))))),
     source TEXT NOT NULL
         CHECK(typeof(source) = 'text' AND source IN ('text', 'file')),
     response_mode TEXT
@@ -140,7 +155,10 @@ CREATE TABLE private_history_records (
         'hill', 'des', 'rsa', 'dh'
     )),
     operation TEXT
-        CHECK(operation IS NULL OR operation IN ('encrypt', 'decrypt', 'sign', 'verify')),
+        CHECK(operation IS NULL OR operation IN (
+            'encrypt', 'decrypt', 'validate_params', 'generate_params', 'generate_keypair',
+            'derive_shared_secret', 'exchange', 'sign', 'verify'
+        )),
     source TEXT NOT NULL CHECK(source IN ('text', 'file')),
     response_mode TEXT CHECK(response_mode IS NULL OR response_mode IN ('content', 'file')),
     input_length INTEGER CHECK(input_length IS NULL OR input_length >= 0),
@@ -159,6 +177,10 @@ CREATE TABLE private_history_records (
     logical_size BIGINT NOT NULL CHECK(logical_size >= 0),
     CONSTRAINT ck_private_history_rsa_operation CHECK(
         operation IS NULL OR operation IN ('encrypt', 'decrypt')
+        OR (cipher = 'dh' AND operation IN (
+            'validate_params', 'generate_params', 'generate_keypair',
+            'derive_shared_secret', 'exchange'
+        ))
         OR (cipher = 'rsa' AND operation IN ('sign', 'verify'))
     ),
     CONSTRAINT ck_private_history_owner_nonempty CHECK(
@@ -319,6 +341,8 @@ class HistoryRow:
             raise InvalidHistoryRow("cipher is not supported")
         if self.operation is not None and self.operation not in OPERATIONS:
             raise InvalidHistoryRow("operation is not supported")
+        if self.operation in DH_OPERATIONS and self.cipher != "dh":
+            raise InvalidHistoryRow("Diffie-Hellman operation requires the dh cipher")
         if self.source not in SOURCES:
             raise InvalidHistoryRow("source is not supported")
         if self.response_mode is not None and self.response_mode not in RESPONSE_MODES:
@@ -579,6 +603,18 @@ def private_history_digest(rows: Iterable[Sequence[object]]) -> str:
         row_id = row[0]
         if type(row_id) is not int or row_id <= previous_id:
             raise VerificationError("private history rows are not strictly ordered")
+        cipher = row[3]
+        operation = row[4]
+        if type(cipher) is not str or cipher not in CIPHERS:
+            raise VerificationError("private history row cipher is not supported")
+        if operation is not None and (
+            type(operation) is not str or operation not in PRIVATE_OPERATIONS
+        ):
+            raise VerificationError("private history row operation is not supported")
+        if operation in DH_OPERATIONS and cipher != "dh":
+            raise VerificationError("private history DH operation has the wrong cipher")
+        if operation in RSA_OPERATIONS and cipher != "rsa":
+            raise VerificationError("private history RSA operation has the wrong cipher")
         previous_id = row_id
         frames.append(_frame(b"R", b"".join(_private_value_frame(value) for value in row)))
     return hashlib.sha256(PRIVATE_ROWS_STREAM_HEADER + b"".join(frames)).hexdigest()
@@ -682,7 +718,7 @@ class Manifest:
             if isinstance(identity, IdentityState)
             else IdentityState.from_mapping(identity)
         )
-        include_private = schema_revision == "sqlite_0003"
+        include_private = schema_revision in PRIVATE_SCHEMA_REVISIONS
         return cls(
             source_revision=_validate_revision(source_revision, "source_revision"),
             schema_revision=_validate_revision(schema_revision, "schema_revision"),
@@ -1179,6 +1215,10 @@ def _check_schema(connection: sqlite3.Connection) -> None:
         sql_row = connection.execute(
             "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'cipher_operations'"
         ).fetchone()
+        private_sql_row = connection.execute(
+            "SELECT sql FROM sqlite_master "
+            "WHERE type = 'table' AND name = 'private_history_records'"
+        ).fetchone()
         private_columns = connection.execute(
             "PRAGMA table_info(private_history_records)"
         ).fetchall()
@@ -1228,7 +1268,7 @@ def _check_schema(connection: sqlite3.Connection) -> None:
         "processing_state",
         "logical_size",
     ]
-    if schema_revisions == {"sqlite_0003"}:
+    if schema_revisions & PRIVATE_SCHEMA_REVISIONS:
         if [row[1] for row in private_columns] != expected_private_columns:
             raise VerificationError("private history schema columns are incomplete")
         if (
@@ -1239,6 +1279,19 @@ def _check_schema(connection: sqlite3.Connection) -> None:
             <= private_indexes
         ):
             raise VerificationError("private history schema indexes are incomplete")
+    if schema_revisions == {"sqlite_0004"}:
+        if not private_sql_row or not isinstance(private_sql_row[0], str):
+            raise VerificationError("private history table definition is missing")
+        private_definition = " ".join(private_sql_row[0].upper().split())
+        for required in (
+            "OPERATION IN ('ENCRYPT', 'DECRYPT', 'VALIDATE_PARAMS', 'GENERATE_PARAMS', "
+            "'GENERATE_KEYPAIR', 'DERIVE_SHARED_SECRET', 'EXCHANGE', 'SIGN', 'VERIFY')",
+            "CIPHER = 'DH' AND OPERATION IN ('VALIDATE_PARAMS', 'GENERATE_PARAMS', "
+            "'GENERATE_KEYPAIR', 'DERIVE_SHARED_SECRET', 'EXCHANGE')",
+            "CIPHER = 'RSA' AND OPERATION IN ('SIGN', 'VERIFY')",
+        ):
+            if required not in private_definition:
+                raise VerificationError("private history operation constraints are incomplete")
     expected_nullability = {
         "id": False,
         "created_at": True,
@@ -1310,6 +1363,32 @@ def _check_schema(connection: sqlite3.Connection) -> None:
         "DURATION_MS >= 0",
         "ID > 0",
     )
+    dh_plain_checks = (
+        cipher_values,
+        "OPERATION IS NULL OR (OPERATION IN ('ENCRYPT', 'DECRYPT') OR (CIPHER = 'DH' AND "
+        "OPERATION IN ('VALIDATE_PARAMS', 'GENERATE_PARAMS', 'GENERATE_KEYPAIR', "
+        "'DERIVE_SHARED_SECRET', 'EXCHANGE')))",
+        "SOURCE IN ('TEXT', 'FILE')",
+        "RESPONSE_MODE IN ('CONTENT', 'FILE')",
+        "INPUT_LENGTH >= 0",
+        "OUTPUT_LENGTH >= 0",
+        "SUCCEEDED IN (0, 1)",
+        "DURATION_MS >= 0",
+        "ID > 0",
+    )
+    dh_plain_checks_sqlalchemy = (
+        cipher_values,
+        "OPERATION IS NULL OR OPERATION IN ('ENCRYPT', 'DECRYPT') OR (CIPHER = 'DH' AND "
+        "OPERATION IN ('VALIDATE_PARAMS', 'GENERATE_PARAMS', 'GENERATE_KEYPAIR', "
+        "'DERIVE_SHARED_SECRET', 'EXCHANGE'))",
+        "SOURCE IN ('TEXT', 'FILE')",
+        "RESPONSE_MODE IN ('CONTENT', 'FILE')",
+        "INPUT_LENGTH >= 0",
+        "OUTPUT_LENGTH >= 0",
+        "SUCCEEDED IN (0, 1)",
+        "DURATION_MS >= 0",
+        "ID > 0",
+    )
     importer_checks = (
         "TYPEOF(ID) = 'INTEGER' AND ID >= 1 AND ID <= 9223372036854775807",
         "TYPEOF(CREATED_AT) = 'INTEGER'",
@@ -1324,9 +1403,29 @@ def _check_schema(connection: sqlite3.Connection) -> None:
         "TYPEOF(SUCCEEDED) = 'INTEGER' AND SUCCEEDED IN (0, 1)",
         "TYPEOF(DURATION_MS) = 'INTEGER' AND DURATION_MS >= 0",
     )
+    dh_importer_checks = (
+        "TYPEOF(ID) = 'INTEGER' AND ID >= 1 AND ID <= 9223372036854775807",
+        "TYPEOF(CREATED_AT) = 'INTEGER'",
+        f"TYPEOF(CIPHER) = 'TEXT' AND {cipher_values}",
+        "OPERATION IS NULL OR (TYPEOF(OPERATION) = 'TEXT' AND "
+        "(OPERATION IN ('ENCRYPT', 'DECRYPT') OR (CIPHER = 'DH' AND OPERATION IN "
+        "('VALIDATE_PARAMS', 'GENERATE_PARAMS', 'GENERATE_KEYPAIR', "
+        "'DERIVE_SHARED_SECRET', 'EXCHANGE'))))",
+        "TYPEOF(SOURCE) = 'TEXT' AND SOURCE IN ('TEXT', 'FILE')",
+        "RESPONSE_MODE IS NULL OR (TYPEOF(RESPONSE_MODE) = 'TEXT' AND "
+        "RESPONSE_MODE IN ('CONTENT', 'FILE'))",
+        "INPUT_LENGTH IS NULL OR (TYPEOF(INPUT_LENGTH) = 'INTEGER' AND INPUT_LENGTH >= 0)",
+        "OUTPUT_LENGTH IS NULL OR (TYPEOF(OUTPUT_LENGTH) = 'INTEGER' AND OUTPUT_LENGTH >= 0)",
+        "TYPEOF(HTTP_STATUS) = 'INTEGER'",
+        "TYPEOF(SUCCEEDED) = 'INTEGER' AND SUCCEEDED IN (0, 1)",
+        "TYPEOF(DURATION_MS) = 'INTEGER' AND DURATION_MS >= 0",
+    )
     accepted_check_signatures = {
         tuple(sorted(plain_checks)),
+        tuple(sorted(dh_plain_checks)),
+        tuple(sorted(dh_plain_checks_sqlalchemy)),
         tuple(sorted(importer_checks)),
+        tuple(sorted(dh_importer_checks)),
     }
     actual_checks: list[str] = []
     cursor = 0
@@ -1440,10 +1539,11 @@ def verify_staging(
         rows = _rows_from_connection(connection)
         private_rows = (
             _private_rows_from_connection(connection)
-            if manifest.private_count is not None or manifest.schema_revision == "sqlite_0003"
+            if manifest.private_count is not None
+            or manifest.schema_revision in PRIVATE_SCHEMA_REVISIONS
             else None
         )
-        if manifest.schema_revision == "sqlite_0003" and manifest.private_count is None:
+        if manifest.schema_revision in PRIVATE_SCHEMA_REVISIONS and manifest.private_count is None:
             raise VerificationError("private history manifest evidence is missing")
         actual_count = len(rows)
         actual_min = rows[0].id if rows else None
@@ -1758,7 +1858,7 @@ def backup_sqlite_live(
         source_rows = _rows_from_connection(source_connection)
         source_private_rows = (
             _private_rows_from_connection(source_connection)
-            if schema_provenance == "sqlite_0003"
+            if schema_provenance in PRIVATE_SCHEMA_REVISIONS
             else None
         )
         remaining_backup_time()
@@ -1827,7 +1927,7 @@ def backup_sqlite_live(
         remaining_backup_time()
         destination_private_rows = (
             _private_rows_from_connection(destination_connection)
-            if destination_schema == "sqlite_0003"
+            if destination_schema in PRIVATE_SCHEMA_REVISIONS
             else None
         )
         remaining_backup_time()
@@ -1838,7 +1938,7 @@ def backup_sqlite_live(
             schema_revision=destination_schema,
             snapshot_epoch_us=datetime_to_epoch_microseconds(datetime.now(UTC)),
             private_rows=(
-                destination_private_rows if destination_schema == "sqlite_0003" else None
+                destination_private_rows if destination_schema in PRIVATE_SCHEMA_REVISIONS else None
             ),
         )
         _set_sqlite_sequence(destination_connection, destination_sequence)
@@ -2121,15 +2221,20 @@ if __name__ == "__main__":
 __all__ = [
     "BUSY_TIMEOUT_SECONDS",
     "CIPHERS",
+    "DH_OPERATIONS",
     "FORMAT_VERSION",
     "HISTORY_COLUMNS",
     "IDS_STREAM_HEADER",
     "MAX_ROW_ID",
     "OPERATIONS",
+    "PRIVATE_OPERATIONS",
+    "PRIVATE_SCHEMA_REVISIONS",
     "REPLACEMENT_CONFIRMATION",
     "ROWS_STREAM_HEADER",
+    "RSA_OPERATIONS",
     "SOURCES",
     "STAGING_SCHEMA_SQL",
+    "TRANSFORM_OPERATIONS",
     "ContinuityError",
     "HistoryRow",
     "IdentityState",

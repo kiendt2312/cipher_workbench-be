@@ -21,10 +21,19 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from app.db.types import Boolean01, EpochMicrosecondUTC
 
 CIPHERS = ("caesar", "vigenere", "playfair", "affine", "columnar", "hill", "des", "rsa", "dh")
-OPERATIONS = ("encrypt", "decrypt")
+TRANSFORM_OPERATIONS = ("encrypt", "decrypt")
+DH_OPERATIONS = (
+    "validate_params",
+    "generate_params",
+    "generate_keypair",
+    "derive_shared_secret",
+    "exchange",
+)
+RSA_OPERATIONS = ("sign", "verify")
+OPERATIONS = (*TRANSFORM_OPERATIONS, *DH_OPERATIONS)
 SOURCES = ("text", "file")
 RESPONSE_MODES = ("content", "file")
-PRIVATE_OPERATIONS = (*OPERATIONS, "sign", "verify")
+PRIVATE_OPERATIONS = (*OPERATIONS, *RSA_OPERATIONS)
 
 
 class PrivateHistoryTimestamp(EpochMicrosecondUTC):
@@ -55,6 +64,13 @@ class CipherOperation(Base):
     __table_args__ = (
         CheckConstraint(_one_of("cipher", CIPHERS), name="ck_cipher_operations_cipher"),
         CheckConstraint(_one_of("operation", OPERATIONS), name="ck_cipher_operations_operation"),
+        CheckConstraint(
+            "operation IS NULL OR operation IN ('encrypt', 'decrypt') "
+            "OR (cipher = 'dh' AND operation IN "
+            "('validate_params', 'generate_params', 'generate_keypair', "
+            "'derive_shared_secret', 'exchange'))",
+            name="ck_cipher_operations_dh_operation",
+        ),
         CheckConstraint(_one_of("source", SOURCES), name="ck_cipher_operations_source"),
         CheckConstraint(
             _one_of("response_mode", RESPONSE_MODES), name="ck_cipher_operations_response_mode"
@@ -120,6 +136,9 @@ class PrivateHistoryRecord(Base):
         ),
         CheckConstraint(
             "operation IS NULL OR operation IN ('encrypt', 'decrypt') "
+            "OR (cipher = 'dh' AND operation IN "
+            "('validate_params', 'generate_params', 'generate_keypair', "
+            "'derive_shared_secret', 'exchange')) "
             "OR (cipher = 'rsa' AND operation IN ('sign', 'verify'))",
             name="ck_private_history_rsa_operation",
         ),

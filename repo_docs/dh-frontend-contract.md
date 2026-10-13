@@ -28,8 +28,12 @@ integer behavior, đồng thời nhận thêm decimal string canonical từ `sha
 - Manual `/params` chỉ nhận `5 <= q <= 10^12`; các endpoint downstream tự kiểm tra q
   tới `2^128-1`, không cần provenance token hay request trước đó.
 - Trace DH là square-and-multiply từ trái sang phải, đầy đủ, tối đa 128 rows mỗi phép.
-- Chỉ `/api/dh/caesar` ghi metadata history best-effort. Không lưu tham số, khóa,
-  input/result/file, trace hoặc warning.
+- Cả sáu route DH ghi metadata history best-effort. Operation mapping là `/params` →
+  `validate_params`, `/params/random` → `generate_params`, `/keypair` →
+  `generate_keypair`, `/shared-secret` → `derive_shared_secret`, `/exchange` →
+  `exchange`, còn `/caesar` giữ `encrypt|decrypt`. Standalone luôn có
+  `source="text"` và mọi length là `null`; không lưu tham số, khóa, input/result/file,
+  trace hoặc warning.
 
 ## 2. Endpoint và media type
 
@@ -388,7 +392,11 @@ kiểm q/factorization có thể tốn CPU.
 
 ## 10. History và privacy
 
-- Chỉ `/api/dh/caesar` match server history; năm endpoint tham số/khóa không tạo row.
+- Cả sáu endpoint match server history; `/api/dh/caesar` giữ operation `encrypt|decrypt`,
+  còn năm endpoint standalone dùng mapping semantic `validate_params`, `generate_params`,
+  `generate_keypair`, `derive_shared_secret`, `exchange` theo đúng path. Success và error
+  đều best-effort; standalone ghi `source="text"` nhưng `inputLength` và `outputLength`
+  luôn `null`.
 - JSON ghi `source="text"`; multipart ghi `source="file"`; `operation` theo action;
   `responseMode` luôn `null`.
 - JSON lengths là Unicode code points. File lengths là raw/output UTF-8 bytes và tính

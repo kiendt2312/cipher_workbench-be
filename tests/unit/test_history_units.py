@@ -50,8 +50,8 @@ def test_engine_is_lazy_and_ping_reports_missing_database(tmp_path: Path) -> Non
     assert not path.exists()
 
 
-def test_exactly_twenty_three_cipher_routes_are_recorded() -> None:
-    assert len(CIPHER_ROUTES) == 23
+def test_exactly_twenty_eight_cipher_routes_are_recorded() -> None:
+    assert len(CIPHER_ROUTES) == 28
     assert CIPHERS[-1] == "dh"
     assert "/api/hill/encrypt" in CIPHER_ROUTES
     assert "/api/hill/decrypt" in CIPHER_ROUTES
@@ -63,6 +63,29 @@ def test_exactly_twenty_three_cipher_routes_are_recorded() -> None:
     assert "/api/rsa/keys" not in CIPHER_ROUTES
     assert "/api/rsa/keys/random" not in CIPHER_ROUTES
     assert "/api/dh/caesar" in CIPHER_ROUTES
+    assert {
+        "/api/dh/params",
+        "/api/dh/params/random",
+        "/api/dh/keypair",
+        "/api/dh/shared-secret",
+        "/api/dh/exchange",
+    } <= CIPHER_ROUTES.keys()
+    assert [
+        CIPHER_ROUTES[path].operation
+        for path in (
+            "/api/dh/params",
+            "/api/dh/params/random",
+            "/api/dh/keypair",
+            "/api/dh/shared-secret",
+            "/api/dh/exchange",
+        )
+    ] == [
+        "validate_params",
+        "generate_params",
+        "generate_keypair",
+        "derive_shared_secret",
+        "exchange",
+    ]
     assert (
         not {
             "/api/dh/encrypt",

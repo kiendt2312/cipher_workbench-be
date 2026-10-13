@@ -103,7 +103,7 @@ def test_sqlite_history_has_exact_schema_and_is_repeatable(migrated_sqlite) -> N
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='cipher_operations'"
         ).fetchone()[0]
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "sqlite_0003",
+            "sqlite_0004",
         )
     assert columns == EXPECTED_COLUMNS
     assert not_null == {
@@ -127,6 +127,12 @@ def test_sqlite_history_has_exact_schema_and_is_repeatable(migrated_sqlite) -> N
     assert all(cipher in table_sql for cipher in ("caesar", "hill", "des", "rsa", "dh"))
     for constraint in (
         "operation IN ('encrypt', 'decrypt')",
+        "cipher = 'dh' AND operation IN",
+        "'validate_params'",
+        "'generate_params'",
+        "'generate_keypair'",
+        "'derive_shared_secret'",
+        "'exchange'",
         "source IN ('text', 'file')",
         "response_mode IN ('content', 'file')",
         "input_length >= 0",
@@ -190,7 +196,7 @@ def test_dh_migration_preserves_rows_indexes_sequence_and_guards_downgrade(
             "SELECT seq FROM sqlite_sequence WHERE name = 'cipher_operations'"
         ).fetchone() == (77,)
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "sqlite_0003",
+            "sqlite_0004",
         )
         assert (
             "'dh'"
@@ -275,6 +281,255 @@ def test_dh_migration_preserves_rows_indexes_sequence_and_guards_downgrade(
             )
 
 
+def test_sqlite_0004_rebuilds_private_history_and_fails_before_downgrade_mutation(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "dh-private-migration.sqlite3"
+    url = _url(path)
+    _migrate(url, "upgrade", "sqlite_0003")
+
+    with sqlite3.connect(path) as connection:
+        connection.executemany(
+            "INSERT INTO cipher_operations "
+            "(id, created_at, cipher, operation, source, response_mode, input_length, "
+            "output_length, http_status, succeeded, duration_ms) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                (4, 10, "caesar", "encrypt", "text", "content", 12, 13, 200, 1, 7),
+                (9, 20, "dh", "encrypt", "file", "file", 14, 15, 422, 0, 8),
+            ],
+        )
+        connection.execute("UPDATE sqlite_sequence SET seq = 77 WHERE name = 'cipher_operations'")
+        connection.executemany(
+            "INSERT INTO private_history_records "
+            "(id, owner_id, created_at, cipher, operation, source, response_mode, "
+            "input_length, output_length, http_status, succeeded, duration_ms, content_bytes, "
+            "content_kind, numeric_input_json, signature_json, public_key_json, result_json, "
+            "validity, processing_state, logical_size) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    5,
+                    PROFILE_OWNER_ID,
+                    10,
+                    "rsa",
+                    "sign",
+                    "text",
+                    "content",
+                    12,
+                    13,
+                    201,
+                    1,
+                    7,
+                    b"synthetic-content-one",
+                    "bytes",
+                    '{"marker":"synthetic-number-one"}',
+                    '{"marker":"synthetic-signature-one"}',
+                    '{"marker":"synthetic-public-one"}',
+                    '{"marker":"synthetic-result-one"}',
+                    1,
+                    "completed",
+                    1234,
+                ),
+                (
+                    8,
+                    "synthetic-owner-two",
+                    20,
+                    "dh",
+                    "encrypt",
+                    "file",
+                    "file",
+                    14,
+                    15,
+                    422,
+                    0,
+                    8,
+                    b"synthetic-content-two",
+                    "text",
+                    '{"marker":"synthetic-number-two"}',
+                    '{"marker":"synthetic-signature-two"}',
+                    '{"marker":"synthetic-public-two"}',
+                    '{"marker":"synthetic-result-two"}',
+                    0,
+                    "failed",
+                    2345,
+                ),
+            ],
+        )
+        connection.execute(
+            "UPDATE sqlite_sequence SET seq = 88 WHERE name = 'private_history_records'"
+        )
+        connection.commit()
+
+        before = {
+            "cipher_columns": [
+                row[1] for row in connection.execute("PRAGMA table_info(cipher_operations)")
+            ],
+            "private_columns": [
+                row[1] for row in connection.execute("PRAGMA table_info(private_history_records)")
+            ],
+            "cipher_rows": connection.execute(
+                "SELECT * FROM cipher_operations ORDER BY id"
+            ).fetchall(),
+            "private_rows": connection.execute(
+                "SELECT * FROM private_history_records ORDER BY id"
+            ).fetchall(),
+            "indexes": connection.execute(
+                "SELECT tbl_name, name, sql FROM sqlite_master "
+                "WHERE type = 'index' AND tbl_name IN "
+                "('cipher_operations', 'private_history_records') "
+                "ORDER BY tbl_name, name"
+            ).fetchall(),
+            "sequences": connection.execute(
+                "SELECT name, seq FROM sqlite_sequence "
+                "WHERE name IN ('cipher_operations', 'private_history_records') ORDER BY name"
+            ).fetchall(),
+        }
+
+    _migrate(url, "upgrade", "head")
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
+            "sqlite_0004",
+        )
+        after = {
+            "cipher_columns": [
+                row[1] for row in connection.execute("PRAGMA table_info(cipher_operations)")
+            ],
+            "private_columns": [
+                row[1] for row in connection.execute("PRAGMA table_info(private_history_records)")
+            ],
+            "cipher_rows": connection.execute(
+                "SELECT * FROM cipher_operations ORDER BY id"
+            ).fetchall(),
+            "private_rows": connection.execute(
+                "SELECT * FROM private_history_records ORDER BY id"
+            ).fetchall(),
+            "indexes": connection.execute(
+                "SELECT tbl_name, name, sql FROM sqlite_master "
+                "WHERE type = 'index' AND tbl_name IN "
+                "('cipher_operations', 'private_history_records') "
+                "ORDER BY tbl_name, name"
+            ).fetchall(),
+            "sequences": connection.execute(
+                "SELECT name, seq FROM sqlite_sequence "
+                "WHERE name IN ('cipher_operations', 'private_history_records') ORDER BY name"
+            ).fetchall(),
+        }
+        assert after == before
+
+        connection.execute(
+            "INSERT INTO cipher_operations "
+            "(created_at, cipher, operation, source, http_status, succeeded, duration_ms) "
+            "VALUES (30, 'dh', 'exchange', 'text', 200, 1, 3)"
+        )
+        connection.execute(
+            "INSERT INTO private_history_records "
+            "(owner_id, created_at, cipher, operation, source, http_status, succeeded, "
+            "duration_ms, logical_size) VALUES "
+            "('owner', 30, 'dh', 'exchange', 'text', 200, 1, 3, 1)"
+        )
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                "INSERT INTO cipher_operations "
+                "(created_at, cipher, operation, source, http_status, succeeded, duration_ms) "
+                "VALUES (31, 'caesar', 'exchange', 'text', 422, 0, 1)"
+            )
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                "INSERT INTO private_history_records "
+                "(owner_id, created_at, cipher, operation, source, http_status, succeeded, "
+                "duration_ms, logical_size) VALUES "
+                "('owner', 31, 'rsa', 'exchange', 'text', 422, 0, 1, 1)"
+            )
+        connection.commit()
+        failed_downgrade_state = {
+            "cipher_rows": connection.execute(
+                "SELECT * FROM cipher_operations ORDER BY id"
+            ).fetchall(),
+            "private_rows": connection.execute(
+                "SELECT * FROM private_history_records ORDER BY id"
+            ).fetchall(),
+            "indexes": connection.execute(
+                "SELECT tbl_name, name, sql FROM sqlite_master "
+                "WHERE type = 'index' AND tbl_name IN "
+                "('cipher_operations', 'private_history_records') "
+                "ORDER BY tbl_name, name"
+            ).fetchall(),
+            "sequences": connection.execute(
+                "SELECT name, seq FROM sqlite_sequence "
+                "WHERE name IN ('cipher_operations', 'private_history_records') ORDER BY name"
+            ).fetchall(),
+        }
+
+    with pytest.raises(RuntimeError, match="DH operation rows"):
+        _migrate(url, "downgrade", "sqlite_0003")
+
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
+            "sqlite_0004",
+        )
+        assert {
+            "cipher_rows": connection.execute(
+                "SELECT * FROM cipher_operations ORDER BY id"
+            ).fetchall(),
+            "private_rows": connection.execute(
+                "SELECT * FROM private_history_records ORDER BY id"
+            ).fetchall(),
+            "indexes": connection.execute(
+                "SELECT tbl_name, name, sql FROM sqlite_master "
+                "WHERE type = 'index' AND tbl_name IN "
+                "('cipher_operations', 'private_history_records') "
+                "ORDER BY tbl_name, name"
+            ).fetchall(),
+            "sequences": connection.execute(
+                "SELECT name, seq FROM sqlite_sequence "
+                "WHERE name IN ('cipher_operations', 'private_history_records') ORDER BY name"
+            ).fetchall(),
+        } == failed_downgrade_state
+
+    with sqlite3.connect(path) as connection:
+        connection.execute("DELETE FROM cipher_operations WHERE operation = 'exchange'")
+        connection.execute("DELETE FROM private_history_records WHERE operation = 'exchange'")
+        connection.commit()
+    _migrate(url, "downgrade", "sqlite_0003")
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
+            "sqlite_0003",
+        )
+        assert connection.execute(
+            "SELECT cipher, operation FROM cipher_operations ORDER BY id"
+        ).fetchall() == [("caesar", "encrypt"), ("dh", "encrypt")]
+        assert connection.execute(
+            "SELECT cipher, operation FROM private_history_records ORDER BY id"
+        ).fetchall() == [("rsa", "sign"), ("dh", "encrypt")]
+        private_sql = (
+            connection.execute(
+                "SELECT sql FROM sqlite_master "
+                "WHERE type = 'table' AND name = 'private_history_records'"
+            )
+            .fetchone()[0]
+            .lower()
+        )
+        assert "operation in ('encrypt', 'decrypt', 'sign', 'verify')" in private_sql
+        assert all(
+            f"'{operation}'" not in private_sql
+            for operation in (
+                "validate_params",
+                "generate_params",
+                "generate_keypair",
+                "derive_shared_secret",
+                "exchange",
+            )
+        )
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                "INSERT INTO private_history_records "
+                "(owner_id, created_at, cipher, operation, source, http_status, succeeded, "
+                "duration_ms, logical_size) VALUES "
+                "('synthetic-owner-three', 30, 'dh', 'exchange', 'text', 422, 0, 1, 1)"
+            )
+
+
 def test_empty_sqlite_baseline_can_downgrade_and_reupgrade(tmp_path: Path) -> None:
     path = tmp_path / "migration-roundtrip.sqlite3"
     url = _url(path)
@@ -289,7 +544,7 @@ def test_empty_sqlite_baseline_can_downgrade_and_reupgrade(tmp_path: Path) -> No
     _migrate(url, "upgrade", "head")
     with sqlite3.connect(path) as connection:
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "sqlite_0003",
+            "sqlite_0004",
         )
         assert connection.execute(
             "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'cipher_operations'"
@@ -514,6 +769,33 @@ def test_wrong_revision_is_not_modified_and_cipher_remains_available(
         )
 
 
+def test_dh_response_survives_sqlite_0003_with_redacted_best_effort_warning(
+    tmp_path: Path, monkeypatch, caplog, capsys
+) -> None:
+    path = tmp_path / "pre-0004.sqlite3"
+    url = _url(path)
+    _migrate(url, "upgrade", "sqlite_0003")
+    monkeypatch.setenv("DATABASE_URL", url)
+    monkeypatch.setenv("HISTORY_API_ENABLED", "true")
+    monkeypatch.setenv("HISTORY_COOKIE_SECURE", "false")
+    marker = "schema-compatibility-private-marker"
+
+    with caplog.at_level("WARNING"), TestClient(app, raise_server_exceptions=False) as client:
+        response = client.post(
+            "/api/dh/exchange",
+            json={"q": "353", "alpha": "3", "privateKeyA": "97", "privateKeyB": "233"},
+        )
+        error_response = client.post("/api/dh/params", json={"q": marker})
+
+    assert response.status_code == 200
+    assert error_response.status_code == 422
+    captured_logs = caplog.text + capsys.readouterr().err
+    assert "Could not record cipher operation history" in captured_logs
+    assert marker not in captured_logs
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("SELECT count(*) FROM private_history_records").fetchone() == (0,)
+
+
 def test_history_keyset_pagination_preserves_tied_timestamp_order(
     migrated_sqlite, monkeypatch
 ) -> None:
@@ -666,6 +948,98 @@ def test_sqlite_persists_rsa_metadata_without_payload_and_excludes_keygen_and_tr
         )
     assert marker not in dumped
     assert filename not in dumped
+
+
+def test_dh_history_is_private_metadata_only_and_filters_new_operations(
+    migrated_sqlite, monkeypatch, caplog
+) -> None:
+    path, url = migrated_sqlite
+    marker = "dh-sensitive-marker-q-alpha-private-public-shared-trace-warning"
+    monkeypatch.setenv("DATABASE_URL", url)
+    monkeypatch.setenv("HISTORY_API_ENABLED", "true")
+    monkeypatch.setenv("HISTORY_COOKIE_SECURE", "false")
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        success_requests = [
+            ("/api/dh/params", {"q": "23"}),
+            ("/api/dh/params/random", {"bits": 16}),
+            ("/api/dh/keypair", {"q": "353", "alpha": "3", "privateKey": "97"}),
+            (
+                "/api/dh/shared-secret",
+                {"q": "353", "privateKey": "97", "otherPublicKey": "248"},
+            ),
+            (
+                "/api/dh/exchange",
+                {"q": "353", "alpha": "3", "privateKeyA": "97", "privateKeyB": "233"},
+            ),
+        ]
+        for path_name, payload in success_requests:
+            assert client.post(path_name, json=payload).status_code == 200
+
+        error_requests = [
+            ("/api/dh/params", {"q": marker}),
+            (
+                "/api/dh/keypair",
+                {"q": "353", "alpha": "3", "privateKey": marker},
+            ),
+            (
+                "/api/dh/shared-secret",
+                {"q": "353", "privateKey": marker, "otherPublicKey": "248"},
+            ),
+            (
+                "/api/dh/exchange",
+                {"q": "353", "alpha": marker, "privateKeyA": "97"},
+            ),
+            ("/api/dh/params/random", {"bits": marker}),
+        ]
+        for path_name, payload in error_requests:
+            assert client.post(path_name, json=payload).status_code == 422
+
+        page = client.get("/api/history", params={"cipher": "dh"})
+        assert page.status_code == 200
+        items = page.json()["result"]["items"]
+        assert sorted(item["operation"] for item in items) == sorted(
+            [
+                "validate_params",
+                "generate_params",
+                "generate_keypair",
+                "derive_shared_secret",
+                "exchange",
+            ]
+            * 2
+        )
+        assert all(
+            item["responseMode"] is None
+            and item["inputLength"] is None
+            and item["outputLength"] is None
+            and item["contentAvailable"] is False
+            for item in items
+        )
+        exchange = client.get("/api/history", params={"cipher": "dh", "operation": "exchange"})
+        assert exchange.status_code == 200
+        assert [item["operation"] for item in exchange.json()["result"]["items"]] == [
+            "exchange",
+            "exchange",
+        ]
+        empty = client.get("/api/history", params={"cipher": "dh", "operation": "encrypt"})
+        assert empty.status_code == 200
+        assert empty.json()["result"] == {"items": [], "nextCursor": None}
+        invalid = client.get("/api/history", params={"cipher": "dh", "operation": "private_key"})
+        assert invalid.status_code == 422
+        assert invalid.json()["message"] == "Bộ lọc lịch sử không hợp lệ."
+
+    with sqlite3.connect(path) as connection:
+        rows = connection.execute(
+            "SELECT operation, response_mode, input_length, output_length, content_bytes, "
+            "content_kind, numeric_input_json, signature_json, public_key_json, result_json, "
+            "validity, processing_state FROM private_history_records WHERE cipher = 'dh' "
+            "ORDER BY id"
+        ).fetchall()
+        assert len(rows) == 10
+        assert all(row[1:] == (None,) * 11 for row in rows)
+        dumped = "\n".join(connection.iterdump())
+    assert marker not in dumped
+    assert marker not in caplog.text
 
 
 def test_retention_uses_sqlite_utc_database_clock(migrated_sqlite) -> None:

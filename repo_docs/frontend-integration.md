@@ -703,10 +703,11 @@ RSA và DH chỉ nhận base `application/json` trên JSON variants. RSA nhận 
 `multipart/form-data` với response mode `content|file`; RSA multipart không có
 `response_mode`.
 
-Ngoài 23 route biến đổi được history matcher ghi nhận, Hill có
+Ngoài 28 route được history matcher ghi nhận (23 route biến đổi cũ và năm route DH
+standalone), Hill có
 `POST /api/hill/key/analyze` và `GET /api/hill/key/random?m=2|3|4`; DES có
-`POST /api/des/trace`; RSA có hai route keygen; DH có năm route params/key không ghi
-history. Backend còn có hai route đọc dùng chung:
+`POST /api/des/trace`; RSA có hai route keygen. Năm route DH standalone ghi metadata
+best-effort với operation semantic; backend còn có hai route đọc dùng chung:
 `GET /api/health` và `GET /api/history` (mục 16).
 
 Contract wire riêng của ba route Columnar:
@@ -2097,7 +2098,7 @@ hiện tại luôn thắng demo.
 
 ## 14. Acceptance checklist
 
-- [ ] Cả 23 POST transform, chín POST helper/trace/keygen và GET random Hill được chọn
+- [ ] Cả 28 POST history matcher route, bốn POST helper/trace/keygen và GET random Hill được chọn
   đúng theo cipher/source/operation.
 - [ ] Caesar vector `Hello World`, key `3` cho `Khoor Zruog` và decrypt đúng chiều ngược lại.
 - [ ] Vigenère vector `Attack at dawn!`/`LEMON` cho `Lxfopv ef rnhr!` và decrypt đúng.
@@ -2233,11 +2234,15 @@ change. Không thêm `/v1`, endpoint, field hoặc behavior mới chỉ bằng c
 
 ## 16. Health và lịch sử thao tác
 
-Backend có thể chạy với SQLite cục bộ trên máy BE. Khi bật, mỗi request tới 23 route biến đổi được
-ghi lại dưới dạng **metadata**. Backend không lưu text, key, IV, tên file, nội dung file
+Backend có thể chạy với SQLite cục bộ trên máy BE. Khi bật, mỗi request tới 28 route history
+matcher (23 route biến đổi cũ và năm route DH standalone) được ghi lại dưới dạng
+**metadata**. Backend không lưu text, key, IV, tên file, nội dung file
 hay kết quả. Hai route khóa Hill, hai route khóa RSA và `/api/des/trace` không được ghi.
 Hai RSA transform được ghi kể cả request lỗi, nhưng không lưu key/data/cipher array,
 metadata lossless hoặc trace. Contract của các route hiện hữu không đổi.
+Năm route DH standalone cũng ghi cả success/error; chúng dùng operation `validate_params`,
+`generate_params`, `generate_keypair`, `derive_shared_secret`, `exchange` theo path, với
+`source=text` và hai length luôn `null`.
 
 ### 16.1 Chạy backend có SQLite khi dev FE
 
@@ -3497,8 +3502,11 @@ standalone chỉ nhận thêm decimal string canonical để dùng trực tiếp
 - Manual `/params` chỉ nhận `5 <= q <= 10^12`; các endpoint downstream tự kiểm tra q
   tới `2^128-1`, không cần provenance token hay request trước đó.
 - Trace DH là square-and-multiply từ trái sang phải, đầy đủ, tối đa 128 rows mỗi phép.
-- Chỉ `/api/dh/caesar` ghi metadata history best-effort. Không lưu tham số, khóa,
-  input/result/file, trace hoặc warning.
+- Cả sáu route DH ghi metadata history best-effort. `/api/dh/caesar` giữ
+  `encrypt|decrypt`; năm route standalone lần lượt dùng `validate_params`,
+  `generate_params`, `generate_keypair`, `derive_shared_secret`, `exchange`. Standalone
+  dùng `source=text`, hai length là `null`, và không lưu tham số, khóa, input/result/file,
+  trace hoặc warning.
 
 ### 2. Endpoint và media type
 
@@ -3853,7 +3861,10 @@ kiểm q/factorization có thể tốn CPU.
 
 ### 10. History và privacy
 
-- Chỉ `/api/dh/caesar` match server history; năm endpoint tham số/khóa không tạo row.
+- Cả sáu endpoint match server history; `/api/dh/caesar` giữ `encrypt|decrypt`, năm
+  endpoint standalone dùng mapping semantic theo path: `validate_params`, `generate_params`,
+  `generate_keypair`, `derive_shared_secret`, `exchange`. Success/error đều best-effort;
+  standalone ghi `source="text"` với hai length `null`.
 - JSON ghi `source="text"`; multipart ghi `source="file"`; `operation` theo action;
   `responseMode` luôn `null`.
 - JSON lengths là Unicode code points. File lengths là raw/output UTF-8 bytes và tính

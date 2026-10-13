@@ -35,6 +35,10 @@ connection URL, absolute private path hoặc dữ liệu người dùng.
 
 ## SQLite staging và publish
 
+- Target SQLite schema revision (required for this change: `sqlite_0004`):
+- Migration-before-app evidence (app/retention stopped, no open writer):
+- Explicit operator approval for any real database migration:
+- No-backfill/no-live-migration confirmation for this change:
 - Manifest format version/digest:
 - Integrity/revision/schema/index/constraint result:
 - Row count / ID set / min/max match:

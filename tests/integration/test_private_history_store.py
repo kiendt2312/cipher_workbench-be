@@ -86,7 +86,7 @@ def test_private_history_is_owner_scoped_and_expires_from_original_timestamp(
     migrated_private_history,
 ) -> None:
     database = migrated_private_history
-    created_at = datetime(2026, 10, 11, 8, 0, tzinfo=UTC)
+    created_at = datetime.now(UTC).replace(microsecond=0) - timedelta(hours=1)
 
     async def exercise() -> None:
         await record_operation(
@@ -218,7 +218,7 @@ def test_backup_restore_keeps_original_expiry_and_does_not_resurrect_access(
         source_path,
         backup_path,
         source_revision="runtime-sqlite",
-        schema_revision="sqlite_0003",
+        schema_revision="sqlite_0004",
         timeout=2,
     )
     tampered_path = tmp_path / "history-backup-tampered.sqlite3"
@@ -230,13 +230,13 @@ def test_backup_restore_keeps_original_expiry_and_does_not_resurrect_access(
         verify_staging(
             tampered_path,
             expected_manifest_digest=evidence.backup_digest,
-            expected_schema_revision="sqlite_0003",
+            expected_schema_revision="sqlite_0004",
         )
     restore_sqlite_backup(
         backup_path,
         restored_path,
         expected_manifest_digest=evidence.backup_digest,
-        expected_schema_revision="sqlite_0003",
+        expected_schema_revision="sqlite_0004",
     )
 
     restored = create_database(_url(restored_path))
@@ -343,6 +343,7 @@ def test_storage_validation_rejects_malformed_metadata_and_payloads() -> None:
         replace(entry, cipher="unknown"),
         replace(entry, operation="unknown"),
         replace(entry, cipher="caesar", operation="sign"),
+        replace(entry, cipher="caesar", operation="exchange"),
         replace(entry, source="number"),
         replace(entry, response_mode="download"),
         replace(entry, input_length=-1),

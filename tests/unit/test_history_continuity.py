@@ -60,6 +60,37 @@ def _row(
     )
 
 
+def _private_row(
+    row_id: int = 1,
+    *,
+    cipher: str = "dh",
+    operation: object = "exchange",
+) -> tuple[object, ...]:
+    return (
+        row_id,
+        "synthetic-owner",
+        1_000_000,
+        cipher,
+        operation,
+        "text",
+        None,
+        None,
+        None,
+        200,
+        1,
+        2,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        1,
+    )
+
+
 def _create_baseline_fixture(
     path: Path,
     *,
@@ -184,7 +215,7 @@ def test_mapping_normalization_preserves_datetime_precision_and_ignores_extra_pa
 def test_dh_rows_are_supported_by_continuity_staging(tmp_path: Path) -> None:
     result = import_staging(
         tmp_path / "dh.sqlite3",
-        [_row(1, cipher="dh")],
+        [_row(1, cipher="dh", operation="exchange")],
         IdentityState(1, True, 1),
         source_revision="postgres-0004",
         schema_revision="sqlite_0002",
@@ -196,8 +227,65 @@ def test_dh_rows_are_supported_by_continuity_staging(tmp_path: Path) -> None:
             "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'cipher_operations'"
         ).fetchone()[0]
         assert "'dh'" in table_sql
-        assert connection.execute("SELECT cipher FROM cipher_operations").fetchone() == ("dh",)
+        assert connection.execute("SELECT cipher, operation FROM cipher_operations").fetchone() == (
+            "dh",
+            "exchange",
+        )
     assert result.verification.manifest.count == 1
+
+
+def test_continuity_rejects_dh_operations_for_other_ciphers() -> None:
+    with pytest.raises(InvalidHistoryRow, match="Diffie-Hellman"):
+        _row(1, cipher="caesar", operation="exchange")
+
+
+def test_private_history_digest_accepts_dh_and_rsa_rows_without_exposing_payloads() -> None:
+    digest = continuity.private_history_digest(
+        [
+            _private_row(),
+            _private_row(2, cipher="rsa", operation="sign"),
+        ]
+    )
+
+    assert len(digest) == 64
+    assert digest == continuity.private_history_digest(
+        [
+            _private_row(),
+            _private_row(2, cipher="rsa", operation="sign"),
+        ]
+    )
+
+
+@pytest.mark.parametrize(
+    ("row", "message"),
+    (
+        (_private_row(cipher="rsa", operation="exchange"), "wrong cipher"),
+        (_private_row(cipher="dh", operation="sign"), "wrong cipher"),
+        (_private_row(cipher="caesar", operation="not-supported"), "not supported"),
+        (_private_row(cipher="caesar", operation=1), "not supported"),
+        (_private_row(cipher="unknown", operation="encrypt"), "not supported"),
+    ),
+)
+def test_private_history_digest_rejects_invalid_or_cross_cipher_dh_rows(
+    row: tuple[object, ...], message: str
+) -> None:
+    with pytest.raises(VerificationError, match=message):
+        continuity.private_history_digest([row])
+
+
+@pytest.mark.parametrize(
+    "rows",
+    (
+        (tuple(_private_row())[:-1],),
+        (_private_row(row_id=0),),
+        (_private_row(row_id=2), _private_row(row_id=1)),
+    ),
+)
+def test_private_history_digest_rejects_invalid_shape_and_order(
+    rows: tuple[tuple[object, ...], ...],
+) -> None:
+    with pytest.raises(VerificationError):
+        continuity.private_history_digest(rows)
 
 
 def test_epoch_codec_is_exact_and_rejects_naive_values() -> None:

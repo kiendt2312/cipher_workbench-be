@@ -797,12 +797,18 @@ secret-bearing trace. Ghi metadata của cipher cũ vẫn best-effort; RSA sign/
 trạng thái `history.saved/reason` quan sát được và không làm mất kết quả crypto khi DB lỗi.
 
 Có 23 route biến đổi cũ được ghi: encrypt/decrypt/file của năm cipher cổ điển và DES,
-encrypt/decrypt của Hill, cùng hai transform RSA. RSA encrypt JSON có `source=text`,
-encrypt multipart `.txt` có `source=file`, decrypt có `source=text`; `responseMode`
-luôn null. JSON RSA text encrypt chỉ ghi `inputLength` code point, text decrypt chỉ
-ghi `outputLength` code point, multipart chỉ ghi `inputLength` raw byte; phía cipher
-array và number để length null. Chỉ `/api/dh/caesar` ghi metadata DH; năm route DH
-còn lại không ghi, và không tham số/khóa/content/file/trace/warning nào được lưu.
+encrypt/decrypt của Hill, cùng hai transform RSA. Năm route DH standalone được ghi thêm
+theo operation semantic, thành 28 route matcher; RSA sign/verify vẫn dùng private-history
+adapter riêng. RSA encrypt JSON có `source=text`, encrypt multipart `.txt` có
+`source=file`, decrypt có `source=text`; `responseMode` luôn null. JSON RSA text encrypt
+chỉ ghi `inputLength` code point, text decrypt chỉ ghi `outputLength` code point,
+multipart chỉ ghi `inputLength` raw byte; phía cipher array và number để length null.
+DH mapping là `/api/dh/params` → `validate_params`, `/api/dh/params/random` →
+`generate_params`, `/api/dh/keypair` → `generate_keypair`, `/api/dh/shared-secret` →
+`derive_shared_secret`, `/api/dh/exchange` → `exchange`; `/api/dh/caesar` vẫn dùng
+`encrypt|decrypt`. Sáu route DH đều ghi best-effort cả success/error; standalone luôn
+`source=text` với mọi length null và không tham số/khóa/content/file/trace/warning nào
+được lưu.
 Hai route khóa Hill/RSA và `/api/des/trace` không ghi. Bốn route RSA sign/verify mới
 ghi các kết quả hoàn tất, gồm cả verification `valid=false`; request bị reject hoặc
 key không hợp lệ không ghi payload.
@@ -900,7 +906,7 @@ app/
 │   ├── engine.py                   # async engine, session factory, ping
 │   └── models.py                   # legacy + private history tables
 ├── history/
-│   ├── routes.py                   # 23 route biến đổi cũ được ghi lịch sử
+│   ├── routes.py                   # 28 matcher route được ghi lịch sử
 │   ├── cursor.py                   # cursor phân trang opaque
 │   ├── signatures.py               # adapter lưu kết quả RSA signature
 │   └── store.py                    # TTL/quota/FIFO/ownership storage
@@ -954,7 +960,10 @@ hoàn chỉnh.
 README là bản nhập môn, không thay thế đặc tả hoặc OpenAPI. Khi có khác biệt, dùng
 thứ tự sau:
 
-1. [OpenSpec Diffie–Hellman đang hoạt động](openspec/changes/add-diffie-hellman/) cho DH,
+1. [OpenSpec mở rộng DH history](openspec/changes/expand-dh-operation-history/) có quyền
+   cao hơn riêng cho operation history và supersede quyết định D8;
+   [OpenSpec Diffie–Hellman gốc](openspec/changes/add-diffie-hellman/) tiếp tục là nguồn
+   cho phần DH còn lại,
    [OpenSpec RSA đang hoạt động](openspec/changes/add-rsa-cipher/) cho RSA (gồm quyết định chủ sở
    hữu Q1–Q16 ngày 2026-10-06), [OpenSpec DES](openspec/changes/archive/2026-10-01-add-des-cipher/)
    cho DES (gồm quyết định chủ sở hữu Q1–Q22 ngày 2026-10-01),

@@ -54,10 +54,10 @@ uv run python -m app.history.postgres_source prepare \
   --staging "$STAGING_PATH" --runtime "$RUNTIME_PATH"
 uv run python -m app.history.continuity verify \
   --database "$STAGING_PATH" --expected-manifest-digest "$MANIFEST_DIGEST" \
-  --schema-revision sqlite_0003
+  --schema-revision sqlite_0004
 ```
 
-Hai command trên fail-closed nếu staging đã tồn tại, nguồn không ở revision `0004`,
+Hai command trên fail-closed nếu staging đã tồn tại, nguồn legacy không ở revision `0004`,
 schema/identity/row không hợp lệ hoặc path staging trùng runtime. Output evidence đã
 redact URL/path và không chứa payload.
 
@@ -108,7 +108,7 @@ uv run python -m app.history.continuity backup \
 uv run python -m app.history.continuity restore \
   --backup "$BACKUP_PATH" --target "$RESTORE_REHEARSAL_PATH" \
   --expected-manifest-digest "$BACKUP_MANIFEST_DIGEST" \
-  --schema-revision sqlite_0003
+  --schema-revision sqlite_0004
 ```
 
 Named volume giúp container restart nhưng không thay thế backup ngoài volume. Theo
@@ -149,7 +149,25 @@ Việc này là space reclamation vận hành, không mở rộng cam kết xóa
 Sau restore, giữ nguyên `created_at`; read predicate chặn row quá năm giờ ngay cả
 trước khi purge vật lý chạy.
 
-## 5. Rollback và fix-forward
+## 5. Rollout schema `sqlite_0004` và rollback/fix-forward
+
+Change `expand-dh-operation-history` chỉ kiểm thử trên SQLite disposable. Nó không
+backfill request cũ, không chạy live migration và không chạm database production.
+Nếu áp dụng thật, operator phải có backup/restore rehearsal, target path đã xác minh,
+write freeze, và explicit approval trước khi migrate. Trình tự bắt buộc là:
+
+1. dừng app và retention worker, xác nhận không còn writer/open connection;
+2. tạo backup ngoài volume và verify integrity/schema/row/index/sequence;
+3. chạy migration SQLite `sqlite_0004` trước khi khởi động app build mới;
+4. kiểm tra health và required schema revision `sqlite_0004`, rồi mới mở traffic.
+
+Rollback app phải xảy ra trước rollback schema. Downgrade `sqlite_0004 → sqlite_0003`
+chỉ được xem xét khi cả hai bảng không còn operation DH standalone; migration sẽ fail
+trước mọi rename/drop nếu còn row như vậy. Không xóa row để ép downgrade, không dùng
+destructive downgrade làm production rollback, và mọi DB thật vẫn cần operator approval
+riêng.
+
+## 6. Rollback và fix-forward
 
 - Replacement/restore runtime chỉ được dùng trước write SQLite đầu tiên, khi runtime
   vẫn khớp immutable cutover manifest. Không refresh manifest để lách gate.
@@ -169,7 +187,7 @@ uv run python -m app.history.continuity delta \
   --before "$PRE_CUTOVER_SNAPSHOT" --after "$CURRENT_SQLITE_SNAPSHOT"
 ```
 
-## 6. Gate retirement PostgreSQL dự án
+## 7. Gate retirement PostgreSQL dự án
 
 Owner đã cho phép retirement sau cutover thành công, nhưng đây là operational phase
 riêng. Trước thao tác phá hủy phải có đủ:
