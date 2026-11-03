@@ -93,7 +93,7 @@ Với mỗi digraph gồm hai ô khác nhau trong ma trận: encrypt cùng hàng
 
 ### Requirement: Vector Playfair canonical hoàn chỉnh
 
-Hệ thống SHALL tạo đúng các vector bên dưới với keyword `PLAYFAIR EXAMPLE`; các vector này cố định đồng thời matrix, normalization, digraph preparation và hướng dịch. (Truy vết: scope mới BE-PLAY-01, BE-PLAY-02; quyết định chủ sở hữu cho change này)
+Hệ thống SHALL tạo đúng các vector bên dưới với keyword `PLAYFAIR EXAMPLE`; các vector này cố định đồng thời matrix, normalization, digraph preparation, hướng dịch và bộ nhận diện filler. (Truy vết: scope mới BE-PLAY-01, BE-PLAY-02; quyết định chủ sở hữu cho change Playfair/Vigenère; yêu cầu chủ sở hữu ngày 2026-10-01 cho bản thô và bản lọc)
 
 #### Scenario: Encrypt vector canonical đầy đủ
 - **WHEN** encrypt `HIDE THE GOLD IN THE TREE STUMP` với keyword `PLAYFAIR EXAMPLE`
@@ -102,7 +102,8 @@ Hệ thống SHALL tạo đúng các vector bên dưới với keyword `PLAYFAIR
 
 #### Scenario: Decrypt vector canonical đầy đủ
 - **WHEN** decrypt `BMODZBXDNABEKUDMUIXMMOUVIF` với keyword `PLAYFAIR EXAMPLE`
-- **THEN** kết quả là `HIDETHEGOLDINTHETREXESTUMP`
+- **THEN** kết quả thô là `HIDETHEGOLDINTHETREXESTUMP`
+- **AND** filler được nhận diện ở vị trí `19` và bản lọc là `HIDETHEGOLDINTHETREESTUMP`
 
 #### Scenario: Encrypt vector repeated XX
 - **WHEN** encrypt `XX` với keyword `PLAYFAIR EXAMPLE`
@@ -116,8 +117,8 @@ Hệ thống SHALL tạo đúng các vector bên dưới với keyword `PLAYFAIR
 
 #### Scenario: Decrypt vector fallback Q
 - **WHEN** decrypt `GWGW` với keyword `PLAYFAIR EXAMPLE`
-- **THEN** kết quả là `XQX`
-- **AND** chỉ filler `Q` cuối bị bỏ
+- **THEN** kết quả thô là `XQXQ`
+- **AND** filler `Q` được nhận diện ở vị trí `1` và `3`, bản lọc là `XX`
 
 ### Requirement: Chuẩn hóa và kiểm tra ciphertext trước khi decrypt
 
@@ -136,28 +137,6 @@ Ciphertext Playfair SHALL được chuẩn hóa bằng uppercase, giữ lại AS
 - **THEN** hệ thống không ghép thêm `Q` hoặc `X`
 - **AND** input bị coi là không hợp lệ
 
-### Requirement: Decrypt bỏ filler cuối và không hứa round-trip lossless
-
-Kết quả decrypt SHALL là chuỗi uppercase đã được biến đổi từ các digraph ciphertext, sau đó bỏ đúng một filler cuối chuỗi: nếu kết quả kết thúc bằng `XQ` thì bỏ `Q`, ngược lại nếu kết thúc bằng `X` thì bỏ `X`. Hệ thống MUST giữ nguyên mọi `X`/`Q` khác, không phục hồi whitespace/case/dấu câu/Unicode đã bị loại và không đổi `I` trở lại `J`. Vì ciphertext không phân biệt filler với chữ thật, plaintext có số chữ chẵn kết thúc bằng `X` SHALL mất `X` cuối. Response thành công MUST chỉ chứa `result`; MUST NOT thêm `normalizedInput`. (Truy vết: scope mới BE-PLAY-02, BE-PLAY-06; quy tắc bỏ filler cuối theo quyết định chủ sở hữu 2026-09-28, thay thế quy tắc giữ mọi filler)
-
-#### Scenario: Filler giữa chữ lặp được giữ lại
-- **WHEN** encrypt rồi decrypt plaintext `BALLOON` với cùng keyword hợp lệ
-- **THEN** kết quả decrypt là `BALXLOON`
-- **AND** hệ thống không tự loại `X` giữa chuỗi
-
-#### Scenario: Filler cuối bị bỏ
-- **WHEN** encrypt rồi decrypt plaintext `ABX` hoặc `ABC` với keyword `PLAYFAIR EXAMPLE`
-- **THEN** kết quả decrypt lần lượt là `ABX` và `ABC`
-
-#### Scenario: Plaintext chẵn kết thúc bằng X mất X cuối
-- **WHEN** encrypt rồi decrypt plaintext `AX` với keyword `PLAYFAIR EXAMPLE`
-- **THEN** kết quả decrypt là `A`
-
-#### Scenario: Chuỗi gốc không thể được phục hồi lossless
-- **WHEN** encrypt rồi decrypt plaintext `Jig saw!` với cùng keyword hợp lệ
-- **THEN** kết quả là `IXIGSAW`, tức prepared plaintext `IXIGSAWX` đã bỏ filler cuối
-- **AND** hệ thống không khôi phục chữ `J`, lowercase, khoảng trắng hoặc dấu `!`
-
 ### Requirement: Cùng core cho text và nội dung file
 
 Với cùng chuỗi Unicode đã đọc từ request JSON hoặc file UTF-8, cùng keyword và operation, hệ thống SHALL tạo cùng kết quả Playfair. Lõi Playfair SHALL không phụ thuộc filename, transport, response mode hoặc trạng thái BOM. (Truy vết: scope mới BE-PLAY-01, BE-PLAY-03; baseline Caesar Week 1 `caesar-core`)
@@ -166,3 +145,32 @@ Với cùng chuỗi Unicode đã đọc từ request JSON hoặc file UTF-8, cù
 - **WHEN** chuỗi `HIDE THE GOLD` từ JSON và cùng chuỗi đọc từ file được encrypt với keyword `PLAYFAIR EXAMPLE`
 - **THEN** cả hai luồng chuẩn bị plaintext thành `HIDETHEGOLDX`
 - **AND** cùng tạo ciphertext `BMODZBXDNAGE`
+
+### Requirement: Decrypt trả bản thô và nhận diện filler
+
+Kết quả decrypt SHALL là chuỗi uppercase biến đổi từ các digraph ciphertext và giữ nguyên mọi ký tự, kể cả filler. Trên chuỗi thô `r` có độ dài chẵn `n`, hệ thống SHALL xét từng chỉ số lẻ `i` (chữ thứ hai của một digraph). Gọi `f` là `Q` nếu `r[i-1]` là `X`, ngược lại `f` là `X`. `r[i]` được nhận diện là filler khi `r[i] = f` và thỏa một trong hai điều kiện: `i + 1 < n` và `r[i+1] = r[i-1]` (filler giữa cặp chữ lặp), hoặc `i = n - 1` (filler cuối). Các chữ ở chỉ số chẵn MUST NOT bị nhận diện là filler. Bản lọc là `r` bỏ đúng các filler đã nhận diện. Hệ thống MUST NOT phục hồi whitespace, case, dấu câu hay Unicode đã bị loại, và không đổi `I` trở lại `J`. Ciphertext không phân biệt được filler với chữ thật, nên bản lọc SHALL mất chữ thật trùng mẫu filler (plaintext có số chữ chẵn kết thúc bằng `X`, hoặc chuỗi thật dạng `aXa` bắt đầu ở ranh giới digraph); kết quả thô luôn giữ các chữ đó. Response thành công MUST NOT thêm `normalizedInput`. (Truy vết: scope mới BE-PLAY-02, BE-PLAY-06; yêu cầu chủ sở hữu ngày 2026-10-01 và quyết định (b) cho change này, thay thế quy tắc bỏ một filler cuối ngày 2026-09-28)
+
+#### Scenario: Filler giữa chữ lặp được nhận diện
+- **WHEN** encrypt rồi decrypt plaintext `BALLOON` với keyword `PLAYFAIR EXAMPLE`
+- **THEN** kết quả thô là `BALXLOON`
+- **AND** filler ở vị trí `3` và bản lọc là `BALLOON`
+
+#### Scenario: X thật giữa hai chữ khác nhau được giữ
+- **WHEN** encrypt rồi decrypt plaintext `TAXICAB` với keyword `PLAYFAIR EXAMPLE`
+- **THEN** kết quả thô là `TAXICABX`
+- **AND** chỉ filler cuối ở vị trí `7` được nhận diện, bản lọc là `TAXICAB`
+
+#### Scenario: Filler cuối được nhận diện
+- **WHEN** encrypt rồi decrypt plaintext `ABX` hoặc `ABC` với keyword `PLAYFAIR EXAMPLE`
+- **THEN** kết quả thô lần lượt là `ABXQ` và `ABCX`
+- **AND** bản lọc lần lượt là `ABX` và `ABC`
+
+#### Scenario: Plaintext chẵn kết thúc bằng X mất X cuối trong bản lọc
+- **WHEN** encrypt rồi decrypt plaintext `AX` với keyword `PLAYFAIR EXAMPLE`
+- **THEN** kết quả thô là `AX`
+- **AND** bản lọc là `A`
+
+#### Scenario: Chuỗi gốc không thể được phục hồi lossless
+- **WHEN** encrypt rồi decrypt plaintext `Jig saw!` với keyword `PLAYFAIR EXAMPLE`
+- **THEN** kết quả thô là `IXIGSAWX`, filler ở vị trí `1` và `7`, bản lọc là `IIGSAW`
+- **AND** hệ thống không khôi phục chữ `J`, lowercase, khoảng trắng hoặc dấu `!`
