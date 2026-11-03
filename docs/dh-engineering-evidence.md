@@ -61,7 +61,7 @@ giữ toàn bộ columns/indexes/rows/sequences. App mới yêu cầu `sqlite_00
 | TC-12 | shift zero warning | `test_caesar_json_tc11_and_shift_zero` |
 | TC-13 | cap q manual | `test_parameter_validation_distinguishes_manual_cap_and_composite_q`, `test_exact_domain_errors` |
 
-Các deviation D1–D8 được khóa trong `openspec/changes/add-diffie-hellman/design.md`
+Các deviation D1–D8 được khóa trong `openspec/changes/archive/2026-11-03-add-diffie-hellman/design.md`
 và được phủ chéo bởi `test_dh_endpoints.py`, `test_dh_resources.py`,
 `test_history_recording.py`, `test_sqlite_history.py` và `test_sqlite_continuity.py`.
 

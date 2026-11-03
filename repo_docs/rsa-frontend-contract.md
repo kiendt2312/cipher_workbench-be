@@ -959,7 +959,7 @@ chỉ hiển thị plaintext quan sát được cùng cảnh báo textbook RSA.
 Authority của contract này theo thứ tự:
 
 1. Accepted OpenSpec change Q1–Q16 và hai làm rõ corrective R1–R2 tại
-   [`openspec/changes/add-rsa-cipher/`](../openspec/changes/add-rsa-cipher/), trong đó
+   [`openspec/changes/archive/2026-11-03-add-rsa-cipher/`](../openspec/changes/archive/2026-11-03-add-rsa-cipher/), trong đó
    Q16 thay thế riêng quyết định “no history” cho safe transform metadata; R1–R2 chỉ
    reconcile hai error edge nêu tại mục 11.1.
 2. Runtime/schema/error mapping hiện tại:

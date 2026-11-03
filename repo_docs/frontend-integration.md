@@ -2186,9 +2186,8 @@ Thứ tự áp dụng:
 1. Primary authority: spec hiện hành trong [`openspec/specs/`](../openspec/specs/)
    (mỗi capability một file, ví dụ `text-cipher-api`, `history-api`, `app-runtime`);
    lịch sử quyết định nằm trong [`openspec/changes/archive/`](../openspec/changes/archive/).
-   Riêng RSA đã ship nhưng change chưa sync/archive, accepted Q1–Q16 cùng hai làm rõ
-   corrective R1–R2 tại
-   [`openspec/changes/add-rsa-cipher/`](../openspec/changes/add-rsa-cipher/) là authority;
+   Riêng RSA đã ship và change đã sync/archive tại
+   [`openspec/changes/archive/2026-11-03-add-rsa-cipher/`](../openspec/changes/archive/2026-11-03-add-rsa-cipher/) là authority;
    Q16 thay thế riêng quyết định no-history bằng safe transform metadata; R1–R2
    reconcile hai error edge mà không mở rộng API. UI không có spec ở backend: giao
    diện thuộc project FE. Sau spec là
@@ -3456,7 +3455,7 @@ chỉ hiển thị plaintext quan sát được cùng cảnh báo textbook RSA.
 Authority của contract này theo thứ tự:
 
 1. Accepted OpenSpec change Q1–Q16 và hai làm rõ corrective R1–R2 tại
-   [`openspec/changes/add-rsa-cipher/`](../openspec/changes/add-rsa-cipher/), trong đó
+   [`openspec/changes/archive/2026-11-03-add-rsa-cipher/`](../openspec/changes/archive/2026-11-03-add-rsa-cipher/), trong đó
    Q16 thay thế riêng quyết định “no history” cho safe transform metadata; R1–R2 chỉ
    reconcile hai error edge nêu tại mục 11.1.
 2. Runtime/schema/error mapping hiện tại:

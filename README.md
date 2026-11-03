@@ -960,12 +960,12 @@ hoàn chỉnh.
 README là bản nhập môn, không thay thế đặc tả hoặc OpenAPI. Khi có khác biệt, dùng
 thứ tự sau:
 
-1. [OpenSpec mở rộng DH history](openspec/changes/expand-dh-operation-history/) có quyền
-   cao hơn riêng cho operation history và supersede quyết định D8;
-   [OpenSpec Diffie–Hellman gốc](openspec/changes/add-diffie-hellman/) tiếp tục là nguồn
-   cho phần DH còn lại,
-   [OpenSpec RSA đang hoạt động](openspec/changes/add-rsa-cipher/) cho RSA (gồm quyết định chủ sở
-   hữu Q1–Q16 ngày 2026-10-06), [OpenSpec DES](openspec/changes/archive/2026-10-01-add-des-cipher/)
+1. [OpenSpec mở rộng DH history](openspec/changes/archive/2026-11-03-expand-dh-operation-history/) có
+   quyền cao hơn riêng cho operation history và supersede quyết định D8;
+   [OpenSpec Diffie–Hellman](openspec/changes/archive/2026-11-03-add-diffie-hellman/) tiếp tục là
+   nguồn cho phần DH còn lại,
+   [OpenSpec RSA đã hoàn thành](openspec/changes/archive/2026-11-03-add-rsa-cipher/) cho RSA (gồm
+   quyết định chủ sở hữu Q1–Q16 ngày 2026-10-06), [OpenSpec DES](openspec/changes/archive/2026-10-01-add-des-cipher/)
    cho DES (gồm quyết định chủ sở hữu Q1–Q22 ngày 2026-10-01),
    [OpenSpec Hill đã hoàn thành](openspec/changes/archive/2026-10-01-add-hill-cipher/)
    cho Hill, [OpenSpec Columnar đã hoàn thành](openspec/changes/archive/2026-09-28-add-columnar-transposition-cipher/)
