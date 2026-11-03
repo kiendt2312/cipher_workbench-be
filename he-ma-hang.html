@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hệ mã hàng (mã hoán vị cột)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;800&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#FAFBFD; --grid:#E3E9F3; --ink:#1B2F7A; --text:#1E2430; --muted:#5B6270;
+  --red:#C62828; --hl:#FFE58A; --hl-soft:#FFF4C2; --card:#FFFFFF; --line:#C9D3E4;
+  --ok:#2E7D32;
+  --sans:"Be Vietnam Pro",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#141B24; --grid:#1F2A37; --ink:#9FB6FF; --text:#E6EAF0; --muted:#9AA3B2;
+    --red:#FF7A70; --hl:#6B5A12; --hl-soft:#3A3210; --card:#1A2330; --line:#2D3A4C; --ok:#7CCB80;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#141B24; --grid:#1F2A37; --ink:#9FB6FF; --text:#E6EAF0; --muted:#9AA3B2;
+  --red:#FF7A70; --hl:#6B5A12; --hl-soft:#3A3210; --card:#1A2330; --line:#2D3A4C; --ok:#7CCB80;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{
+  margin:0; color:var(--text); font-family:var(--sans); font-size:17px; line-height:1.6;
+  background-color:var(--paper);
+  background-image:
+    linear-gradient(var(--grid) 1px,transparent 1px),
+    linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:24px 24px;
+}
+main{max-width:760px;margin:0 auto;padding:40px 20px 80px}
+h1{font-size:clamp(2rem,6vw,3rem);line-height:1.1;margin:0 0 .4em;color:var(--ink);font-weight:800;letter-spacing:-.02em}
+h2{font-size:1.5rem;color:var(--ink);margin:2.4em 0 .6em;font-weight:800;display:flex;gap:.6em;align-items:baseline}
+h2 .n{font-family:var(--mono);color:var(--red);font-size:1rem;font-weight:600}
+h3{font-size:1.1rem;margin:1.6em 0 .4em}
+p{margin:0 0 1em}
+.lead{font-size:1.1rem;color:var(--muted);max-width:60ch}
+code,.mono{font-family:var(--mono)}
+.panel{background:var(--card);border:1.5px solid var(--line);border-radius:10px;padding:20px}
+.hero-panel{border-color:var(--ink);box-shadow:4px 4px 0 var(--ink)}
+
+/* Matrix */
+.mx-wrap{overflow-x:auto}
+table.mx{border-collapse:collapse;margin:8px auto;font-family:var(--mono);font-size:1.35rem}
+table.mx td,table.mx th{width:2.2em;height:2.1em;text-align:center;border:1px solid var(--line);transition:background .25s}
+table.mx th{color:var(--red);font-weight:600;border-bottom:2px solid var(--red);font-size:1.1rem}
+table.mx th small{display:block;color:var(--muted);font-size:.65rem;font-weight:400;line-height:1}
+table.mx td.empty{color:transparent}
+table.mx td.pad{color:var(--muted)}
+table.mx .active{background:var(--hl)}
+table.mx .done{color:var(--muted);background:var(--hl-soft)}
+table.mx td.new{animation:pop .3s ease}
+@keyframes pop{from{transform:scale(1.5);color:var(--red)}to{transform:none}}
+@media (prefers-reduced-motion:reduce){table.mx td.new{animation:none}table.mx td,table.mx th{transition:none}}
+
+.caption{min-height:3.2em;margin:12px 0;font-size:.98rem}
+.caption b{color:var(--ink)}
+.out{font-family:var(--mono);font-size:1.1rem;word-break:break-all;padding:10px 12px;border:1px dashed var(--line);border-radius:6px;min-height:2.6em;background:var(--paper)}
+.out span:nth-child(odd){color:var(--ink)}
+.out span:nth-child(even){color:var(--red)}
+.out .lbl{color:var(--muted)!important;font-family:var(--sans);font-size:.85rem;margin-right:.5em}
+
+.ctrl{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px}
+button{font:inherit;font-size:.95rem;font-weight:600;padding:8px 14px;border-radius:6px;border:1.5px solid var(--ink);background:var(--card);color:var(--ink);cursor:pointer;min-height:40px}
+button.primary{background:var(--ink);color:var(--paper)}
+button:disabled{opacity:.4;cursor:default}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--red);outline-offset:2px}
+.step-no{margin-left:auto;font-family:var(--mono);color:var(--muted);font-size:.9rem}
+
+.tabs{display:flex;gap:6px;margin-bottom:14px}
+.tabs button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+
+label{display:block;font-weight:600;font-size:.9rem;margin:10px 0 4px}
+input[type=text]{width:100%;font:inherit;font-family:var(--mono);padding:10px;border:1.5px solid var(--line);border-radius:6px;background:var(--paper);color:var(--text)}
+.hint{font-size:.85rem;color:var(--muted);margin-top:4px}
+.err{color:var(--red);font-size:.9rem;min-height:1.3em;margin-top:6px}
+.check{display:flex;gap:8px;align-items:center;font-weight:400;margin-top:10px}
+
+.note{border-left:4px solid var(--red);padding:4px 0 4px 16px;margin:1.2em 0}
+.twocol{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:620px){.twocol{grid-template-columns:1fr}}
+pre{font-family:var(--mono);font-size:.85rem;line-height:1.5;background:var(--card);border:1.5px solid var(--line);border-radius:8px;padding:16px;overflow-x:auto;margin:0 0 1em}
+ol li,ul li{margin-bottom:.4em}
+.fmt{font-family:var(--mono);background:var(--hl-soft);padding:1px 5px;border-radius:4px}
+footer{margin-top:4em;color:var(--muted);font-size:.85rem}
+</style>
+</head>
+<body>
+<main>
+
+<h1>Hệ mã hàng</h1>
+<p class="lead">Mã hoán vị cột: giữ nguyên từng chữ cái, chỉ đổi chỗ của chúng. Bấm “Bước tiếp” để xem ví dụ trong bài giảng chạy từng bước.</p>
+
+<section class="panel hero-panel" aria-label="Mô phỏng từng bước">
+  <div class="tabs" role="group" aria-label="Chế độ mô phỏng">
+    <button id="tabEnc" aria-pressed="true">Mã hóa</button>
+    <button id="tabDec" aria-pressed="false">Giải mã</button>
+  </div>
+  <div class="mx-wrap"><table class="mx" id="demoMx"></table></div>
+  <div class="caption" id="demoCap" aria-live="polite"></div>
+  <div class="out" id="demoOut"></div>
+  <div class="ctrl">
+    <button id="bPrev">Lùi</button>
+    <button id="bNext" class="primary">Bước tiếp</button>
+    <button id="bPlay">Tự chạy</button>
+    <button id="bReset">Làm lại</button>
+    <span class="step-no" id="demoNo"></span>
+  </div>
+</section>
+
+<h2><span class="n">1</span>Ý tưởng</h2>
+<p>Mã hóa cổ điển có hai họ lớn. <b>Mã thay thế</b> (Caesar, Vigenère…) đổi mỗi chữ thành chữ khác. <b>Mã hoán vị</b> không đổi chữ nào mà chỉ xáo trộn vị trí. Hệ mã hàng thuộc họ thứ hai.</p>
+<p>Cách xáo trộn rất cơ học: viết bản tin vào một bảng theo <b>hàng</b>, rồi đọc ra theo <b>cột</b>, nhưng không đọc cột trái sang phải mà theo thứ tự do khóa quy định.</p>
+<div class="twocol">
+  <div class="panel">
+    <h3 style="margin-top:0">Dữ liệu ví dụ</h3>
+    <p style="margin:0">Bản rõ P = <span class="fmt">khoacongnghethongtin</span> (20 ký tự)<br>
+    Khóa m = 6: <span class="fmt">{3, 6, 2, 1, 5, 4}</span><br>
+    Bản mã C = <span class="fmt">agnonokntioetchghghn</span></p>
+  </div>
+  <div class="panel">
+    <h3 style="margin-top:0">Cách hiểu khóa</h3>
+    <p style="margin:0">Số thứ <i>j</i> trong khóa là <b>thứ hạng</b> của cột <i>j</i>. Cột 4 mang số 1 nên được đọc đầu tiên; cột 2 mang số 6 nên được đọc cuối cùng.</p>
+  </div>
+</div>
+
+<h2><span class="n">2</span>Thuật toán mã hóa</h2>
+<ol>
+  <li><b>Dựng bảng.</b> Số cột bằng độ dài khóa m. Số hàng là ⌈n / m⌉, với n là độ dài bản rõ. Ở đây ⌈20 / 6⌉ = 4 hàng.</li>
+  <li><b>Viết theo hàng.</b> Điền bản rõ từ trái sang phải, hết hàng thì xuống hàng. Hàng cuối có thể không đầy (ở đây chỉ có “i n”).</li>
+  <li><b>Đọc theo cột.</b> Với k = 1, 2, …, m: tìm cột mang số k, đọc từ trên xuống (bỏ ô trống) và nối vào bản mã.</li>
+</ol>
+<div class="panel mx-wrap">
+<table class="mx" style="font-size:1.05rem">
+<tr><th>Số khóa</th><th>Cột</th><th>Đọc được</th></tr>
+<tr><td>1</td><td>4</td><td style="width:auto;padding:0 12px">a g n</td></tr>
+<tr><td>2</td><td>3</td><td style="width:auto;padding:0 12px">o n o</td></tr>
+<tr><td>3</td><td>1</td><td style="width:auto;padding:0 12px">k n t i</td></tr>
+<tr><td>4</td><td>6</td><td style="width:auto;padding:0 12px">o e t</td></tr>
+<tr><td>5</td><td>5</td><td style="width:auto;padding:0 12px">c h g</td></tr>
+<tr><td>6</td><td>2</td><td style="width:auto;padding:0 12px">h g h n</td></tr>
+</table>
+<p style="text-align:center;margin:10px 0 0">Nối lại: <span class="fmt">agn·ono·knti·oet·chg·hghn</span> = <span class="fmt">agnonokntioetchghghn</span></p>
+</div>
+<p class="note">Các nhóm màu xen kẽ trên slide chính là ranh giới giữa các cột. Nhóm dài 4 ký tự (knti, hghn) đến từ cột 1 và cột 2, hai cột có thêm chữ ở hàng cuối.</p>
+
+<h2><span class="n">3</span>Thuật toán giải mã</h2>
+<p>Người nhận có bản mã và khóa, nhưng không có bảng. Khó khăn duy nhất là biết mỗi cột dài bao nhiêu để cắt bản mã cho đúng.</p>
+<ol>
+  <li><b>Tính kích thước.</b> Số hàng đầy r = ⌊n / m⌋ = ⌊20 / 6⌋ = 3. Số ký tự dư s = n mod m = 2.</li>
+  <li><b>Tính độ dài từng cột.</b> Vì viết theo hàng từ trái sang, s cột <i>đầu tiên theo vị trí</i> dài r + 1, còn lại dài r. Cột 1 và 2 dài 4, cột 3 đến 6 dài 3.</li>
+  <li><b>Cắt bản mã theo thứ tự khóa.</b> Số 1 là cột 4, dài 3, nên lấy “agn”. Số 2 là cột 3, dài 3, lấy “ono”. Số 3 là cột 1, dài 4, lấy “knti”. Tiếp tục đến hết.</li>
+  <li><b>Đọc theo hàng.</b> Đặt từng đoạn vào đúng cột rồi đọc từ trái sang phải, từ trên xuống.</li>
+</ol>
+<p class="note">Lỗi hay gặp: cắt bản mã theo độ dài của cột <i>đọc trước</i> thay vì theo độ dài của cột <i>ở vị trí</i> tương ứng. Độ dài phụ thuộc vào vị trí cột trong bảng, không phụ thuộc vào số khóa.</p>
+
+<h2><span class="n">4</span>Tự thử</h2>
+<section class="panel" aria-label="Công cụ mã hóa và giải mã">
+  <div class="tabs" role="group" aria-label="Chế độ công cụ">
+    <button id="tEnc" aria-pressed="true">Mã hóa</button>
+    <button id="tDec" aria-pressed="false">Giải mã</button>
+  </div>
+  <label for="inText" id="inLabel">Bản rõ</label>
+  <input type="text" id="inText" value="khoacongnghethongtin" autocomplete="off" spellcheck="false">
+  <div class="hint">Khoảng trắng và dấu câu sẽ bị bỏ, chữ được chuyển về thường.</div>
+  <label for="inKey">Khóa</label>
+  <input type="text" id="inKey" value="3 6 2 1 5 4" autocomplete="off" spellcheck="false">
+  <div class="hint">Nhập dãy số (ví dụ <span class="fmt">3 6 2 1 5 4</span>) hoặc một từ khóa (ví dụ <span class="fmt">ZEBRAS</span>, xếp hạng theo bảng chữ cái).</div>
+  <label class="check"><input type="checkbox" id="inPad"> Đệm ô trống bằng “x” để bảng đầy</label>
+  <div class="err" id="toolErr" role="alert"></div>
+  <div class="mx-wrap"><table class="mx" id="toolMx"></table></div>
+  <div class="out" id="toolOut"></div>
+</section>
+
+<h2><span class="n">5</span>Phân tích</h2>
+<h3>Không gian khóa</h3>
+<p>Khóa là một hoán vị của m cột nên có m! khóa. Với m = 6 là 720 khóa, máy tính thử hết trong chớp mắt. Với m = 10 là khoảng 3,6 triệu, vẫn thử được. Độ dài khóa thường cũng đoán được từ n, vì bảng phải hợp lý.</p>
+<h3>Điểm yếu</h3>
+<ul>
+  <li><b>Tần suất chữ không đổi.</b> Bản mã có đúng các chữ cái của bản rõ. Chỉ cần đếm tần suất là biết đây là mã hoán vị, không phải mã thay thế.</li>
+  <li><b>Ghép cột theo bigram.</b> Kẻ tấn công chia bản mã thành các cột, rồi thử đặt các cột cạnh nhau sao cho các cặp chữ trên cùng hàng hợp lý (“ng”, “th”, “ho”). Mỗi cặp cột ghép đúng làm nhiều hàng “có nghĩa” cùng lúc.</li>
+  <li><b>Tấn công bản rõ đã biết.</b> Biết một đoạn bản rõ và vị trí của nó là suy ra được vị trí các cột.</li>
+</ul>
+<h3>Cách tăng độ an toàn</h3>
+<ul>
+  <li><b>Hoán vị kép:</b> mã hóa hai lần (có thể với hai khóa khác nhau). Đây từng là mã thực chiến trong hai cuộc thế chiến.</li>
+  <li><b>Kết hợp thay thế:</b> thay thế trước rồi hoán vị sau. Ý tưởng “thay thế + hoán vị” lặp nhiều vòng chính là nền tảng của mã khối hiện đại như DES và AES.</li>
+  <li><b>Đệm ngẫu nhiên:</b> dùng ký tự đệm ngẫu nhiên thay vì luôn là “x”, để hàng cuối không để lộ độ dài các cột.</li>
+</ul>
+
+<h2><span class="n">6</span>Mã nguồn tham khảo</h2>
+<p>Hàm JavaScript dùng trong trang này, khóa là mảng thứ hạng 1…m.</p>
+<pre><code>function encrypt(text, key) {
+  const m = key.length;
+  let c = "";
+  for (let k = 1; k &lt;= m; k++) {
+    const col = key.indexOf(k);          // cột mang số k
+    for (let i = col; i &lt; text.length; i += m)
+      c += text[i];                      // đọc từ trên xuống
+  }
+  return c;
+}
+
+function decrypt(c, key) {
+  const m = key.length, n = c.length;
+  const r = Math.floor(n / m), s = n % m;
+  const cols = new Array(m);
+  let pos = 0;
+  for (let k = 1; k &lt;= m; k++) {
+    const col = key.indexOf(k);
+    const len = r + (col &lt; s ? 1 : 0);   // độ dài theo VỊ TRÍ cột
+    cols[col] = c.slice(pos, pos + len);
+    pos += len;
+  }
+  let p = "";
+  for (let i = 0; i &lt; r + 1; i++)
+    for (let j = 0; j &lt; m; j++)
+      if (i &lt; cols[j].length) p += cols[j][i];
+  return p;
+}
+
+encrypt("khoacongnghethongtin", [3,6,2,1,5,4]);
+// "agnonokntioetchghghn"</code></pre>
+<p>Mẹo: trong hàm <code>encrypt</code>, không cần dựng bảng thật. Ký tự ở vị trí <i>i</i> nằm ở cột <code>i mod m</code>, nên đọc cột <i>j</i> chỉ là lấy các vị trí j, j + m, j + 2m…</p>
+
+<footer>Tóm tắt từ mục 3.2.5 “Hệ mã hàng” trong bài giảng.</footer>
+</main>
+
+<script>
+(function(){
+  // ---------- core ----------
+  function clean(s){
+    return s.normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/đ/g,"d").replace(/Đ/g,"D")
+            .toLowerCase().replace(/[^a-z0-9]/g,"");
+  }
+  function parseKey(raw){
+    raw = raw.trim();
+    if(!raw) throw "Hãy nhập khóa.";
+    if(/^[\d\s,{}]+$/.test(raw)){
+      const nums = raw.replace(/[{}]/g," ").split(/[\s,]+/).filter(Boolean).map(Number);
+      const m = nums.length;
+      const sorted = [...nums].sort((a,b)=>a-b);
+      for(let i=0;i<m;i++) if(sorted[i]!==i+1) throw "Khóa số phải là một hoán vị của 1…"+m+" (mỗi số xuất hiện đúng một lần).";
+      return nums;
+    }
+    const w = clean(raw);
+    if(w.length<2) throw "Từ khóa cần ít nhất 2 chữ cái.";
+    const idx = [...w].map((ch,i)=>({ch,i})).sort((a,b)=>a.ch<b.ch?-1:a.ch>b.ch?1:a.i-b.i);
+    const key = new Array(w.length);
+    idx.forEach((o,r)=>key[o.i]=r+1);
+    return key;
+  }
+  function colLens(n,key){
+    const m=key.length,r=Math.floor(n/m),s=n%m;
+    return key.map((_,j)=>r+(j<s?1:0));
+  }
+
+  // ---------- matrix render ----------
+  function renderMx(tbl,key,grid,opts){
+    opts=opts||{};
+    const m=key.length,rows=grid.length;
+    let h="<tr>";
+    for(let j=0;j<m;j++){
+      const cls = opts.active===j?"active":(opts.done&&opts.done.has(j)?"done":"");
+      h+=`<th class="${cls}">${key[j]}${opts.showPos?`<small>cột ${j+1}</small>`:""}</th>`;
+    }
+    h+="</tr>";
+    for(let i=0;i<rows;i++){
+      h+="<tr>";
+      for(let j=0;j<m;j++){
+        const v=grid[i][j];
+        let cls=[];
+        if(v==null) cls.push("empty");
+        if(v&&v.pad) cls.push("pad");
+        if(opts.active===j && v!=null) cls.push("active");
+        else if(opts.done&&opts.done.has(j)&&v!=null) cls.push("done");
+        if(opts.fresh&&opts.fresh.has(i+","+j)) cls.push("new");
+        h+=`<td class="${cls.join(" ")}">${v==null?"·":(v.ch||v)}</td>`;
+      }
+      h+="</tr>";
+    }
+    tbl.innerHTML=h;
+  }
+  function renderOut(el,label,groups){
+    el.innerHTML=`<span class="lbl">${label}</span>`+groups.map(g=>`<span>${g}</span>`).join("");
+  }
+
+  // ---------- demo ----------
+  const P="khoacongnghethongtin", KEY=[3,6,2,1,5,4], m=6, n=P.length, ROWS=Math.ceil(n/m);
+  function emptyGrid(){return Array.from({length:ROWS},()=>Array(m).fill(null));}
+
+  function buildEnc(){
+    const steps=[];
+    steps.push({grid:emptyGrid(),cap:`Khóa có <b>6</b> số nên bảng có 6 cột. Bản rõ dài 20 ký tự nên cần ⌈20/6⌉ = <b>4 hàng</b>.`,groups:[],label:"Bản mã:"});
+    let g=emptyGrid();
+    for(let i=0;i<ROWS;i++){
+      const fresh=new Set();
+      for(let j=0;j<m;j++){const k=i*m+j;if(k<n){g[i][j]=P[k];fresh.add(i+","+j);}}
+      g=g.map(r=>r.slice());
+      const part=P.slice(i*m,i*m+m);
+      steps.push({grid:g,fresh,cap:`Viết hàng ${i+1} từ trái sang phải: <b class="mono">${part.split("").join(" ")}</b>${i===ROWS-1?". Hàng cuối không đầy, 4 ô còn trống.":"."}`,groups:[],label:"Bản mã:"});
+    }
+    const groups=[],done=new Set();
+    for(let k=1;k<=m;k++){
+      const j=KEY.indexOf(k);
+      let s="";for(let i=0;i<ROWS;i++) if(g[i][j]) s+=g[i][j];
+      groups.push(s);
+      steps.push({grid:g,active:j,done:new Set(done),cap:`Số khóa <b>${k}</b> nằm ở cột ${j+1}. Đọc từ trên xuống: <b class="mono">${s}</b>.`,groups:groups.slice(),label:"Bản mã:"});
+      done.add(j);
+    }
+    steps.push({grid:g,done:new Set(done),cap:`Xong. Bản mã: <b class="mono">${groups.join("")}</b>, khớp với bài giảng.`,groups:groups.slice(),label:"Bản mã:"});
+    return steps;
+  }
+
+  function buildDec(){
+    const C="agnonokntioetchghghn", lens=colLens(n,KEY), steps=[];
+    steps.push({grid:emptyGrid(),showPos:true,cap:`Bản mã dài 20, khóa dài 6: ⌊20/6⌋ = 3 hàng đầy, dư 2. Vậy <b>cột 1, 2 dài 4</b>, cột 3 đến 6 dài 3.`,groups:[C],label:"Bản mã:"});
+    let g=emptyGrid(),pos=0;const done=new Set();
+    for(let k=1;k<=m;k++){
+      const j=KEY.indexOf(k),len=lens[j],seg=C.slice(pos,pos+len);pos+=len;
+      g=g.map(r=>r.slice());const fresh=new Set();
+      for(let i=0;i<len;i++){g[i][j]=seg[i];fresh.add(i+","+j);}
+      steps.push({grid:g,showPos:true,active:j,done:new Set(done),fresh,cap:`Số khóa <b>${k}</b> là cột ${j+1}, dài ${len}. Cắt <b class="mono">${seg}</b> và viết từ trên xuống.`,groups:[C.slice(pos)||"(hết)"],label:"Còn lại:"});
+      done.add(j);
+    }
+    const rowsTxt=[];for(let i=0;i<ROWS;i++){let s="";for(let j=0;j<m;j++) if(g[i][j]) s+=g[i][j];rowsTxt.push(s);}
+    steps.push({grid:g,showPos:true,cap:`Đọc theo hàng từ trái sang phải để lấy lại bản rõ.`,groups:rowsTxt,label:"Bản rõ:"});
+    return steps;
+  }
+
+  const demo={mx:document.getElementById("demoMx"),cap:document.getElementById("demoCap"),out:document.getElementById("demoOut"),no:document.getElementById("demoNo"),
+    prev:document.getElementById("bPrev"),next:document.getElementById("bNext"),play:document.getElementById("bPlay"),reset:document.getElementById("bReset"),
+    steps:buildEnc(),i:0,timer:null};
+  function show(){
+    const s=demo.steps[demo.i];
+    renderMx(demo.mx,KEY,s.grid,{active:s.active,done:s.done,fresh:s.fresh,showPos:s.showPos});
+    demo.cap.innerHTML=s.cap;
+    renderOut(demo.out,s.label,s.groups);
+    demo.no.textContent=`${demo.i+1} / ${demo.steps.length}`;
+    demo.prev.disabled=demo.i===0;
+    demo.next.disabled=demo.i===demo.steps.length-1;
+  }
+  function stop(){clearInterval(demo.timer);demo.timer=null;demo.play.textContent="Tự chạy";}
+  demo.next.onclick=()=>{stop();if(demo.i<demo.steps.length-1){demo.i++;show();}};
+  demo.prev.onclick=()=>{stop();if(demo.i>0){demo.i--;show();}};
+  demo.reset.onclick=()=>{stop();demo.i=0;show();};
+  demo.play.onclick=()=>{
+    if(demo.timer){stop();return;}
+    if(demo.i===demo.steps.length-1) demo.i=0;
+    demo.play.textContent="Dừng";show();
+    demo.timer=setInterval(()=>{if(demo.i<demo.steps.length-1){demo.i++;show();}else stop();},1400);
+  };
+  function setMode(enc){
+    stop();
+    document.getElementById("tabEnc").setAttribute("aria-pressed",enc);
+    document.getElementById("tabDec").setAttribute("aria-pressed",!enc);
+    demo.steps=enc?buildEnc():buildDec();demo.i=0;show();
+  }
+  document.getElementById("tabEnc").onclick=()=>setMode(true);
+  document.getElementById("tabDec").onclick=()=>setMode(false);
+  show();
+
+  // ---------- tool ----------
+  const T={enc:true,text:document.getElementById("inText"),key:document.getElementById("inKey"),pad:document.getElementById("inPad"),
+    err:document.getElementById("toolErr"),mx:document.getElementById("toolMx"),out:document.getElementById("toolOut"),lbl:document.getElementById("inLabel")};
+  function runTool(){
+    T.err.textContent="";
+    let key;
+    try{key=parseKey(T.key.value);}catch(e){T.err.textContent=e;T.mx.innerHTML="";T.out.innerHTML="";return;}
+    const mm=key.length;
+    let txt=clean(T.text.value);
+    if(!txt){T.err.textContent="Hãy nhập "+(T.enc?"bản rõ.":"bản mã.");T.mx.innerHTML="";T.out.innerHTML="";return;}
+    if(T.enc){
+      let padded=0;
+      if(T.pad.checked){while(txt.length%mm) {txt+="x";padded++;}}
+      const rows=Math.ceil(txt.length/mm);
+      const g=Array.from({length:rows},()=>Array(mm).fill(null));
+      for(let k=0;k<txt.length;k++){const ch=txt[k];g[Math.floor(k/mm)][k%mm]=(k>=txt.length-padded)?{ch,pad:true}:ch;}
+      const groups=[];
+      for(let k=1;k<=mm;k++){const j=key.indexOf(k);let s="";for(let i=0;i<rows;i++){const v=g[i][j];if(v!=null) s+=(v.ch||v);}groups.push(s);}
+      renderMx(T.mx,key,g,{showPos:true});
+      renderOut(T.out,"Bản mã:",groups);
+    }else{
+      const nn=txt.length,lens=colLens(nn,key),rows=Math.ceil(nn/mm);
+      const g=Array.from({length:rows},()=>Array(mm).fill(null));
+      let pos=0;
+      for(let k=1;k<=mm;k++){const j=key.indexOf(k);for(let i=0;i<lens[j];i++) g[i][j]=txt[pos++];}
+      let p="";for(let i=0;i<rows;i++) for(let j=0;j<mm;j++) if(g[i][j]) p+=g[i][j];
+      renderMx(T.mx,key,g,{showPos:true});
+      renderOut(T.out,"Bản rõ:",[p]);
+    }
+  }
+  function setTool(enc){
+    T.enc=enc;
+    document.getElementById("tEnc").setAttribute("aria-pressed",enc);
+    document.getElementById("tDec").setAttribute("aria-pressed",!enc);
+    T.lbl.textContent=enc?"Bản rõ":"Bản mã";
+    T.pad.parentElement.style.display=enc?"":"none";
+    T.text.value=enc?"khoacongnghethongtin":"agnonokntioetchghghn";
+    runTool();
+  }
+  document.getElementById("tEnc").onclick=()=>setTool(true);
+  document.getElementById("tDec").onclick=()=>setTool(false);
+  [T.text,T.key].forEach(el=>el.addEventListener("input",runTool));
+  T.pad.addEventListener("change",runTool);
+  runTool();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hệ mã hóa DES: thuật toán và logic</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F4F6F8; --surface:#FFFFFF; --ink:#17202B; --muted:#56616F; --rule:#D5DBE2; --soft:#EAEEF2;
+  --plain:#1D5FA8; --key:#A8326E; --cipher:#16775A; --err:#B42318; --warn:#9A5B06;
+  --plain-bg:#E6EFF9; --key-bg:#F7E6EE; --cipher-bg:#E3F2EC; --err-bg:#FBE9E7; --warn-bg:#FBF1DF;
+  --sans:"Be Vietnam Pro",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#10161D; --surface:#18212B; --ink:#E6EBF0; --muted:#9AA6B3; --rule:#2C3845; --soft:#1F2A35;
+    --plain:#7DB3EE; --key:#EE8DBC; --cipher:#6FD1A8; --err:#FF8A7A; --warn:#F2B558;
+    --plain-bg:#15293E; --key-bg:#351A28; --cipher-bg:#123126; --err-bg:#3A1A17; --warn-bg:#35270F;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#10161D; --surface:#18212B; --ink:#E6EBF0; --muted:#9AA6B3; --rule:#2C3845; --soft:#1F2A35;
+  --plain:#7DB3EE; --key:#EE8DBC; --cipher:#6FD1A8; --err:#FF8A7A; --warn:#F2B558;
+  --plain-bg:#15293E; --key-bg:#351A28; --cipher-bg:#123126; --err-bg:#3A1A17; --warn-bg:#35270F;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:calc(env(safe-area-inset-top,0px) + 16px);scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
+a{color:var(--plain)}
+:focus-visible{outline:2px solid var(--plain);outline-offset:2px}
+code,pre,.mono{font-family:var(--mono);font-size:.86em}
+code{background:var(--soft);padding:.1em .35em;border-radius:4px}
+
+.layout{display:grid;grid-template-columns:1fr;max-width:1180px;margin:0 auto;padding:0 20px}
+@media (min-width:980px){.layout{grid-template-columns:230px minmax(0,1fr);gap:56px}}
+
+nav.toc{display:none}
+@media (min-width:980px){
+  nav.toc{display:block;position:sticky;top:env(safe-area-inset-top,0px);align-self:start;padding:40px 0;max-height:100vh;overflow:auto}
+}
+nav.toc p{margin:0 0 10px;font-weight:600;font-size:14px}
+nav.toc ol{list-style:none;margin:0;padding:0;counter-reset:t}
+nav.toc li{counter-increment:t}
+nav.toc a{display:block;padding:5px 0 5px 12px;border-left:2px solid var(--rule);color:var(--muted);text-decoration:none;font-size:14px;line-height:1.35}
+nav.toc a::before{content:counter(t)". ";font-variant-numeric:tabular-nums}
+nav.toc a:hover{color:var(--ink);border-left-color:var(--ink)}
+
+main{min-width:0;padding:40px 0 80px}
+header.doc{border-bottom:1px solid var(--rule);padding-bottom:28px;margin-bottom:12px}
+header.doc h1{font-size:clamp(30px,5vw,44px);line-height:1.1;letter-spacing:-.02em;margin:0 0 14px;font-weight:700}
+header.doc .lede{max-width:64ch;color:var(--muted);margin:0 0 22px;font-size:17px}
+.formula-strip{display:flex;flex-wrap:wrap;gap:10px 22px;font-family:var(--mono);font-size:15px;margin-bottom:22px}
+.formula-strip span b{font-weight:600}
+.meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px 24px;margin:0}
+.meta div{border-top:2px solid var(--ink);padding-top:6px}
+.meta dt{font-size:13px;color:var(--muted)}
+.meta dd{margin:0;font-weight:600}
+
+.p{color:var(--plain)} .k{color:var(--key)} .c{color:var(--cipher)}
+
+section{padding-top:36px;max-width:820px}
+section h2{font-size:24px;letter-spacing:-.01em;margin:0 0 6px;line-height:1.25}
+section h2 small{color:var(--muted);font-weight:500;font-size:16px;margin-right:8px;font-variant-numeric:tabular-nums}
+section h3{font-size:17px;margin:26px 0 6px}
+section p,section li{max-width:72ch}
+ul,ol{padding-left:22px}
+li{margin:4px 0}
+
+.tbl{overflow-x:auto;margin:14px 0;border:1px solid var(--rule);border-radius:8px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px}
+th,td{text-align:left;vertical-align:top;padding:9px 12px;border-bottom:1px solid var(--rule)}
+th{font-weight:600;background:var(--soft);white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.id{font-family:var(--mono);font-size:13px;white-space:nowrap;font-weight:600}
+.pri{display:inline-block;font-size:12px;font-weight:600;padding:1px 8px;border-radius:999px;white-space:nowrap}
+.pri.must{background:var(--err-bg);color:var(--err)}
+.pri.should{background:var(--warn-bg);color:var(--warn)}
+.pri.nice{background:var(--soft);color:var(--muted)}
+
+pre{background:var(--surface);border:1px solid var(--rule);border-radius:8px;padding:14px 16px;overflow-x:auto;line-height:1.55;margin:12px 0}
+pre .cm{color:var(--muted)}
+
+.flow{list-style:none;padding:0;margin:16px 0;counter-reset:f}
+.flow li{counter-increment:f;position:relative;padding:10px 0 10px 46px;border-left:2px solid var(--rule);margin:0 0 0 14px;max-width:none}
+.flow li::before{content:counter(f);position:absolute;left:-15px;top:9px;width:28px;height:28px;border-radius:50%;background:var(--ink);color:var(--bg);font-size:13px;font-weight:600;display:grid;place-items:center}
+.flow li:last-child{border-left-color:transparent}
+.flow b{display:block}
+
+.note{border-left:3px solid var(--warn);background:var(--warn-bg);padding:10px 14px;border-radius:0 6px 6px 0;margin:14px 0}
+
+/* Lab */
+.lab{background:var(--surface);border:1px solid var(--rule);border-radius:10px;margin:16px 0;overflow:hidden}
+.lab-grid{display:grid;grid-template-columns:1fr}
+@media (min-width:720px){.lab-grid{grid-template-columns:1fr 1fr}}
+.pane{padding:16px 18px;min-width:0}
+.pane + .pane{border-top:1px solid var(--rule)}
+@media (min-width:720px){.pane + .pane{border-top:0;border-left:1px solid var(--rule)}}
+.pane h4{margin:0 0 8px;font-size:14px;font-weight:600}
+.pane h4.p,.pane h4.k,.pane h4.c{display:flex;align-items:center;gap:8px}
+.dot{width:9px;height:9px;border-radius:50%;background:currentColor;display:inline-block}
+textarea{width:100%;min-height:92px;resize:vertical;font-family:var(--mono);font-size:14px;padding:10px;border:1px solid var(--rule);border-radius:6px;background:var(--bg);color:var(--ink)}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:10px 0}
+select,button{font-family:var(--sans);font-size:14px;border:1px solid var(--rule);border-radius:6px;padding:6px 10px;background:var(--bg);color:var(--ink);cursor:pointer}
+button.primary{background:var(--ink);color:var(--bg);border-color:var(--ink);font-weight:600}
+.matrix{display:inline-grid;gap:6px;padding:8px 10px;border-left:2px solid var(--key);border-right:2px solid var(--key);border-radius:6px}
+.matrix input{width:48px;padding:6px 4px;text-align:center;font-family:var(--mono);font-size:15px;border:1px solid var(--rule);border-radius:5px;background:var(--key-bg);color:var(--ink)}
+.status{font-size:14px;padding:8px 12px;border-radius:6px;margin-top:10px}
+.status.ok{background:var(--cipher-bg);color:var(--cipher)}
+.status.bad{background:var(--err-bg);color:var(--err)}
+.out{font-family:var(--mono);font-size:15px;background:var(--cipher-bg);color:var(--ink);border-radius:6px;padding:10px;min-height:44px;word-break:break-all;white-space:pre-wrap}
+.steps{font-family:var(--mono);font-size:12.5px;color:var(--muted);margin-top:10px;max-height:160px;overflow:auto;white-space:pre}
+.warnline{font-size:13px;color:var(--warn);margin-top:6px}
+.mini{display:flex;flex-wrap:wrap;gap:18px;margin-top:10px;font-family:var(--mono);font-size:13px}
+.mini .lbl{font-family:var(--sans);color:var(--muted);font-size:12px;display:block}
+.m-inline{display:inline-grid;gap:2px 10px;border-left:1.5px solid var(--muted);border-right:1.5px solid var(--muted);padding:2px 6px;border-radius:4px}
+
+.ac li{list-style:none;position:relative;padding-left:4px}
+.ac{padding-left:22px}
+.ac li::before{content:"";position:absolute;left:-20px;top:.45em;width:12px;height:12px;border:1.5px solid var(--muted);border-radius:3px}
+footer{margin-top:48px;color:var(--muted);font-size:13px;border-top:1px solid var(--rule);padding-top:14px}
+
+.small{font-size:14px;color:var(--muted)}
+.mono{font-family:var(--mono);font-size:13px}
+.ptab{display:inline-block;margin:6px 18px 10px 0;vertical-align:top}
+.ptab .cap{font-size:13px;font-weight:600;margin-bottom:4px}
+.ptab table{border-collapse:collapse;font-family:var(--mono);font-size:12.5px;width:auto;background:var(--surface)}
+.ptab td{border:1px solid var(--rule);padding:3px 6px;text-align:right;min-width:26px}
+.sgrid{display:grid;grid-template-columns:1fr;gap:12px}
+@media (min-width:760px){.sgrid{grid-template-columns:1fr 1fr}}
+.sbox table{border-collapse:collapse;font-family:var(--mono);font-size:11.5px;width:100%;background:var(--surface)}
+.sbox th,.sbox td{border:1px solid var(--rule);padding:2px 3px;text-align:center;white-space:nowrap}
+.sbox th{background:var(--soft);font-weight:600}
+.sbox .cap{font-size:13px;font-weight:600;margin:0 0 4px}
+.k{color:var(--key)} .c{color:var(--cipher)} .p{color:var(--plain)}
+.kv{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:4px 14px;align-items:baseline;margin:10px 0;font-size:14px}
+.kv code{background:none;padding:0;word-break:break-all}
+.fbox{border:1px solid var(--rule);border-radius:8px;padding:12px 14px;margin:12px 0;background:var(--bg)}
+.fbox h4,.lab h4{margin:14px 0 6px;font-size:14px}
+table.rounds tr[data-i]{cursor:pointer}
+table.rounds tr[data-i]:hover td{background:var(--soft)}
+table.rounds tr.sel td{background:var(--plain-bg)}
+.answer{border:1px solid var(--cipher);background:var(--cipher-bg);border-radius:8px;padding:12px 16px;margin:14px 0;font-size:17px}
+.answer code{background:none;font-size:1em;font-weight:600;color:var(--cipher)}
+.diagram{background:var(--surface);border:1px solid var(--rule);border-radius:10px;padding:10px;margin:16px 0}
+.diagram svg{display:block;width:100%;height:auto}
+.diagram .kbox{fill:var(--key-bg);stroke:var(--key)}
+.diagram .dbox{fill:var(--plain-bg);stroke:var(--plain)}
+.diagram .t1{fill:var(--ink);font:600 14px var(--sans)}
+.diagram .t2{fill:var(--muted);font:400 12px var(--sans)}
+.diagram .ln{stroke:var(--muted);fill:none;stroke-width:1.2}
+.diagram .ah{fill:var(--muted)}
+input.txt{font-family:var(--mono);font-size:14px;padding:8px 10px;border:1px solid var(--rule);border-radius:6px;background:var(--bg);color:var(--ink);width:100%}
+label.f{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
+.lab .pane{padding:16px 18px}
+.tracebox{padding:0 18px 16px;border-top:1px solid var(--rule)}
+.tracebox:empty{display:none}
+.tracebox td.mono{white-space:nowrap}
+td.mono{word-break:break-all}
+td.mono.k{white-space:nowrap;word-break:normal}
+
+</style>
+</head>
+<body>
+<div class="layout">
+<nav class="toc" aria-label="Mục lục">
+  <p>Mục lục</p>
+  <ol>
+    <li><a href="#tong-quan">Tổng quan về DES</a></li>
+    <li><a href="#so-do">Sơ đồ tổng thể</a></li>
+    <li><a href="#khoa">Bước 1: Sinh khóa con</a></li>
+    <li><a href="#ip">Bước 2: Hoán vị IP</a></li>
+    <li><a href="#feistel">Bước 3: 16 vòng Feistel</a></li>
+    <li><a href="#ham-f">Hàm f và S-box</a></li>
+    <li><a href="#ket-thuc">Bước 4–5: Đổi chỗ và IP⁻¹</a></li>
+    <li><a href="#giai-ma">Giải mã</a></li>
+    <li><a href="#bai-tap">Bài tập slide 21</a></li>
+    <li><a href="#luu-y">Lưu ý trong tài liệu</a></li>
+    <li><a href="#an-toan">Độ an toàn</a></li>
+    <li><a href="#may-tinh">Máy tính DES từng bước</a></li>
+  </ol>
+</nav>
+<main>
+<header class="doc">
+<h1>Hệ mã hóa DES: thuật toán và logic</h1>
+<p class="lede">Tổng hợp từ bài giảng An toàn thông tin (Chương 3, ví dụ mã hóa DES) và file Excel VD_DES. Mọi con số trong tài liệu được tính lại bằng bản cài đặt độc lập và đối chiếu với thư viện mật mã chuẩn.</p>
+<div class="formula-strip"><span>L<sub>i</sub> = R<sub>i−1</sub></span><span>R<sub>i</sub> = L<sub>i−1</sub> ⊕ f(R<sub>i−1</sub>, K<sub>i</sub>)</span><span>f(R, K) = P(S(E(R) ⊕ K))</span><span>C = IP<sup>−1</sup>(R<sub>16</sub>L<sub>16</sub>)</span></div>
+<dl class="meta"><div><dt>Dự án</dt><dd>Caesar_Cipher</dd></div><div><dt>Kích thước khối</dt><dd>64 bit</dd></div><div><dt>Khóa</dt><dd>64 bit (56 bit hiệu dụng)</dd></div><div><dt>Số vòng</dt><dd>16</dd></div></dl>
+</header>
+
+<section id="tong-quan"><h2><small>1</small>Tổng quan về DES</h2>
+<p>DES (Data Encryption Standard) là hệ mã khối đối xứng: cùng một khóa dùng cho cả mã hóa và giải mã. Mỗi lần thuật toán xử lý một khối 64 bit. Khóa nhập vào dài 64 bit, nhưng 8 bit (bit 8, 16, …, 64) chỉ là bit kiểm tra chẵn lẻ và bị loại bỏ, nên độ dài khóa thực sự là 56 bit.</p>
+<p>DES được Mỹ công bố làm chuẩn liên bang (FIPS PUB 46) vào tháng 1/1977 và được tái xác nhận nhiều lần, lần cuối là FIPS 46-3. Đến năm 2005, NIST rút chuẩn này vì khóa 56 bit đã có thể bị vét cạn bằng tính toán song song. AES là chuẩn thay thế. DES vẫn rất quan trọng trong giảng dạy vì nó minh họa rõ cấu trúc Feistel, hộp S và hoán vị.</p>
+<h3>Quy ước đọc bit</h3>
+<ul><li>Dữ liệu và khóa cho dưới dạng 16 ký tự hex. Mỗi ký tự hex là 4 bit, viết từ trái sang phải.</li>
+<li>Bit 1 là bit trái nhất (bit cao nhất của ký tự hex đầu tiên), bit 64 là bit phải nhất.</li>
+<li>Bảng hoán vị đọc theo hàng: phần tử thứ i của bảng cho biết bit thứ i của đầu ra lấy từ bit nào của đầu vào. Ví dụ ô đầu của IP là 58, nghĩa là bit 1 của đầu ra là bit 58 của M.</li></ul>
+</section>
+
+<section id="so-do"><h2><small>2</small>Sơ đồ tổng thể</h2>
+<p>Thuật toán chạy song song hai luồng. Luồng khóa sinh ra 16 khóa con 48 bit. Luồng dữ liệu đưa bản rõ qua IP, 16 vòng Feistel (mỗi vòng dùng một khóa con), rồi đổi chỗ hai nửa và đi qua IP<sup>−1</sup>.</p>
+<div class="diagram"><svg viewBox="0 0 680 480" role="img" aria-label="Sơ đồ tổng quan DES: cột trái sinh khóa con, cột phải xử lý dữ liệu"><rect x="40" y="30" width="260" height="56" rx="8" class="kbox" stroke-width="1"/><text class="t1" x="170" y="52" text-anchor="middle">Khóa K (64 bit)</text><text class="t2" x="170" y="72" text-anchor="middle">8 bit chẵn lẻ bị bỏ</text><rect x="40" y="120" width="260" height="56" rx="8" class="kbox" stroke-width="1"/><text class="t1" x="170" y="142" text-anchor="middle">Hoán vị PC-1 → 56 bit</text><text class="t2" x="170" y="162" text-anchor="middle">Tách C0, D0 (28 bit)</text><line class="ln" x1="170" y1="86" x2="170" y2="114"/><path class="ah" d="M165 113 L170 120 L175 113 Z"/><rect x="40" y="210" width="260" height="56" rx="8" class="kbox" stroke-width="1"/><text class="t1" x="170" y="232" text-anchor="middle">Dịch vòng trái Cn, Dn</text><text class="t2" x="170" y="252" text-anchor="middle">1 hoặc 2 bit, 16 lần</text><line class="ln" x1="170" y1="176" x2="170" y2="204"/><path class="ah" d="M165 203 L170 210 L175 203 Z"/><rect x="40" y="300" width="260" height="56" rx="8" class="kbox" stroke-width="1"/><text class="t1" x="170" y="322" text-anchor="middle">Hoán vị PC-2 → 48 bit</text><text class="t2" x="170" y="342" text-anchor="middle">Được K1 … K16</text><line class="ln" x1="170" y1="266" x2="170" y2="294"/><path class="ah" d="M165 293 L170 300 L175 293 Z"/><rect x="380" y="30" width="260" height="56" rx="8" class="dbox" stroke-width="1"/><text class="t1" x="510" y="52" text-anchor="middle">Bản rõ M (64 bit)</text><text class="t2" x="510" y="72" text-anchor="middle">16 ký tự hex</text><rect x="380" y="120" width="260" height="56" rx="8" class="dbox" stroke-width="1"/><text class="t1" x="510" y="142" text-anchor="middle">Hoán vị khởi đầu IP</text><text class="t2" x="510" y="162" text-anchor="middle">Tách L0, R0 (32 bit)</text><line class="ln" x1="510" y1="86" x2="510" y2="114"/><path class="ah" d="M505 113 L510 120 L515 113 Z"/><rect x="380" y="210" width="260" height="56" rx="8" class="dbox" stroke-width="1"/><text class="t1" x="510" y="232" text-anchor="middle">16 vòng Feistel</text><text class="t2" x="510" y="252" text-anchor="middle">Li = Ri−1, Ri = Li−1 ⊕ f</text><line class="ln" x1="510" y1="176" x2="510" y2="204"/><path class="ah" d="M505 203 L510 210 L515 203 Z"/><rect x="380" y="300" width="260" height="56" rx="8" class="dbox" stroke-width="1"/><text class="t1" x="510" y="322" text-anchor="middle">Đổi chỗ → R16L16</text><text class="t2" x="510" y="342" text-anchor="middle">Bỏ hoán đổi vòng cuối</text><line class="ln" x1="510" y1="266" x2="510" y2="294"/><path class="ah" d="M505 293 L510 300 L515 293 Z"/><rect x="380" y="390" width="260" height="56" rx="8" class="dbox" stroke-width="1"/><text class="t1" x="510" y="412" text-anchor="middle">Hoán vị IP⁻¹</text><text class="t2" x="510" y="432" text-anchor="middle">Ra bản mã C (64 bit)</text><line class="ln" x1="510" y1="356" x2="510" y2="384"/><path class="ah" d="M505 383 L510 390 L515 383 Z"/><path class="ln" d="M300 328 L340 328 L340 238 L372 238"/><path class="ah" d="M372 233 L380 238 L372 243 Z"/><text class="t2" x="40" y="440">Màu hồng: luồng khóa · Màu xanh: luồng dữ liệu</text></svg></div>
+</section>
+
+<section id="khoa"><h2><small>3</small>Bước 1: Sinh khóa con K<sub>1</sub> … K<sub>16</sub></h2>
+<ol class="flow">
+<li><b>Viết khóa dạng nhị phân 64 bit</b>K = 133457799BBCDFF1 = <code>00010011 00110100 01010111 01111001 10011011 10111100 11011111 11110001</code></li>
+<li><b>Hoán vị PC-1 (64 → 56 bit)</b>Bảng PC-1 không chứa các vị trí 8, 16, …, 64, nên bit chẵn lẻ tự động bị loại. Kết quả chia đôi thành C<sub>0</sub> và D<sub>0</sub>, mỗi nửa 28 bit.</li>
+<li><b>Dịch vòng trái</b>Ở vòng n, C<sub>n</sub> và D<sub>n</sub> được tạo bằng cách dịch vòng trái C<sub>n−1</sub>, D<sub>n−1</sub> theo bảng LS. Tổng số bit dịch là 28, nên C<sub>16</sub>D<sub>16</sub> quay về đúng C<sub>0</sub>D<sub>0</sub>.</li>
+<li><b>Hoán vị PC-2 (56 → 48 bit)</b>PC-2 chọn 48 trong 56 bit của C<sub>n</sub>D<sub>n</sub> (bỏ các bit 9, 18, 22, 25, 35, 38, 43, 54) và xáo trộn chúng, cho ra K<sub>n</sub>.</li>
+</ol>
+<div class="ptab"><div class="cap">PC-1 (8 × 7)</div><table><tr><td>57</td><td>49</td><td>41</td><td>33</td><td>25</td><td>17</td><td>9</td></tr><tr><td>1</td><td>58</td><td>50</td><td>42</td><td>34</td><td>26</td><td>18</td></tr><tr><td>10</td><td>2</td><td>59</td><td>51</td><td>43</td><td>35</td><td>27</td></tr><tr><td>19</td><td>11</td><td>3</td><td>60</td><td>52</td><td>44</td><td>36</td></tr><tr><td>63</td><td>55</td><td>47</td><td>39</td><td>31</td><td>23</td><td>15</td></tr><tr><td>7</td><td>62</td><td>54</td><td>46</td><td>38</td><td>30</td><td>22</td></tr><tr><td>14</td><td>6</td><td>61</td><td>53</td><td>45</td><td>37</td><td>29</td></tr><tr><td>21</td><td>13</td><td>5</td><td>28</td><td>20</td><td>12</td><td>4</td></tr></table></div><div class="ptab"><div class="cap">PC-2 (8 × 6)</div><table><tr><td>14</td><td>17</td><td>11</td><td>24</td><td>1</td><td>5</td></tr><tr><td>3</td><td>28</td><td>15</td><td>6</td><td>21</td><td>10</td></tr><tr><td>23</td><td>19</td><td>12</td><td>4</td><td>26</td><td>8</td></tr><tr><td>16</td><td>7</td><td>27</td><td>20</td><td>13</td><td>2</td></tr><tr><td>41</td><td>52</td><td>31</td><td>37</td><td>47</td><td>55</td></tr><tr><td>30</td><td>40</td><td>51</td><td>45</td><td>33</td><td>48</td></tr><tr><td>44</td><td>49</td><td>39</td><td>56</td><td>34</td><td>53</td></tr><tr><td>46</td><td>42</td><td>50</td><td>36</td><td>29</td><td>32</td></tr></table></div>
+<div class="ptab"><div class="cap">LS: số bit dịch trái ở vòng n</div><table><tr><td>1</td><td>2</td><td>3</td><td>4</td><td>5</td><td>6</td><td>7</td><td>8</td><td>9</td><td>10</td><td>11</td><td>12</td><td>13</td><td>14</td><td>15</td><td>16</td></tr><tr><td><b>1</b></td><td><b>1</b></td><td><b>2</b></td><td><b>2</b></td><td><b>2</b></td><td><b>2</b></td><td><b>2</b></td><td><b>2</b></td><td><b>1</b></td><td><b>2</b></td><td><b>2</b></td><td><b>2</b></td><td><b>2</b></td><td><b>2</b></td><td><b>2</b></td><td><b>1</b></td></tr></table></div>
+<h3>Kết quả với K = 133457799BBCDFF1</h3>
+<p class="small">PC-1(K) = <code>1111000 0110011 0010101 0101111 0101010 1011001 1001111 0001111</code></p>
+<div class="tbl"><table><thead><tr><th>n</th><th>C<sub>n</sub></th><th>D<sub>n</sub></th><th>K<sub>n</sub></th><th>Hex</th></tr></thead><tbody><tr><td class="id">0</td><td class="mono">1111000 0110011 0010101 0101111</td><td class="mono">0101010 1011001 1001111 0001111</td><td class="mono k">–</td><td class="mono">–</td></tr><tr><td class="id">1</td><td class="mono">1110000 1100110 0101010 1011111</td><td class="mono">1010101 0110011 0011110 0011110</td><td class="mono k">000110 110000 001011 101111 111111 000111 000001 110010</td><td class="mono">1B02EFFC7072</td></tr><tr><td class="id">2</td><td class="mono">1100001 1001100 1010101 0111111</td><td class="mono">0101010 1100110 0111100 0111101</td><td class="mono k">011110 011010 111011 011001 110110 111100 100111 100101</td><td class="mono">79AED9DBC9E5</td></tr><tr><td class="id">3</td><td class="mono">0000110 0110010 1010101 1111111</td><td class="mono">0101011 0011001 1110001 1110101</td><td class="mono k">010101 011111 110010 001010 010000 101100 111110 011001</td><td class="mono">55FC8A42CF99</td></tr><tr><td class="id">4</td><td class="mono">0011001 1001010 1010111 1111100</td><td class="mono">0101100 1100111 1000111 1010101</td><td class="mono k">011100 101010 110111 010110 110110 110011 010100 011101</td><td class="mono">72ADD6DB351D</td></tr><tr><td class="id">5</td><td class="mono">1100110 0101010 1011111 1110000</td><td class="mono">0110011 0011110 0011110 1010101</td><td class="mono k">011111 001110 110000 000111 111010 110101 001110 101000</td><td class="mono">7CEC07EB53A8</td></tr><tr><td class="id">6</td><td class="mono">0011001 0101010 1111111 1000011</td><td class="mono">1001100 1111000 1111010 1010101</td><td class="mono k">011000 111010 010100 111110 010100 000111 101100 101111</td><td class="mono">63A53E507B2F</td></tr><tr><td class="id">7</td><td class="mono">1100101 0101011 1111110 0001100</td><td class="mono">0110011 1100011 1101010 1010110</td><td class="mono k">111011 001000 010010 110111 111101 100001 100010 111100</td><td class="mono">EC84B7F618BC</td></tr><tr><td class="id">8</td><td class="mono">0010101 0101111 1111000 0110011</td><td class="mono">1001111 0001111 0101010 1011001</td><td class="mono k">111101 111000 101000 111010 110000 010011 101111 111011</td><td class="mono">F78A3AC13BFB</td></tr><tr><td class="id">9</td><td class="mono">0101010 1011111 1110000 1100110</td><td class="mono">0011110 0011110 1010101 0110011</td><td class="mono k">111000 001101 101111 101011 111011 011110 011110 000001</td><td class="mono">E0DBEBEDE781</td></tr><tr><td class="id">10</td><td class="mono">0101010 1111111 1000011 0011001</td><td class="mono">1111000 1111010 1010101 1001100</td><td class="mono k">101100 011111 001101 000111 101110 100100 011001 001111</td><td class="mono">B1F347BA464F</td></tr><tr><td class="id">11</td><td class="mono">0101011 1111110 0001100 1100101</td><td class="mono">1100011 1101010 1010110 0110011</td><td class="mono k">001000 010101 111111 010011 110111 101101 001110 000110</td><td class="mono">215FD3DED386</td></tr><tr><td class="id">12</td><td class="mono">0101111 1111000 0110011 0010101</td><td class="mono">0001111 0101010 1011001 1001111</td><td class="mono k">011101 010111 000111 110101 100101 000110 011111 101001</td><td class="mono">7571F59467E9</td></tr><tr><td class="id">13</td><td class="mono">0111111 1100001 1001100 1010101</td><td class="mono">0111101 0101010 1100110 0111100</td><td class="mono k">100101 111100 010111 010001 111110 101011 101001 000001</td><td class="mono">97C5D1FABA41</td></tr><tr><td class="id">14</td><td class="mono">1111111 0000110 0110010 1010101</td><td class="mono">1110101 0101011 0011001 1110001</td><td class="mono k">010111 110100 001110 110111 111100 101110 011100 111010</td><td class="mono">5F43B7F2E73A</td></tr><tr><td class="id">15</td><td class="mono">1111100 0011001 1001010 1010111</td><td class="mono">1010101 0101100 1100111 1000111</td><td class="mono k">101111 111001 000110 001101 001111 010011 111100 001010</td><td class="mono">BF918D3D3F0A</td></tr><tr><td class="id">16</td><td class="mono">1111000 0110011 0010101 0101111</td><td class="mono">0101010 1011001 1001111 0001111</td><td class="mono k">110010 110011 110110 001011 000011 100001 011111 110101</td><td class="mono">CB3D8B0E17F5</td></tr></tbody></table></div>
+</section>
+
+<section id="ip"><h2><small>4</small>Bước 2: Hoán vị khởi đầu IP</h2>
+<p>Viết M dưới dạng 64 bit rồi hoán vị theo IP. 32 bit đầu của kết quả là L<sub>0</sub>, 32 bit sau là R<sub>0</sub>.</p>
+<div class="ptab"><div class="cap">IP (8 × 8)</div><table><tr><td>58</td><td>50</td><td>42</td><td>34</td><td>26</td><td>18</td><td>10</td><td>2</td></tr><tr><td>60</td><td>52</td><td>44</td><td>36</td><td>28</td><td>20</td><td>12</td><td>4</td></tr><tr><td>62</td><td>54</td><td>46</td><td>38</td><td>30</td><td>22</td><td>14</td><td>6</td></tr><tr><td>64</td><td>56</td><td>48</td><td>40</td><td>32</td><td>24</td><td>16</td><td>8</td></tr><tr><td>57</td><td>49</td><td>41</td><td>33</td><td>25</td><td>17</td><td>9</td><td>1</td></tr><tr><td>59</td><td>51</td><td>43</td><td>35</td><td>27</td><td>19</td><td>11</td><td>3</td></tr><tr><td>61</td><td>53</td><td>45</td><td>37</td><td>29</td><td>21</td><td>13</td><td>5</td></tr><tr><td>63</td><td>55</td><td>47</td><td>39</td><td>31</td><td>23</td><td>15</td><td>7</td></tr></table></div>
+<div class="kv"><span>M</span><code class="p">0000 0001 0010 0011 0100 0101 0110 0111 1000 1001 1010 1011 1100 1101 1110 1111</code><span>IP(M)</span><code>1100 1100 0000 0000 1100 1100 1111 1111 1111 0000 1010 1010 1111 0000 1010 1010</code><span>L<sub>0</sub></span><code>1100 1100 0000 0000 1100 1100 1111 1111 = CC00CCFF</code><span>R<sub>0</sub></span><code>1111 0000 1010 1010 1111 0000 1010 1010 = F0AAF0AA</code></div>
+<p class="small">Quy luật dễ nhớ của IP: hàng đầu lấy các bit 58, 50, …, 2, tức lấy bit thứ 2 của từng byte theo thứ tự byte từ cuối lên. Các hàng tiếp theo lần lượt lấy bit 4, 6, 8 rồi bit 1, 3, 5, 7 của mỗi byte.</p>
+</section>
+
+<section id="feistel"><h2><small>5</small>Bước 3: 16 vòng Feistel</h2>
+<p>Với i = 1 … 16:</p>
+<pre>L<sub>i</sub> = R<sub>i−1</sub>
+R<sub>i</sub> = L<sub>i−1</sub> ⊕ f(R<sub>i−1</sub>, K<sub>i</sub>)</pre>
+<p>Mỗi vòng chỉ biến đổi một nửa khối (nửa trái được XOR với f của nửa phải), sau đó hai nửa đổi vai trò cho nhau. Nhờ cấu trúc này, giải mã không cần hàm ngược của f. Bảng dưới là toàn bộ 16 vòng của ví dụ trên slide (giá trị hex):</p>
+<div class="tbl"><table><thead><tr><th>Vòng</th><th>f(R<sub>i−1</sub>, K<sub>i</sub>)</th><th>L<sub>i</sub></th><th>R<sub>i</sub></th></tr></thead><tbody><tr><td class="id">0</td><td>–</td><td class="mono">CC00CCFF</td><td class="mono">F0AAF0AA</td></tr><tr><td class="id">1</td><td class="mono">234AA9BB</td><td class="mono">F0AAF0AA</td><td class="mono">EF4A6544</td></tr><tr><td class="id">2</td><td class="mono">3CAB87A3</td><td class="mono">EF4A6544</td><td class="mono">CC017709</td></tr><tr><td class="id">3</td><td class="mono">4D166EB0</td><td class="mono">CC017709</td><td class="mono">A25C0BF4</td></tr><tr><td class="id">4</td><td class="mono">BB23774C</td><td class="mono">A25C0BF4</td><td class="mono">77220045</td></tr><tr><td class="id">5</td><td class="mono">2813ADC3</td><td class="mono">77220045</td><td class="mono">8A4FA637</td></tr><tr><td class="id">6</td><td class="mono">9E45CD2C</td><td class="mono">8A4FA637</td><td class="mono">E967CD69</td></tr><tr><td class="id">7</td><td class="mono">8C051C27</td><td class="mono">E967CD69</td><td class="mono">064ABA10</td></tr><tr><td class="id">8</td><td class="mono">3C0E86F9</td><td class="mono">064ABA10</td><td class="mono">D5694B90</td></tr><tr><td class="id">9</td><td class="mono">22367C6A</td><td class="mono">D5694B90</td><td class="mono">247CC67A</td></tr><tr><td class="id">10</td><td class="mono">62BC9C22</td><td class="mono">247CC67A</td><td class="mono">B7D5D7B2</td></tr><tr><td class="id">11</td><td class="mono">E104FA02</td><td class="mono">B7D5D7B2</td><td class="mono">C5783C78</td></tr><tr><td class="id">12</td><td class="mono">C268CFEA</td><td class="mono">C5783C78</td><td class="mono">75BD1858</td></tr><tr><td class="id">13</td><td class="mono">DDBB2922</td><td class="mono">75BD1858</td><td class="mono">18C3155A</td></tr><tr><td class="id">14</td><td class="mono">B7318E55</td><td class="mono">18C3155A</td><td class="mono">C28C960D</td></tr><tr><td class="id">15</td><td class="mono">5B81276E</td><td class="mono">C28C960D</td><td class="mono">43423234</td></tr><tr><td class="id">16</td><td class="mono">C8C04F98</td><td class="mono">43423234</td><td class="mono">0A4CD995</td></tr></tbody></table></div>
+</section>
+
+<section id="ham-f"><h2><small>6</small>Hàm f và các hộp S</h2>
+<p>f nhận nửa phải 32 bit và khóa con 48 bit, trả về 32 bit, qua 4 bước:</p>
+<ol class="flow">
+<li><b>E: mở rộng 32 → 48 bit</b>Chia R thành 8 nhóm 4 bit, mỗi nhóm được thêm bit biên của hai nhóm kề bên (bit 32 và bit 1 nối vòng). Mục đích là để R cùng độ dài với khóa con.</li>
+<li><b>XOR với K<sub>i</sub></b>Đây là nơi duy nhất khóa trộn vào dữ liệu.</li>
+<li><b>S-box: 48 → 32 bit</b>Chia thành 8 khối B<sub>1</sub> … B<sub>8</sub>, mỗi khối 6 bit. Bit đầu và bit cuối ghép thành số hàng (0–3), 4 bit giữa là số cột (0–15). Tra hộp S<sub>i</sub> được một số 0–15, viết thành 4 bit. Đây là bước phi tuyến duy nhất, quyết định độ an toàn của DES.</li>
+<li><b>P: hoán vị 32 bit</b>Trộn đầu ra của các hộp S để mỗi hộp ảnh hưởng tới nhiều hộp ở vòng sau.</li>
+</ol>
+<div class="ptab"><div class="cap">E (8 × 6)</div><table><tr><td>32</td><td>1</td><td>2</td><td>3</td><td>4</td><td>5</td></tr><tr><td>4</td><td>5</td><td>6</td><td>7</td><td>8</td><td>9</td></tr><tr><td>8</td><td>9</td><td>10</td><td>11</td><td>12</td><td>13</td></tr><tr><td>12</td><td>13</td><td>14</td><td>15</td><td>16</td><td>17</td></tr><tr><td>16</td><td>17</td><td>18</td><td>19</td><td>20</td><td>21</td></tr><tr><td>20</td><td>21</td><td>22</td><td>23</td><td>24</td><td>25</td></tr><tr><td>24</td><td>25</td><td>26</td><td>27</td><td>28</td><td>29</td></tr><tr><td>28</td><td>29</td><td>30</td><td>31</td><td>32</td><td>1</td></tr></table></div><div class="ptab"><div class="cap">P (4 × 8)</div><table><tr><td>16</td><td>7</td><td>20</td><td>21</td><td>29</td><td>12</td><td>28</td><td>17</td></tr><tr><td>1</td><td>15</td><td>23</td><td>26</td><td>5</td><td>18</td><td>31</td><td>10</td></tr><tr><td>2</td><td>8</td><td>24</td><td>14</td><td>32</td><td>27</td><td>3</td><td>9</td></tr><tr><td>19</td><td>13</td><td>30</td><td>6</td><td>22</td><td>11</td><td>4</td><td>25</td></tr></table></div>
+<h3>Chi tiết vòng 1 của ví dụ</h3>
+<div class="kv"><span>R<sub>0</sub></span><code>1111 0000 1010 1010 1111 0000 1010 1010</code><span>E(R<sub>0</sub>)</span><code>011110 100001 010101 010101 011110 100001 010101 010101</code><span>K<sub>1</sub></span><code class="k">000110 110000 001011 101111 111111 000111 000001 110010</code><span>E(R<sub>0</sub>) ⊕ K<sub>1</sub></span><code>011000 010001 011110 111010 100001 100110 010100 100111</code></div>
+<div class="tbl"><table><thead><tr><th>Hộp</th><th>B<sub>i</sub></th><th>Hàng</th><th>Cột</th><th>Giá trị</th><th>4 bit</th></tr></thead><tbody><tr><td class="id">S1</td><td class="mono"><u>0</u>1100<u>0</u></td><td>00 = 0</td><td>1100 = 12</td><td>5</td><td class="mono">0101</td></tr><tr><td class="id">S2</td><td class="mono"><u>0</u>1000<u>1</u></td><td>01 = 1</td><td>1000 = 8</td><td>12</td><td class="mono">1100</td></tr><tr><td class="id">S3</td><td class="mono"><u>0</u>1111<u>0</u></td><td>00 = 0</td><td>1111 = 15</td><td>8</td><td class="mono">1000</td></tr><tr><td class="id">S4</td><td class="mono"><u>1</u>1101<u>0</u></td><td>10 = 2</td><td>1101 = 13</td><td>2</td><td class="mono">0010</td></tr><tr><td class="id">S5</td><td class="mono"><u>1</u>0000<u>1</u></td><td>11 = 3</td><td>0000 = 0</td><td>11</td><td class="mono">1011</td></tr><tr><td class="id">S6</td><td class="mono"><u>1</u>0011<u>0</u></td><td>10 = 2</td><td>0011 = 3</td><td>5</td><td class="mono">0101</td></tr><tr><td class="id">S7</td><td class="mono"><u>0</u>1010<u>0</u></td><td>00 = 0</td><td>1010 = 10</td><td>9</td><td class="mono">1001</td></tr><tr><td class="id">S8</td><td class="mono"><u>1</u>0011<u>1</u></td><td>11 = 3</td><td>0011 = 3</td><td>7</td><td class="mono">0111</td></tr></tbody></table></div><div class="kv"><span>S<sub>1</sub>…S<sub>8</sub></span><code>0101 1100 1000 0010 1011 0101 1001 0111</code><span>f = P(S)</span><code>0010 0011 0100 1010 1010 1001 1011 1011</code><span>L<sub>0</sub></span><code>1100 1100 0000 0000 1100 1100 1111 1111</code><span>R<sub>1</sub> = L<sub>0</sub> ⊕ f</span><code class="c">1110 1111 0100 1010 0110 0101 0100 0100</code></div>
+<p class="small">Khớp với slide 9 (B<sub>1</sub> = 011000 → hàng 0, cột 12 → 5 = 0101) và slide 11 (R<sub>1</sub> = 1110 1111 0100 1010 0110 0101 0100 0100).</p>
+<h3>Tám hộp S</h3>
+<p class="small">Hàng 0–3 theo chiều dọc, cột 0–15 theo chiều ngang. Mỗi hàng là một hoán vị của các số 0–15; đây là cách nhanh để phát hiện bảng chép sai.</p>
+<div class="sgrid"><div class="sbox"><p class="cap">S1</p><div class="tbl" style="margin:0"><table><tr><th></th><th>0</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8</th><th>9</th><th>10</th><th>11</th><th>12</th><th>13</th><th>14</th><th>15</th></tr><tr><th>0</th><td>14</td><td>4</td><td>13</td><td>1</td><td>2</td><td>15</td><td>11</td><td>8</td><td>3</td><td>10</td><td>6</td><td>12</td><td>5</td><td>9</td><td>0</td><td>7</td></tr><tr><th>1</th><td>0</td><td>15</td><td>7</td><td>4</td><td>14</td><td>2</td><td>13</td><td>1</td><td>10</td><td>6</td><td>12</td><td>11</td><td>9</td><td>5</td><td>3</td><td>8</td></tr><tr><th>2</th><td>4</td><td>1</td><td>14</td><td>8</td><td>13</td><td>6</td><td>2</td><td>11</td><td>15</td><td>12</td><td>9</td><td>7</td><td>3</td><td>10</td><td>5</td><td>0</td></tr><tr><th>3</th><td>15</td><td>12</td><td>8</td><td>2</td><td>4</td><td>9</td><td>1</td><td>7</td><td>5</td><td>11</td><td>3</td><td>14</td><td>10</td><td>0</td><td>6</td><td>13</td></tr></table></div></div><div class="sbox"><p class="cap">S2</p><div class="tbl" style="margin:0"><table><tr><th></th><th>0</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8</th><th>9</th><th>10</th><th>11</th><th>12</th><th>13</th><th>14</th><th>15</th></tr><tr><th>0</th><td>15</td><td>1</td><td>8</td><td>14</td><td>6</td><td>11</td><td>3</td><td>4</td><td>9</td><td>7</td><td>2</td><td>13</td><td>12</td><td>0</td><td>5</td><td>10</td></tr><tr><th>1</th><td>3</td><td>13</td><td>4</td><td>7</td><td>15</td><td>2</td><td>8</td><td>14</td><td>12</td><td>0</td><td>1</td><td>10</td><td>6</td><td>9</td><td>11</td><td>5</td></tr><tr><th>2</th><td>0</td><td>14</td><td>7</td><td>11</td><td>10</td><td>4</td><td>13</td><td>1</td><td>5</td><td>8</td><td>12</td><td>6</td><td>9</td><td>3</td><td>2</td><td>15</td></tr><tr><th>3</th><td>13</td><td>8</td><td>10</td><td>1</td><td>3</td><td>15</td><td>4</td><td>2</td><td>11</td><td>6</td><td>7</td><td>12</td><td>0</td><td>5</td><td>14</td><td>9</td></tr></table></div></div><div class="sbox"><p class="cap">S3</p><div class="tbl" style="margin:0"><table><tr><th></th><th>0</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8</th><th>9</th><th>10</th><th>11</th><th>12</th><th>13</th><th>14</th><th>15</th></tr><tr><th>0</th><td>10</td><td>0</td><td>9</td><td>14</td><td>6</td><td>3</td><td>15</td><td>5</td><td>1</td><td>13</td><td>12</td><td>7</td><td>11</td><td>4</td><td>2</td><td>8</td></tr><tr><th>1</th><td>13</td><td>7</td><td>0</td><td>9</td><td>3</td><td>4</td><td>6</td><td>10</td><td>2</td><td>8</td><td>5</td><td>14</td><td>12</td><td>11</td><td>15</td><td>1</td></tr><tr><th>2</th><td>13</td><td>6</td><td>4</td><td>9</td><td>8</td><td>15</td><td>3</td><td>0</td><td>11</td><td>1</td><td>2</td><td>12</td><td>5</td><td>10</td><td>14</td><td>7</td></tr><tr><th>3</th><td>1</td><td>10</td><td>13</td><td>0</td><td>6</td><td>9</td><td>8</td><td>7</td><td>4</td><td>15</td><td>14</td><td>3</td><td>11</td><td>5</td><td>2</td><td>12</td></tr></table></div></div><div class="sbox"><p class="cap">S4</p><div class="tbl" style="margin:0"><table><tr><th></th><th>0</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8</th><th>9</th><th>10</th><th>11</th><th>12</th><th>13</th><th>14</th><th>15</th></tr><tr><th>0</th><td>7</td><td>13</td><td>14</td><td>3</td><td>0</td><td>6</td><td>9</td><td>10</td><td>1</td><td>2</td><td>8</td><td>5</td><td>11</td><td>12</td><td>4</td><td>15</td></tr><tr><th>1</th><td>13</td><td>8</td><td>11</td><td>5</td><td>6</td><td>15</td><td>0</td><td>3</td><td>4</td><td>7</td><td>2</td><td>12</td><td>1</td><td>10</td><td>14</td><td>9</td></tr><tr><th>2</th><td>10</td><td>6</td><td>9</td><td>0</td><td>12</td><td>11</td><td>7</td><td>13</td><td>15</td><td>1</td><td>3</td><td>14</td><td>5</td><td>2</td><td>8</td><td>4</td></tr><tr><th>3</th><td>3</td><td>15</td><td>0</td><td>6</td><td>10</td><td>1</td><td>13</td><td>8</td><td>9</td><td>4</td><td>5</td><td>11</td><td>12</td><td>7</td><td>2</td><td>14</td></tr></table></div></div><div class="sbox"><p class="cap">S5</p><div class="tbl" style="margin:0"><table><tr><th></th><th>0</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8</th><th>9</th><th>10</th><th>11</th><th>12</th><th>13</th><th>14</th><th>15</th></tr><tr><th>0</th><td>2</td><td>12</td><td>4</td><td>1</td><td>7</td><td>10</td><td>11</td><td>6</td><td>8</td><td>5</td><td>3</td><td>15</td><td>13</td><td>0</td><td>14</td><td>9</td></tr><tr><th>1</th><td>14</td><td>11</td><td>2</td><td>12</td><td>4</td><td>7</td><td>13</td><td>1</td><td>5</td><td>0</td><td>15</td><td>10</td><td>3</td><td>9</td><td>8</td><td>6</td></tr><tr><th>2</th><td>4</td><td>2</td><td>1</td><td>11</td><td>10</td><td>13</td><td>7</td><td>8</td><td>15</td><td>9</td><td>12</td><td>5</td><td>6</td><td>3</td><td>0</td><td>14</td></tr><tr><th>3</th><td>11</td><td>8</td><td>12</td><td>7</td><td>1</td><td>14</td><td>2</td><td>13</td><td>6</td><td>15</td><td>0</td><td>9</td><td>10</td><td>4</td><td>5</td><td>3</td></tr></table></div></div><div class="sbox"><p class="cap">S6</p><div class="tbl" style="margin:0"><table><tr><th></th><th>0</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8</th><th>9</th><th>10</th><th>11</th><th>12</th><th>13</th><th>14</th><th>15</th></tr><tr><th>0</th><td>12</td><td>1</td><td>10</td><td>15</td><td>9</td><td>2</td><td>6</td><td>8</td><td>0</td><td>13</td><td>3</td><td>4</td><td>14</td><td>7</td><td>5</td><td>11</td></tr><tr><th>1</th><td>10</td><td>15</td><td>4</td><td>2</td><td>7</td><td>12</td><td>9</td><td>5</td><td>6</td><td>1</td><td>13</td><td>14</td><td>0</td><td>11</td><td>3</td><td>8</td></tr><tr><th>2</th><td>9</td><td>14</td><td>15</td><td>5</td><td>2</td><td>8</td><td>12</td><td>3</td><td>7</td><td>0</td><td>4</td><td>10</td><td>1</td><td>13</td><td>11</td><td>6</td></tr><tr><th>3</th><td>4</td><td>3</td><td>2</td><td>12</td><td>9</td><td>5</td><td>15</td><td>10</td><td>11</td><td>14</td><td>1</td><td>7</td><td>6</td><td>0</td><td>8</td><td>13</td></tr></table></div></div><div class="sbox"><p class="cap">S7</p><div class="tbl" style="margin:0"><table><tr><th></th><th>0</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8</th><th>9</th><th>10</th><th>11</th><th>12</th><th>13</th><th>14</th><th>15</th></tr><tr><th>0</th><td>4</td><td>11</td><td>2</td><td>14</td><td>15</td><td>0</td><td>8</td><td>13</td><td>3</td><td>12</td><td>9</td><td>7</td><td>5</td><td>10</td><td>6</td><td>1</td></tr><tr><th>1</th><td>13</td><td>0</td><td>11</td><td>7</td><td>4</td><td>9</td><td>1</td><td>10</td><td>14</td><td>3</td><td>5</td><td>12</td><td>2</td><td>15</td><td>8</td><td>6</td></tr><tr><th>2</th><td>1</td><td>4</td><td>11</td><td>13</td><td>12</td><td>3</td><td>7</td><td>14</td><td>10</td><td>15</td><td>6</td><td>8</td><td>0</td><td>5</td><td>9</td><td>2</td></tr><tr><th>3</th><td>6</td><td>11</td><td>13</td><td>8</td><td>1</td><td>4</td><td>10</td><td>7</td><td>9</td><td>5</td><td>0</td><td>15</td><td>14</td><td>2</td><td>3</td><td>12</td></tr></table></div></div><div class="sbox"><p class="cap">S8</p><div class="tbl" style="margin:0"><table><tr><th></th><th>0</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8</th><th>9</th><th>10</th><th>11</th><th>12</th><th>13</th><th>14</th><th>15</th></tr><tr><th>0</th><td>13</td><td>2</td><td>8</td><td>4</td><td>6</td><td>15</td><td>11</td><td>1</td><td>10</td><td>9</td><td>3</td><td>14</td><td>5</td><td>0</td><td>12</td><td>7</td></tr><tr><th>1</th><td>1</td><td>15</td><td>13</td><td>8</td><td>10</td><td>3</td><td>7</td><td>4</td><td>12</td><td>5</td><td>6</td><td>11</td><td>0</td><td>14</td><td>9</td><td>2</td></tr><tr><th>2</th><td>7</td><td>11</td><td>4</td><td>1</td><td>9</td><td>12</td><td>14</td><td>2</td><td>0</td><td>6</td><td>10</td><td>13</td><td>15</td><td>3</td><td>5</td><td>8</td></tr><tr><th>3</th><td>2</td><td>1</td><td>14</td><td>7</td><td>4</td><td>10</td><td>8</td><td>13</td><td>15</td><td>12</td><td>9</td><td>0</td><td>3</td><td>5</td><td>6</td><td>11</td></tr></table></div></div></div>
+</section>
+
+<section id="ket-thuc"><h2><small>7</small>Bước 4–5: Đổi chỗ và hoán vị IP<sup>−1</sup></h2>
+<p>Sau vòng 16 ghép hai nửa theo thứ tự <b>R<sub>16</sub>L<sub>16</sub></b> (nửa phải đứng trước). Việc đổi chỗ này triệt tiêu lần hoán đổi thừa ở vòng cuối, giúp quá trình giải mã giống hệt mã hóa. Cuối cùng áp dụng IP<sup>−1</sup>, là hoán vị ngược của IP.</p>
+<div class="ptab"><div class="cap">IP⁻¹ (8 × 8)</div><table><tr><td>40</td><td>8</td><td>48</td><td>16</td><td>56</td><td>24</td><td>64</td><td>32</td></tr><tr><td>39</td><td>7</td><td>47</td><td>15</td><td>55</td><td>23</td><td>63</td><td>31</td></tr><tr><td>38</td><td>6</td><td>46</td><td>14</td><td>54</td><td>22</td><td>62</td><td>30</td></tr><tr><td>37</td><td>5</td><td>45</td><td>13</td><td>53</td><td>21</td><td>61</td><td>29</td></tr><tr><td>36</td><td>4</td><td>44</td><td>12</td><td>52</td><td>20</td><td>60</td><td>28</td></tr><tr><td>35</td><td>3</td><td>43</td><td>11</td><td>51</td><td>19</td><td>59</td><td>27</td></tr><tr><td>34</td><td>2</td><td>42</td><td>10</td><td>50</td><td>18</td><td>58</td><td>26</td></tr><tr><td>33</td><td>1</td><td>41</td><td>9</td><td>49</td><td>17</td><td>57</td><td>25</td></tr></table></div>
+<div class="kv"><span>L<sub>16</sub></span><code>0100 0011 0100 0010 0011 0010 0011 0100</code><span>R<sub>16</sub></span><code>0000 1010 0100 1100 1101 1001 1001 0101</code><span>R<sub>16</sub>L<sub>16</sub></span><code>0000 1010 0100 1100 1101 1001 1001 0101 0100 0011 0100 0010 0011 0010 0011 0100</code><span>IP<sup>−1</sup></span><code class="c">1000 0101 1110 1000 0001 0011 0101 0100 0000 1111 0000 1010 1011 0100 0000 0101</code></div>
+<div class="answer">M = <code class="p" style="color:var(--plain)">0123456789ABCDEF</code>, K = <code class="k" style="color:var(--key)">133457799BBCDFF1</code> → C = <code>85E813540F0AB405</code></div>
+</section>
+
+<section id="giai-ma"><h2><small>8</small>Giải mã</h2>
+<p>Giải mã dùng đúng thuật toán trên với đầu vào là bản mã C, chỉ khác ở chỗ khóa con được dùng theo thứ tự ngược: vòng 1 dùng K<sub>16</sub>, vòng 2 dùng K<sub>15</sub>, …, vòng 16 dùng K<sub>1</sub>.</p>
+<p>Lý do: IP<sup>−1</sup> của bước mã hóa bị IP của bước giải mã triệt tiêu. Mỗi vòng Feistel tự khả nghịch, vì nếu biết (L<sub>i</sub>, R<sub>i</sub>) thì R<sub>i−1</sub> = L<sub>i</sub> và L<sub>i−1</sub> = R<sub>i</sub> ⊕ f(L<sub>i</sub>, K<sub>i</sub>). Hàm f chỉ cần tính xuôi, không cần đảo ngược, nên hộp S không cần là song ánh.</p>
+<p>Kiểm chứng: giải mã 85E813540F0AB405 với khóa 133457799BBCDFF1 cho lại đúng 0123456789ABCDEF. Bạn có thể thử ở mục 12.</p>
+</section>
+
+<section id="bai-tap"><h2><small>9</small>Bài tập slide 21</h2>
+<p>Cho M = A1B2C3D4E5F60978, K = 10012334455EFA67. Tìm bản mã.</p>
+<div class="answer">C = <code>C291E07ED3004A9E</code></div>
+<p class="small">Kết quả đã được kiểm tra bằng bản cài đặt tự viết, bằng thư viện cryptography chuẩn và bằng phép giải mã ngược.</p>
+<h3>Bước 1: khóa con</h3>
+<p class="small">PC-1(K) = <code>0100000 0111100 0011001 1000110 1110010 0101110 0001100 0001001</code></p>
+<div class="tbl"><table><thead><tr><th>n</th><th>C<sub>n</sub></th><th>D<sub>n</sub></th><th>K<sub>n</sub></th><th>Hex</th></tr></thead><tbody><tr><td class="id">0</td><td class="mono">0100000 0111100 0011001 1000110</td><td class="mono">1110010 0101110 0001100 0001001</td><td class="mono k">–</td><td class="mono">–</td></tr><tr><td class="id">1</td><td class="mono">1000000 1111000 0110011 0001100</td><td class="mono">1100100 1011100 0011000 0010011</td><td class="mono k">011010 000011 000011 100100 010001 110110 001100 100110</td><td class="mono">6830E4476326</td></tr><tr><td class="id">2</td><td class="mono">0000001 1110000 1100110 0011001</td><td class="mono">1001001 0111000 0110000 0100111</td><td class="mono k">000100 011001 010001 110100 000101 001100 101100 000011</td><td class="mono">11947414CB03</td></tr><tr><td class="id">3</td><td class="mono">0000111 1000011 0011000 1100100</td><td class="mono">0100101 1100001 1000001 0011110</td><td class="mono k">110001 000100 100011 010010 010101 100010 010001 010100</td><td class="mono">C448D2562454</td></tr><tr><td class="id">4</td><td class="mono">0011110 0001100 1100011 0010000</td><td class="mono">0010111 0000110 0000100 1111001</td><td class="mono k">001101 101110 001100 100100 111010 011010 000111 001000</td><td class="mono">36E324E9A1C8</td></tr><tr><td class="id">5</td><td class="mono">1111000 0110011 0001100 1000000</td><td class="mono">1011100 0011000 0010011 1100100</td><td class="mono k">100010 100001 010100 000011 001000 001111 011000 001011</td><td class="mono">8A150320F60B</td></tr><tr><td class="id">6</td><td class="mono">1100001 1001100 0110010 0000011</td><td class="mono">1110000 1100000 1001111 0010010</td><td class="mono k">011010 010000 001001 111101 011111 100001 010000 100110</td><td class="mono">69027D7E1426</td></tr><tr><td class="id">7</td><td class="mono">0000110 0110001 1001000 0001111</td><td class="mono">1000011 0000010 0111100 1001011</td><td class="mono k">100001 011101 000010 001000 100011 000100 100111 101010</td><td class="mono">85D0888C49EA</td></tr><tr><td class="id">8</td><td class="mono">0011001 1000110 0100000 0111100</td><td class="mono">0001100 0001001 1110010 0101110</td><td class="mono k">000100 100000 101111 110010 000001 001111 101001 010001</td><td class="mono">120BF204FA51</td></tr><tr><td class="id">9</td><td class="mono">0110011 0001100 1000000 1111000</td><td class="mono">0011000 0010011 1100100 1011100</td><td class="mono k">001100 101100 101000 010001 111010 000000 100001 011001</td><td class="mono">32CA11E80859</td></tr><tr><td class="id">10</td><td class="mono">1001100 0110010 0000011 1100001</td><td class="mono">1100000 1001111 0010010 1110000</td><td class="mono k">000011 010011 100100 000110 110000 111101 001000 011110</td><td class="mono">0D3906C3D21E</td></tr><tr><td class="id">11</td><td class="mono">0110001 1001000 0001111 0000110</td><td class="mono">0000010 0111100 1001011 1000011</td><td class="mono k">001000 100010 010011 011101 000101 010001 011110 101000</td><td class="mono">2224DD1517A8</td></tr><tr><td class="id">12</td><td class="mono">1000110 0100000 0111100 0011001</td><td class="mono">0001001 1110010 0101110 0001100</td><td class="mono k">010111 010100 010000 100000 100110 000001 100001 100101</td><td class="mono">5D4420981865</td></tr><tr><td class="id">13</td><td class="mono">0011001 0000001 1110000 1100110</td><td class="mono">0100111 1001001 0111000 0110000</td><td class="mono k">110000 101000 100110 111000 010000 101110 101010 110100</td><td class="mono">C289B842EAB4</td></tr><tr><td class="id">14</td><td class="mono">1100100 0000111 1000011 0011000</td><td class="mono">0011110 0100101 1100001 1000001</td><td class="mono k">100111 001010 001000 000111 001100 010010 110110 011001</td><td class="mono">9CA207312D99</td></tr><tr><td class="id">15</td><td class="mono">0010000 0011110 0001100 1100011</td><td class="mono">1111001 0010111 0000110 0000100</td><td class="mono k">001000 110001 111000 001010 101010 110001 000000 010011</td><td class="mono">231E0AAB1013</td></tr><tr><td class="id">16</td><td class="mono">0100000 0111100 0011001 1000110</td><td class="mono">1110010 0101110 0001100 0001001</td><td class="mono k">011000 000011 001010 001001 101110 110000 001111 100010</td><td class="mono">603289BB03E2</td></tr></tbody></table></div>
+<h3>Bước 2: IP</h3>
+<div class="kv"><span>M</span><code class="p">1010 0001 1011 0010 1100 0011 1101 0100 1110 0101 1111 0110 0000 1001 0111 1000</code><span>IP(M)</span><code>1011 1100 1010 1010 0011 1000 0101 0101 0011 1111 1011 0011 1100 0000 0010 0110</code><span>L<sub>0</sub></span><code>BCAA3855</code><span>R<sub>0</sub></span><code>3FB3C026</code></div>
+<h3>Bước 3: vòng 1 chi tiết</h3>
+<div class="kv"><span>R<sub>0</sub></span><code>0011 1111 1011 0011 1100 0000 0010 0110</code><span>E(R<sub>0</sub>)</span><code>000111 111111 110110 100111 111000 000000 000100 001100</code><span>K<sub>1</sub></span><code class="k">011010 000011 000011 100100 010001 110110 001100 100110</code><span>E(R<sub>0</sub>) ⊕ K<sub>1</sub></span><code>011101 111100 110101 000011 101001 110110 001000 101010</code></div>
+<div class="tbl"><table><thead><tr><th>Hộp</th><th>B<sub>i</sub></th><th>Hàng</th><th>Cột</th><th>Giá trị</th><th>4 bit</th></tr></thead><tbody><tr><td class="id">S1</td><td class="mono"><u>0</u>1110<u>1</u></td><td>01 = 1</td><td>1110 = 14</td><td>3</td><td class="mono">0011</td></tr><tr><td class="id">S2</td><td class="mono"><u>1</u>1110<u>0</u></td><td>10 = 2</td><td>1110 = 14</td><td>2</td><td class="mono">0010</td></tr><tr><td class="id">S3</td><td class="mono"><u>1</u>1010<u>1</u></td><td>11 = 3</td><td>1010 = 10</td><td>14</td><td class="mono">1110</td></tr><tr><td class="id">S4</td><td class="mono"><u>0</u>0001<u>1</u></td><td>01 = 1</td><td>0001 = 1</td><td>8</td><td class="mono">1000</td></tr><tr><td class="id">S5</td><td class="mono"><u>1</u>0100<u>1</u></td><td>11 = 3</td><td>0100 = 4</td><td>1</td><td class="mono">0001</td></tr><tr><td class="id">S6</td><td class="mono"><u>1</u>1011<u>0</u></td><td>10 = 2</td><td>1011 = 11</td><td>10</td><td class="mono">1010</td></tr><tr><td class="id">S7</td><td class="mono"><u>0</u>0100<u>0</u></td><td>00 = 0</td><td>0100 = 4</td><td>15</td><td class="mono">1111</td></tr><tr><td class="id">S8</td><td class="mono"><u>1</u>0101<u>0</u></td><td>10 = 2</td><td>0101 = 5</td><td>12</td><td class="mono">1100</td></tr></tbody></table></div><div class="kv"><span>S<sub>1</sub>…S<sub>8</sub></span><code>0011 0010 1110 1000 0001 1010 1111 1100</code><span>f = P(S)</span><code>0111 1010 0011 0001 0000 0111 0110 0111</code><span>L<sub>0</sub></span><code>1011 1100 1010 1010 0011 1000 0101 0101</code><span>R<sub>1</sub> = L<sub>0</sub> ⊕ f</span><code class="c">1100 0110 1001 1011 0011 1111 0011 0010</code></div>
+<h3>Bảng 16 vòng</h3>
+<div class="tbl"><table><thead><tr><th>Vòng</th><th>f(R<sub>i−1</sub>, K<sub>i</sub>)</th><th>L<sub>i</sub></th><th>R<sub>i</sub></th></tr></thead><tbody><tr><td class="id">0</td><td>–</td><td class="mono">BCAA3855</td><td class="mono">3FB3C026</td></tr><tr><td class="id">1</td><td class="mono">7A310767</td><td class="mono">3FB3C026</td><td class="mono">C69B3F32</td></tr><tr><td class="id">2</td><td class="mono">C00018C0</td><td class="mono">C69B3F32</td><td class="mono">FFB3D8E6</td></tr><tr><td class="id">3</td><td class="mono">87817212</td><td class="mono">FFB3D8E6</td><td class="mono">411A4D20</td></tr><tr><td class="id">4</td><td class="mono">B70FC6BF</td><td class="mono">411A4D20</td><td class="mono">48BC1E59</td></tr><tr><td class="id">5</td><td class="mono">B6675E9C</td><td class="mono">48BC1E59</td><td class="mono">F77D13BC</td></tr><tr><td class="id">6</td><td class="mono">F4AEF11B</td><td class="mono">F77D13BC</td><td class="mono">BC12EF42</td></tr><tr><td class="id">7</td><td class="mono">C92CBFEF</td><td class="mono">BC12EF42</td><td class="mono">3E51AC53</td></tr><tr><td class="id">8</td><td class="mono">17A5D519</td><td class="mono">3E51AC53</td><td class="mono">ABB73A5B</td></tr><tr><td class="id">9</td><td class="mono">03C25758</td><td class="mono">ABB73A5B</td><td class="mono">3D93FB0B</td></tr><tr><td class="id">10</td><td class="mono">F6CB822C</td><td class="mono">3D93FB0B</td><td class="mono">5D7CB877</td></tr><tr><td class="id">11</td><td class="mono">A28D857C</td><td class="mono">5D7CB877</td><td class="mono">9F1E7E77</td></tr><tr><td class="id">12</td><td class="mono">3E939F34</td><td class="mono">9F1E7E77</td><td class="mono">63EF2743</td></tr><tr><td class="id">13</td><td class="mono">57062525</td><td class="mono">63EF2743</td><td class="mono">C8185B52</td></tr><tr><td class="id">14</td><td class="mono">91752C68</td><td class="mono">C8185B52</td><td class="mono">F29A0B2B</td></tr><tr><td class="id">15</td><td class="mono">5F14938B</td><td class="mono">F29A0B2B</td><td class="mono">970CC8D9</td></tr><tr><td class="id">16</td><td class="mono">AF008339</td><td class="mono">970CC8D9</td><td class="mono">5D9A8812</td></tr></tbody></table></div>
+<h3>Bước 4–5</h3>
+<div class="kv"><span>R<sub>16</sub>L<sub>16</sub></span><code>0101 1101 1001 1010 1000 1000 0001 0010 1001 0111 0000 1100 1100 1000 1101 1001</code><span>IP<sup>−1</sup></span><code class="c">1100 0010 1001 0001 1110 0000 0111 1110 1101 0011 0000 0000 0100 1010 1001 1110</code><span>Hex</span><code class="c">C291E07ED3004A9E</code></div>
+</section>
+
+<section id="luu-y"><h2><small>10</small>Lưu ý khi đọc tài liệu</h2>
+<div class="tbl"><table><thead><tr><th>Vị trí</th><th>Nội dung</th><th>Cách hiểu đúng</th></tr></thead><tbody>
+<tr><td>Slide 5</td><td>Ghi “R0 = m64m63…m33, L0 = m32…m1”</td><td>Sau IP, L<sub>0</sub> là bit 1–32 và R<sub>0</sub> là bit 33–64 của kết quả. Số liệu trên slide và Excel thực tế đã làm theo cách này (L<sub>0</sub> = CC00CCFF).</td></tr>
+<tr><td>Slide 2</td><td>Bảng hoán vị đầu tiên không có tên</td><td>Đó là bảng PC-1 (56 ô), dùng ở bước sinh khóa.</td></tr>
+<tr><td>Excel, dòng K2</td><td>Có 49 ô dữ liệu</td><td>Ô cột 49 là thừa. K<sub>2</sub> đúng là 011110 011010 111011 011001 110110 111100 100111 100101.</td></tr>
+<tr><td>Excel</td><td>Các giá trị nhập tay, không có công thức</td><td>File dừng ở R<sub>1</sub>/L<sub>2</sub>. Các vòng còn lại xem ở mục 5.</td></tr>
+<tr><td>Bảng S-box</td><td>Dễ chép sai một ô</td><td>Một ô sai có thể chỉ làm lệch kết quả từ một vòng giữa chừng. Kiểm tra mỗi hàng đủ 16 số 0–15 không trùng.</td></tr>
+</tbody></table></div>
+</section>
+
+<section id="an-toan"><h2><small>11</small>Độ an toàn và hạn chế</h2>
+<ul>
+<li><b>Khóa ngắn:</b> 2<sup>56</sup> ≈ 7,2 × 10<sup>16</sup> khóa. Phần cứng chuyên dụng đã vét cạn được DES trong chưa đến một ngày, vì vậy DES không còn được dùng để bảo vệ dữ liệu thật.</li>
+<li><b>Bit chẵn lẻ bị bỏ qua:</b> hai khóa chỉ khác nhau ở bit cuối mỗi byte cho cùng kết quả. Ví dụ 123456789ABCDEF0 và 133457799BBCDFF1 đều mã M = 0123456789ABCDEF thành 85E813540F0AB405.</li>
+<li><b>Khóa yếu:</b> 4 khóa (như 0101010101010101) có 16 khóa con giống nhau, nên mã hóa hai lần trả lại bản rõ. Ngoài ra có 12 khóa nửa yếu đi theo cặp.</li>
+<li><b>Tính chất bù:</b> nếu C = DES<sub>K</sub>(M) thì phần bù của C bằng DES với khóa bù và bản rõ bù. Điều này giảm một nửa công vét cạn.</li>
+<li><b>Chế độ ECB:</b> mã từng khối độc lập nên hai khối rõ giống nhau cho hai khối mã giống nhau. Văn bản dài nên dùng CBC hoặc chế độ khác.</li>
+<li><b>Hướng thay thế:</b> 3DES (mã ba lần với hai hoặc ba khóa) kéo dài tuổi thọ DES; AES (khối 128 bit, khóa 128/192/256 bit) là chuẩn hiện nay.</li>
+</ul>
+</section>
+
+<section id="may-tinh"><h2><small>12</small>Máy tính DES từng bước</h2>
+<p>Nhập một khối 16 ký tự hex và khóa 16 ký tự hex. Kết quả hiển thị toàn bộ khóa con, 16 vòng và chi tiết hàm f của vòng được chọn. Mặc định là ví dụ trên slide.</p>
+<div class="lab"><div class="lab-grid">
+<div class="pane"><h4 class="p"><span class="dot"></span>Khối dữ liệu (hex)</h4><input class="txt" id="m" value="0123456789ABCDEF" spellcheck="false" autocomplete="off" aria-label="Khối dữ liệu hex">
+<h4 class="k" style="margin-top:12px"><span class="dot"></span>Khóa K (hex)</h4><input class="txt" id="key" value="133457799BBCDFF1" spellcheck="false" autocomplete="off" aria-label="Khóa hex">
+<div class="row"><button class="primary" id="enc">Mã hóa</button><button id="dec">Giải mã</button><button id="ex2">Nạp bài tập slide 21</button></div></div>
+<div class="pane"><h4 class="c"><span class="dot"></span>Kết quả</h4><div class="out" id="out"></div><div class="warnline" id="warn"></div><div class="status bad" id="err" hidden></div></div>
+</div><div class="tracebox" id="trace"></div></div>
+</section>
+<footer>Hệ mã hóa DES: thuật toán và logic. Dự án Caesar_Cipher. Số liệu được tính lại và kiểm chứng; máy tính ở mục 12 chạy hoàn toàn trên trình duyệt.</footer>
+</main>
+</div>
+<script>
+const DES=(function(){
+const T={"PC1":[57,49,41,33,25,17,9,1,58,50,42,34,26,18,10,2,59,51,43,35,27,19,11,3,60,52,44,36,63,55,47,39,31,23,15,7,62,54,46,38,30,22,14,6,61,53,45,37,29,21,13,5,28,20,12,4],"PC2":[14,17,11,24,1,5,3,28,15,6,21,10,23,19,12,4,26,8,16,7,27,20,13,2,41,52,31,37,47,55,30,40,51,45,33,48,44,49,39,56,34,53,46,42,50,36,29,32],"SH":[1,1,2,2,2,2,2,2,1,2,2,2,2,2,2,1],"IP":[58,50,42,34,26,18,10,2,60,52,44,36,28,20,12,4,62,54,46,38,30,22,14,6,64,56,48,40,32,24,16,8,57,49,41,33,25,17,9,1,59,51,43,35,27,19,11,3,61,53,45,37,29,21,13,5,63,55,47,39,31,23,15,7],"E":[32,1,2,3,4,5,4,5,6,7,8,9,8,9,10,11,12,13,12,13,14,15,16,17,16,17,18,19,20,21,20,21,22,23,24,25,24,25,26,27,28,29,28,29,30,31,32,1],"P":[16,7,20,21,29,12,28,17,1,15,23,26,5,18,31,10,2,8,24,14,32,27,3,9,19,13,30,6,22,11,4,25],"FP":[40,8,48,16,56,24,64,32,39,7,47,15,55,23,63,31,38,6,46,14,54,22,62,30,37,5,45,13,53,21,61,29,36,4,44,12,52,20,60,28,35,3,43,11,51,19,59,27,34,2,42,10,50,18,58,26,33,1,41,9,49,17,57,25],"S":[[[14,4,13,1,2,15,11,8,3,10,6,12,5,9,0,7],[0,15,7,4,14,2,13,1,10,6,12,11,9,5,3,8],[4,1,14,8,13,6,2,11,15,12,9,7,3,10,5,0],[15,12,8,2,4,9,1,7,5,11,3,14,10,0,6,13]],[[15,1,8,14,6,11,3,4,9,7,2,13,12,0,5,10],[3,13,4,7,15,2,8,14,12,0,1,10,6,9,11,5],[0,14,7,11,10,4,13,1,5,8,12,6,9,3,2,15],[13,8,10,1,3,15,4,2,11,6,7,12,0,5,14,9]],[[10,0,9,14,6,3,15,5,1,13,12,7,11,4,2,8],[13,7,0,9,3,4,6,10,2,8,5,14,12,11,15,1],[13,6,4,9,8,15,3,0,11,1,2,12,5,10,14,7],[1,10,13,0,6,9,8,7,4,15,14,3,11,5,2,12]],[[7,13,14,3,0,6,9,10,1,2,8,5,11,12,4,15],[13,8,11,5,6,15,0,3,4,7,2,12,1,10,14,9],[10,6,9,0,12,11,7,13,15,1,3,14,5,2,8,4],[3,15,0,6,10,1,13,8,9,4,5,11,12,7,2,14]],[[2,12,4,1,7,10,11,6,8,5,3,15,13,0,14,9],[14,11,2,12,4,7,13,1,5,0,15,10,3,9,8,6],[4,2,1,11,10,13,7,8,15,9,12,5,6,3,0,14],[11,8,12,7,1,14,2,13,6,15,0,9,10,4,5,3]],[[12,1,10,15,9,2,6,8,0,13,3,4,14,7,5,11],[10,15,4,2,7,12,9,5,6,1,13,14,0,11,3,8],[9,14,15,5,2,8,12,3,7,0,4,10,1,13,11,6],[4,3,2,12,9,5,15,10,11,14,1,7,6,0,8,13]],[[4,11,2,14,15,0,8,13,3,12,9,7,5,10,6,1],[13,0,11,7,4,9,1,10,14,3,5,12,2,15,8,6],[1,4,11,13,12,3,7,14,10,15,6,8,0,5,9,2],[6,11,13,8,1,4,10,7,9,5,0,15,14,2,3,12]],[[13,2,8,4,6,15,11,1,10,9,3,14,5,0,12,7],[1,15,13,8,10,3,7,4,12,5,6,11,0,14,9,2],[7,11,4,1,9,12,14,2,0,6,10,13,15,3,5,8],[2,1,14,7,4,10,8,13,15,12,9,0,3,5,6,11]]]};
+const hexRe=/^[0-9A-Fa-f]+$/;
+const h2b=h=>[...h].flatMap(c=>{const v=parseInt(c,16);return [v>>3&1,v>>2&1,v>>1&1,v&1];});
+const b2h=b=>{let s='';for(let i=0;i<b.length;i+=4)s+=((b[i]<<3)|(b[i+1]<<2)|(b[i+2]<<1)|b[i+3]).toString(16).toUpperCase();return s;};
+const perm=(b,t)=>t.map(i=>b[i-1]);
+const xor=(a,b)=>a.map((x,i)=>x^b[i]);
+const rol=(a,n)=>a.slice(n).concat(a.slice(0,n));
+const bytes2bits=u=>{const o=[];for(const x of u)for(let i=7;i>=0;i--)o.push(x>>i&1);return o;};
+const bits2bytes=b=>{const o=new Uint8Array(b.length/8);for(let i=0;i<o.length;i++){let v=0;for(let j=0;j<8;j++)v=(v<<1)|b[i*8+j];o[i]=v;}return o;};
+const bytes2hex=u=>[...u].map(x=>x.toString(16).padStart(2,'0')).join('').toUpperCase();
+const hex2bytes=h=>{const o=new Uint8Array(h.length/2);for(let i=0;i<o.length;i++)o[i]=parseInt(h.substr(i*2,2),16);return o;};
+function keySchedule(keyBits){
+  const kp=perm(keyBits,T.PC1);let C=kp.slice(0,28),D=kp.slice(28);
+  const Cs=[C],Ds=[D],K=[];
+  for(let i=0;i<16;i++){C=rol(C,T.SH[i]);D=rol(D,T.SH[i]);Cs.push(C);Ds.push(D);K.push(perm(C.concat(D),T.PC2));}
+  return {kp,C:Cs,D:Ds,K};
+}
+function f(R,k){
+  const e=perm(R,T.E),x=xor(e,k),sb=[];let s=[];
+  for(let i=0;i<8;i++){const B=x.slice(6*i,6*i+6),row=B[0]*2+B[5],col=B[1]*8+B[2]*4+B[3]*2+B[4],val=T.S[i][row][col];
+    sb.push({B,row,col,val});s=s.concat([val>>3&1,val>>2&1,val>>1&1,val&1]);}
+  return {e,x,sb,s,p:perm(s,T.P)};
+}
+function block(bits,ks,decrypt){
+  const keys=decrypt?ks.K.slice().reverse():ks.K;
+  const ip=perm(bits,T.IP);let L=ip.slice(0,32),R=ip.slice(32);
+  const rounds=[];
+  for(let i=0;i<16;i++){const fr=f(R,keys[i]);const nR=xor(L,fr.p);rounds.push({n:i+1,k:keys[i],Lprev:L,Rprev:R,f:fr,L:R,R:nR});L=R;R=nR;}
+  const pre=R.concat(L);const out=perm(pre,T.FP);
+  return {ip,L0:ip.slice(0,32),R0:ip.slice(32),rounds,pre,out};
+}
+function checkKey(key){
+  if(typeof key!=='string')throw new Error('Thiếu khóa.');
+  const k=key.replace(/\s+/g,'');
+  if(!k)throw new Error('Thiếu khóa. Khóa DES gồm 16 ký tự hex (64 bit).');
+  if(!hexRe.test(k))throw new Error('Khóa chỉ được chứa ký tự hex 0–9, A–F.');
+  if(k.length!==16)throw new Error(`Khóa phải đúng 16 ký tự hex (64 bit), hiện có ${k.length}.`);
+  return k.toUpperCase();
+}
+const WEAK=['0101010101010101','FEFEFEFEFEFEFEFE','E0E0E0E0F1F1F1F1','1F1F1F1F0E0E0E0E'];
+const SEMI=['011F011F010E010E','1F011F010E010E01','01E001E001F101F1','E001E001F101F101','01FE01FE01FE01FE','FE01FE01FE01FE01','1FE01FE00EF10EF1','E01FE01FF10EF10E','1FFE1FFE0EFE0EFE','FE1FFE1FFE0EFE0E','E0FEE0FEF1FEF1FE','FEE0FEE0FEF1FEF1'];
+function normParity(k){return bytes2hex(hex2bytes(k).map(b=>b&0xFE));}
+function keyWarnings(k){
+  const n=normParity(k),w=[];
+  if(WEAK.map(normParity).includes(n))w.push('Khóa yếu: mã hóa hai lần sẽ trả lại bản rõ. Không nên dùng.');
+  else if(SEMI.map(normParity).includes(n))w.push('Khóa nửa yếu: tồn tại khóa khác giải mã được bản mã của khóa này.');
+  return w;
+}
+function pad(u){const n=8-u.length%8;const o=new Uint8Array(u.length+n);o.set(u);o.fill(n,u.length);return o;}
+function unpad(u){const n=u[u.length-1];if(!u.length||n<1||n>8||n>u.length)throw new Error('Padding không hợp lệ: sai khóa hoặc bản mã bị hỏng.');for(let i=u.length-n;i<u.length;i++)if(u[i]!==n)throw new Error('Padding không hợp lệ: sai khóa hoặc bản mã bị hỏng.');return u.slice(0,u.length-n);}
+function cleanHex(s,label){const h=s.replace(/\s+/g,'');if(!h)throw new Error(`${label} rỗng.`);if(!hexRe.test(h))throw new Error(`${label} chỉ được chứa ký tự hex 0–9, A–F.`);if(h.length%16)throw new Error(`${label} phải có độ dài là bội của 16 ký tự hex (64 bit), hiện có ${h.length}.`);return h.toUpperCase();}
+function run(bytes,ks,decrypt,mode,iv){
+  const out=new Uint8Array(bytes.length);let prev=iv?hex2bytes(iv):null;
+  for(let i=0;i<bytes.length;i+=8){let b=bytes.slice(i,i+8);
+    if(!decrypt&&mode==='CBC')b=b.map((x,j)=>x^prev[j]);
+    let r=bits2bytes(block(bytes2bits(b),ks,decrypt).out);
+    if(decrypt&&mode==='CBC'){r=r.map((x,j)=>x^prev[j]);prev=b;}
+    if(!decrypt&&mode==='CBC')prev=r;
+    out.set(r,i);}
+  return out;
+}
+function encrypt({text,key,inputFormat='text',mode='ECB',iv}){
+  const k=checkKey(key);mode=mode.toUpperCase();
+  if(mode==='CBC')iv=checkIv(iv);
+  let bytes;
+  if(inputFormat==='hex')bytes=hex2bytes(cleanHex(text||'','Bản rõ hex'));
+  else{if(!text)throw new Error('Nhập văn bản hoặc tải file .txt để bắt đầu.');bytes=pad(new TextEncoder().encode(text));}
+  const ks=keySchedule(h2b(k));
+  const res=bytes2hex(run(bytes,ks,false,mode,iv)),warnings=keyWarnings(k);
+  if(mode==='ECB'){const bl=res.match(/.{16}/g)||[];if(new Set(bl).size<bl.length)warnings.push('Chế độ ECB: có khối bản mã lặp lại, lộ cấu trúc bản rõ. Cân nhắc dùng CBC.');}
+  return {result:res,warnings};
+}
+function decrypt({text,key,outputFormat='text',mode='ECB',iv}){
+  const k=checkKey(key);mode=mode.toUpperCase();
+  if(mode==='CBC')iv=checkIv(iv);
+  const bytes=hex2bytes(cleanHex(text||'','Bản mã'));
+  const ks=keySchedule(h2b(k));
+  let out=run(bytes,ks,true,mode,iv);
+  if(outputFormat==='hex')return {result:bytes2hex(out),warnings:keyWarnings(k)};
+  out=unpad(out);
+  try{return {result:new TextDecoder('utf-8',{fatal:true}).decode(out),warnings:keyWarnings(k)};}
+  catch(e){throw new Error('Kết quả giải mã không phải văn bản UTF-8 hợp lệ. Thử outputFormat = hex.');}
+}
+function checkIv(iv){const v=(iv||'').replace(/\s+/g,'');if(!/^[0-9A-Fa-f]{16}$/.test(v))throw new Error('IV phải đúng 16 ký tự hex khi dùng chế độ CBC.');return v.toUpperCase();}
+function trace(blockHex,key,dec){
+  const k=checkKey(key);const m=cleanHex(blockHex,'Khối dữ liệu');if(m.length!==16)throw new Error('Trace chỉ áp dụng cho đúng 1 khối 16 ký tự hex.');
+  const ks=keySchedule(h2b(k));const b=block(h2b(m),ks,dec);
+  return {key:k,input:m,ks,b,result:b2h(b.out)};
+}
+return {encrypt,decrypt,trace,b2h,h2b,T,keyWarnings};
+})();
+if(typeof module!=='undefined')module.exports=DES;
+
+const $=id=>document.getElementById(id);
+const grp=(b,n)=>{const a=b.join('');let o=[];for(let i=0;i<a.length;i+=n)o.push(a.slice(i,i+n));return o.join(' ');};
+const H=b=>DES.b2h(b);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function renderTrace(box,t,dec){
+  const b=t.b,ks=t.ks;
+  const kk=dec?'K'+'':'K';
+  let h=`<h4>Sinh khóa con</h4><p class="small">PC-1(K) = <code>${grp(ks.kp,7)}</code></p>`;
+  h+=`<div class="tbl"><table><thead><tr><th>n</th><th>Dịch</th><th>C<sub>n</sub></th><th>D<sub>n</sub></th><th>K<sub>n</sub> (48 bit)</th><th>Hex</th></tr></thead><tbody>`;
+  h+=`<tr><td class="id">0</td><td>–</td><td class="mono">${grp(ks.C[0],7)}</td><td class="mono">${grp(ks.D[0],7)}</td><td>–</td><td>–</td></tr>`;
+  for(let i=0;i<16;i++)h+=`<tr><td class="id">${i+1}</td><td>${DES.T.SH[i]}</td><td class="mono">${grp(ks.C[i+1],7)}</td><td class="mono">${grp(ks.D[i+1],7)}</td><td class="mono k">${grp(ks.K[i],6)}</td><td class="mono">${H(ks.K[i])}</td></tr>`;
+  h+=`</tbody></table></div>`;
+  h+=`<h4>Hoán vị IP và 16 vòng</h4><p class="small">IP = <code>${H(b.ip)}</code> → L<sub>0</sub> = <code>${H(b.L0)}</code>, R<sub>0</sub> = <code>${H(b.R0)}</code>${dec?'. Giải mã dùng khóa con theo thứ tự K16 → K1.':'.'} Bấm vào một vòng để xem chi tiết hàm f.</p>`;
+  h+=`<div class="tbl"><table class="rounds"><thead><tr><th>Vòng</th><th>Khóa dùng</th><th>f(R<sub>i−1</sub>, K)</th><th>L<sub>i</sub></th><th>R<sub>i</sub></th></tr></thead><tbody>`;
+  b.rounds.forEach((r,i)=>{h+=`<tr data-i="${i}" tabindex="0"><td class="id">${r.n}</td><td class="mono k">K${dec?16-i:i+1} = ${H(r.k)}</td><td class="mono">${H(r.f.p)}</td><td class="mono">${H(r.L)}</td><td class="mono">${H(r.R)}</td></tr>`;});
+  h+=`</tbody></table></div><div class="fdetail"></div>`;
+  h+=`<h4>Kết thúc</h4><p class="small">R<sub>16</sub>L<sub>16</sub> = <code>${H(b.pre)}</code> → IP<sup>−1</sup> → <b class="c">${H(b.out)}</b></p>`;
+  box.innerHTML=h;
+  const det=box.querySelector('.fdetail');
+  const show=i=>{const r=b.rounds[i],f=r.f;box.querySelectorAll('tr[data-i]').forEach(x=>x.classList.toggle('sel',+x.dataset.i===i));
+    let d=`<div class="fbox"><h4>Chi tiết hàm f ở vòng ${r.n}</h4><div class="kv">
+<span>R<sub>${r.n-1}</sub></span><code>${grp(r.Rprev,4)}</code>
+<span>E(R<sub>${r.n-1}</sub>)</span><code>${grp(f.e,6)}</code>
+<span>K</span><code class="k">${grp(r.k,6)}</code>
+<span>E ⊕ K</span><code>${grp(f.x,6)}</code></div>
+<div class="tbl"><table><thead><tr><th>Hộp</th><th>B<sub>i</sub></th><th>Hàng (bit đầu+cuối)</th><th>Cột (4 bit giữa)</th><th>Giá trị</th><th>4 bit</th></tr></thead><tbody>`;
+    f.sb.forEach((s,j)=>{d+=`<tr><td class="id">S${j+1}</td><td class="mono"><u>${s.B[0]}</u>${s.B.slice(1,5).join('')}<u>${s.B[5]}</u></td><td>${s.B[0]}${s.B[5]} = ${s.row}</td><td>${s.B.slice(1,5).join('')} = ${s.col}</td><td>${s.val}</td><td class="mono">${s.val.toString(2).padStart(4,'0')}</td></tr>`;});
+    d+=`</tbody></table></div><div class="kv">
+<span>S(…)</span><code>${grp(f.s,4)}</code>
+<span>f = P(S)</span><code>${grp(f.p,4)}</code>
+<span>L<sub>${r.n-1}</sub></span><code>${grp(r.Lprev,4)}</code>
+<span>R<sub>${r.n}</sub> = L ⊕ f</span><code class="c">${grp(r.R,4)}</code></div></div>`;
+    det.innerHTML=d;};
+  box.querySelectorAll('tr[data-i]').forEach(tr=>{tr.addEventListener('click',()=>show(+tr.dataset.i));tr.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();show(+tr.dataset.i);}});});
+  show(0);
+}
+
+function go(dec){
+  const err=$('err');err.hidden=true;$('warn').textContent='';
+  try{const t=DES.trace($('m').value,$('key').value,dec);$('out').textContent=t.result;
+    $('warn').textContent=DES.keyWarnings(t.key).join(' ');renderTrace($('trace'),t,dec);}
+  catch(e){$('out').textContent='';$('trace').innerHTML='';err.textContent=e.message;err.hidden=false;}
+}
+$('enc').addEventListener('click',()=>go(false));
+$('dec').addEventListener('click',()=>go(true));
+$('ex2').addEventListener('click',()=>{$('m').value='A1B2C3D4E5F60978';$('key').value='10012334455EFA67';go(false);});
+go(false);
+</script>
+</body>
+</html>

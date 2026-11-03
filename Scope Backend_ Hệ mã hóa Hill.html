@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Scope Backend: Hệ mã hóa Hill</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F4F6F8; --surface:#FFFFFF; --ink:#17202B; --muted:#56616F; --rule:#D5DBE2; --soft:#EAEEF2;
+  --plain:#1D5FA8; --key:#A8326E; --cipher:#16775A; --err:#B42318; --warn:#9A5B06;
+  --plain-bg:#E6EFF9; --key-bg:#F7E6EE; --cipher-bg:#E3F2EC; --err-bg:#FBE9E7; --warn-bg:#FBF1DF;
+  --sans:"Be Vietnam Pro",system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#10161D; --surface:#18212B; --ink:#E6EBF0; --muted:#9AA6B3; --rule:#2C3845; --soft:#1F2A35;
+    --plain:#7DB3EE; --key:#EE8DBC; --cipher:#6FD1A8; --err:#FF8A7A; --warn:#F2B558;
+    --plain-bg:#15293E; --key-bg:#351A28; --cipher-bg:#123126; --err-bg:#3A1A17; --warn-bg:#35270F;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#10161D; --surface:#18212B; --ink:#E6EBF0; --muted:#9AA6B3; --rule:#2C3845; --soft:#1F2A35;
+  --plain:#7DB3EE; --key:#EE8DBC; --cipher:#6FD1A8; --err:#FF8A7A; --warn:#F2B558;
+  --plain-bg:#15293E; --key-bg:#351A28; --cipher-bg:#123126; --err-bg:#3A1A17; --warn-bg:#35270F;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:calc(env(safe-area-inset-top,0px) + 16px);scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
+a{color:var(--plain)}
+:focus-visible{outline:2px solid var(--plain);outline-offset:2px}
+code,pre,.mono{font-family:var(--mono);font-size:.86em}
+code{background:var(--soft);padding:.1em .35em;border-radius:4px}
+
+.layout{display:grid;grid-template-columns:1fr;max-width:1180px;margin:0 auto;padding:0 20px}
+@media (min-width:980px){.layout{grid-template-columns:230px minmax(0,1fr);gap:56px}}
+
+nav.toc{display:none}
+@media (min-width:980px){
+  nav.toc{display:block;position:sticky;top:env(safe-area-inset-top,0px);align-self:start;padding:40px 0;max-height:100vh;overflow:auto}
+}
+nav.toc p{margin:0 0 10px;font-weight:600;font-size:14px}
+nav.toc ol{list-style:none;margin:0;padding:0;counter-reset:t}
+nav.toc li{counter-increment:t}
+nav.toc a{display:block;padding:5px 0 5px 12px;border-left:2px solid var(--rule);color:var(--muted);text-decoration:none;font-size:14px;line-height:1.35}
+nav.toc a::before{content:counter(t)". ";font-variant-numeric:tabular-nums}
+nav.toc a:hover{color:var(--ink);border-left-color:var(--ink)}
+
+main{min-width:0;padding:40px 0 80px}
+header.doc{border-bottom:1px solid var(--rule);padding-bottom:28px;margin-bottom:12px}
+header.doc h1{font-size:clamp(30px,5vw,44px);line-height:1.1;letter-spacing:-.02em;margin:0 0 14px;font-weight:700}
+header.doc .lede{max-width:64ch;color:var(--muted);margin:0 0 22px;font-size:17px}
+.formula-strip{display:flex;flex-wrap:wrap;gap:10px 22px;font-family:var(--mono);font-size:15px;margin-bottom:22px}
+.formula-strip span b{font-weight:600}
+.meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px 24px;margin:0}
+.meta div{border-top:2px solid var(--ink);padding-top:6px}
+.meta dt{font-size:13px;color:var(--muted)}
+.meta dd{margin:0;font-weight:600}
+
+.p{color:var(--plain)} .k{color:var(--key)} .c{color:var(--cipher)}
+
+section{padding-top:36px;max-width:820px}
+section h2{font-size:24px;letter-spacing:-.01em;margin:0 0 6px;line-height:1.25}
+section h2 small{color:var(--muted);font-weight:500;font-size:16px;margin-right:8px;font-variant-numeric:tabular-nums}
+section h3{font-size:17px;margin:26px 0 6px}
+section p,section li{max-width:72ch}
+ul,ol{padding-left:22px}
+li{margin:4px 0}
+
+.tbl{overflow-x:auto;margin:14px 0;border:1px solid var(--rule);border-radius:8px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px}
+th,td{text-align:left;vertical-align:top;padding:9px 12px;border-bottom:1px solid var(--rule)}
+th{font-weight:600;background:var(--soft);white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.id{font-family:var(--mono);font-size:13px;white-space:nowrap;font-weight:600}
+.pri{display:inline-block;font-size:12px;font-weight:600;padding:1px 8px;border-radius:999px;white-space:nowrap}
+.pri.must{background:var(--err-bg);color:var(--err)}
+.pri.should{background:var(--warn-bg);color:var(--warn)}
+.pri.nice{background:var(--soft);color:var(--muted)}
+
+pre{background:var(--surface);border:1px solid var(--rule);border-radius:8px;padding:14px 16px;overflow-x:auto;line-height:1.55;margin:12px 0}
+pre .cm{color:var(--muted)}
+
+.flow{list-style:none;padding:0;margin:16px 0;counter-reset:f}
+.flow li{counter-increment:f;position:relative;padding:10px 0 10px 46px;border-left:2px solid var(--rule);margin:0 0 0 14px;max-width:none}
+.flow li::before{content:counter(f);position:absolute;left:-15px;top:9px;width:28px;height:28px;border-radius:50%;background:var(--ink);color:var(--bg);font-size:13px;font-weight:600;display:grid;place-items:center}
+.flow li:last-child{border-left-color:transparent}
+.flow b{display:block}
+
+.note{border-left:3px solid var(--warn);background:var(--warn-bg);padding:10px 14px;border-radius:0 6px 6px 0;margin:14px 0}
+
+/* Lab */
+.lab{background:var(--surface);border:1px solid var(--rule);border-radius:10px;margin:16px 0;overflow:hidden}
+.lab-grid{display:grid;grid-template-columns:1fr}
+@media (min-width:720px){.lab-grid{grid-template-columns:1fr 1fr}}
+.pane{padding:16px 18px;min-width:0}
+.pane + .pane{border-top:1px solid var(--rule)}
+@media (min-width:720px){.pane + .pane{border-top:0;border-left:1px solid var(--rule)}}
+.pane h4{margin:0 0 8px;font-size:14px;font-weight:600}
+.pane h4.p,.pane h4.k,.pane h4.c{display:flex;align-items:center;gap:8px}
+.dot{width:9px;height:9px;border-radius:50%;background:currentColor;display:inline-block}
+textarea{width:100%;min-height:92px;resize:vertical;font-family:var(--mono);font-size:14px;padding:10px;border:1px solid var(--rule);border-radius:6px;background:var(--bg);color:var(--ink)}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:10px 0}
+select,button{font-family:var(--sans);font-size:14px;border:1px solid var(--rule);border-radius:6px;padding:6px 10px;background:var(--bg);color:var(--ink);cursor:pointer}
+button.primary{background:var(--ink);color:var(--bg);border-color:var(--ink);font-weight:600}
+.matrix{display:inline-grid;gap:6px;padding:8px 10px;border-left:2px solid var(--key);border-right:2px solid var(--key);border-radius:6px}
+.matrix input{width:48px;padding:6px 4px;text-align:center;font-family:var(--mono);font-size:15px;border:1px solid var(--rule);border-radius:5px;background:var(--key-bg);color:var(--ink)}
+.status{font-size:14px;padding:8px 12px;border-radius:6px;margin-top:10px}
+.status.ok{background:var(--cipher-bg);color:var(--cipher)}
+.status.bad{background:var(--err-bg);color:var(--err)}
+.out{font-family:var(--mono);font-size:15px;background:var(--cipher-bg);color:var(--ink);border-radius:6px;padding:10px;min-height:44px;word-break:break-all;white-space:pre-wrap}
+.steps{font-family:var(--mono);font-size:12.5px;color:var(--muted);margin-top:10px;max-height:160px;overflow:auto;white-space:pre}
+.warnline{font-size:13px;color:var(--warn);margin-top:6px}
+.mini{display:flex;flex-wrap:wrap;gap:18px;margin-top:10px;font-family:var(--mono);font-size:13px}
+.mini .lbl{font-family:var(--sans);color:var(--muted);font-size:12px;display:block}
+.m-inline{display:inline-grid;gap:2px 10px;border-left:1.5px solid var(--muted);border-right:1.5px solid var(--muted);padding:2px 6px;border-radius:4px}
+
+.ac li{list-style:none;position:relative;padding-left:4px}
+.ac{padding-left:22px}
+.ac li::before{content:"";position:absolute;left:-20px;top:.45em;width:12px;height:12px;border:1.5px solid var(--muted);border-radius:3px}
+footer{margin-top:48px;color:var(--muted);font-size:13px;border-top:1px solid var(--rule);padding-top:14px}
+</style>
+</head>
+<body>
+<div class="layout">
+<nav class="toc" aria-label="Mục lục">
+  <p>Mục lục</p>
+  <ol>
+    <li><a href="#muc-tieu">Mục tiêu Backend</a></li>
+    <li><a href="#toan">Nền tảng toán học</a></li>
+    <li><a href="#thuat-toan">Đặc tả thuật toán</a></li>
+    <li><a href="#luong">Luồng xử lý</a></li>
+    <li><a href="#quy-tac">Quy tắc và trường hợp đặc biệt</a></li>
+    <li><a href="#loi">Mã lỗi và cảnh báo</a></li>
+    <li><a href="#api">API contract</a></li>
+    <li><a href="#be">Task Backend</a></li>
+    <li><a href="#test">Bộ test vector</a></li>
+    <li><a href="#thu">Bản cài đặt tham chiếu</a></li>
+    <li><a href="#nghiem-thu">Tiêu chí nghiệm thu Backend</a></li>
+    <li><a href="#ngoai">Ngoài phạm vi</a></li>
+  </ol>
+</nav>
+<main>
+<header class="doc">
+  <h1>Scope Backend: Hệ mã hóa Hill</h1>
+  <p class="lede">Lõi thuật toán, logic xử lý và API cho feature Hill. FE dùng tài liệu này làm hợp đồng dữ liệu; phần giao diện nằm ở scope Frontend riêng.</p>
+  <div class="formula-strip">
+    <span><b class="c">y</b> = <b class="p">x</b> · <b class="k">K</b> mod 26</span>
+    <span><b class="p">x</b> = <b class="c">y</b> · <b class="k">K⁻¹</b> mod 26</span>
+    <span><b class="k">K⁻¹</b> = (det K)⁻¹ · K* mod 26</span>
+    <span>ƯCLN(det K, 26) = 1</span>
+  </div>
+  <dl class="meta">
+    <div><dt>Dự án</dt><dd>Caesar_Cipher</dd></div>
+    <div><dt>Phần</dt><dd>Backend</dd></div>
+    <div><dt>Kích thước khối m</dt><dd>2 đến 4</dd></div>
+    <div><dt>Phụ thuộc</dt><dd>Không phụ thuộc FE</dd></div></dl>
+</header>
+<section id="muc-tieu">
+  <h2><small>1</small>Mục tiêu Backend</h2>
+  <p>Cung cấp lõi thuật toán Hill và API cho FE: kiểm tra khóa, tính các giá trị trung gian (det, (det)⁻¹, K*, K⁻¹), mã hóa và giải mã văn bản, trả lỗi/cảnh báo theo mã thống nhất. BE là nguồn đúng cho mọi kết quả mật mã; FE chỉ kiểm tra định dạng đầu vào.</p>
+  <div class="tbl"><table>
+    <tr><th>Yêu cầu dự án</th><th>Phần việc của BE</th></tr>
+    <tr><td>Có giao diện</td><td>Trả đủ dữ liệu để FE hiển thị phân tích khóa và từng khối (<code>blocks</code>, <code>key</code>).</td></tr>
+    <tr><td>Đầu vào từ file hoặc bàn phím</td><td>Nhận <code>text</code> dạng chuỗi (FE đọc file .txt ở client). Giới hạn 1 MB.</td></tr>
+    <tr><td>Mã hóa và giải mã</td><td>Cài đặt theo đặc tả mục 3, quy ước vector hàng x·K.</td></tr>
+    <tr><td>Bắt lỗi và thông báo</td><td>Trả mã E/W ở mục 6 với <code>details</code> đủ để FE dựng câu thông báo.</td></tr>
+  </table></div>
+</section>
+
+<section id="toan">
+  <h2><small>2</small>Nền tảng toán học</h2>
+  <ul>
+    <li><b>Không gian:</b> P = C = (Z₂₆)ᵐ. Mỗi khối là vector hàng m phần tử, A=0 … Z=25.</li>
+    <li><b>Khóa:</b> ma trận K cấp m×m với phần tử trong Z₂₆, thỏa ƯCLN(det K, 26) = 1. Tương đương: det K mod 26 là số lẻ và khác 13.</li>
+    <li><b>Mã hóa:</b> <span class="c">y</span> = <span class="p">x</span>·<span class="k">K</span> mod 26, nghĩa là y<sub>j</sub> = Σ<sub>i</sub> x<sub>i</sub>·K<sub>ij</sub> mod 26.</li>
+    <li><b>Giải mã:</b> <span class="p">x</span> = <span class="c">y</span>·K⁻¹ mod 26, với K⁻¹ = (det K)⁻¹ · K* mod 26.</li>
+    <li><b>K*</b> (ma trận phụ hợp) = chuyển vị của ma trận phần bù đại số: K*<sub>ij</sub> = (−1)<sup>i+j</sup>·det(M<sub>ji</sub>), với M<sub>ji</sub> là K bỏ hàng j, cột i.</li>
+    <li><b>(det K)⁻¹</b> là nghịch đảo modulo: số d ∈ [1,25] sao cho det·d ≡ 1 (mod 26), tính bằng thuật toán Euclid mở rộng.</li>
+  </ul>
+  <div class="note">Quy ước: slide dùng <b>vector hàng</b> (x·K). Wikipedia và nhiều tool online dùng <b>vector cột</b> (K·x), nên cùng một khóa sẽ cho bản mã khác. Toàn bộ BE/FE/test phải thống nhất theo x·K.</div>
+  <p>Nghịch đảo mod 26 chỉ tồn tại với 12 giá trị det: 1, 3, 5, 7, 9, 11, 15, 17, 19, 21, 23, 25. Có thể dùng bảng tra cứu thay cho Euclid mở rộng.</p>
+  <div class="tbl"><table>
+    <tr><th>d</th><td class="mono">1</td><td class="mono">3</td><td class="mono">5</td><td class="mono">7</td><td class="mono">9</td><td class="mono">11</td><td class="mono">15</td><td class="mono">17</td><td class="mono">19</td><td class="mono">21</td><td class="mono">23</td><td class="mono">25</td></tr>
+    <tr><th>d⁻¹ mod 26</th><td class="mono">1</td><td class="mono">9</td><td class="mono">21</td><td class="mono">15</td><td class="mono">3</td><td class="mono">19</td><td class="mono">7</td><td class="mono">23</td><td class="mono">11</td><td class="mono">5</td><td class="mono">17</td><td class="mono">25</td></tr>
+  </table></div>
+</section>
+
+<section id="thuat-toan">
+  <h2><small>3</small>Đặc tả thuật toán</h2>
+  <p>Pseudocode độc lập ngôn ngữ. Mọi phép chia lấy dư phải trả về giá trị không âm.</p>
+<pre><span class="cm">// 3.1 Số học mod 26</span>
+mod(a, n)          = ((a % n) + n) % n
+gcd(a, b)          = b == 0 ? |a| : gcd(b, a % b)
+modInverse(a, n):  <span class="cm">// Euclid mở rộng</span>
+  (r0, r1, s0, s1) = (mod(a,n), n, 1, 0)
+  while r1 != 0:
+    q = floor(r0 / r1)
+    (r0, r1) = (r1, r0 - q*r1)
+    (s0, s1) = (s1, s0 - q*s1)
+  if r0 != 1: throw E04          <span class="cm">// không có nghịch đảo</span>
+  return mod(s0, n)
+
+<span class="cm">// 3.2 Ma trận</span>
+det(M):                           <span class="cm">// khai triển Laplace, đủ nhanh với m ≤ 4</span>
+  if size(M) == 1: return M[0][0]
+  return Σ_j (-1)^j · M[0][j] · det(minor(M, 0, j))
+adjugate(M):                      <span class="cm">// K*</span>
+  C[i][j] = (-1)^(i+j) · det(minor(M, i, j))
+  return mod(transpose(C), 26)
+inverseMod26(K):
+  d    = mod(det(K), 26)
+  if gcd(d, 26) != 1: throw E04(det = d)
+  dInv = modInverse(d, 26)
+  return mod(dInv · adjugate(K), 26)
+rowTimesMatrix(x, K):             <span class="cm">// y_j = Σ_i x_i · K[i][j]</span>
+  return [ mod(Σ_i x[i]·K[i][j], 26) for j in 0..m-1 ]
+
+<span class="cm">// 3.3 Mã hóa</span>
+encrypt(text, K, opts):
+  validateKey(K)
+  (letters, layout) = extractLetters(text, opts)     <span class="cm">// mục 5</span>
+  if letters rỗng: throw E02
+  while len(letters) % m != 0: letters.append(opts.padChar) ; warn W01
+  out = []
+  for mỗi khối b gồm m chữ: out += rowTimesMatrix(b, K)
+  return rebuild(out, layout)                         <span class="cm">// giữ dấu cách, hoa/thường</span>
+
+<span class="cm">// 3.4 Giải mã</span>
+decrypt(text, K, opts):
+  Kinv = inverseMod26(K)
+  (letters, layout) = extractLetters(text, opts)
+  if len(letters) % m != 0: throw E05
+  out = [ rowTimesMatrix(b, Kinv) for mỗi khối b ]
+  return rebuild(out, layout)</pre>
+  <h3>Độ phức tạp</h3>
+  <p>Mã hóa/giải mã O(n·m) với n là số chữ cái. Tính det bằng Laplace là O(m!), chấp nhận được vì m ≤ 4 (tối đa 24 hạng tử). Nếu sau này mở rộng m lớn hơn, chuyển sang khử Gauss–Jordan trên Z₂₆.</p>
+</section>
+
+<section id="luong">
+  <h2><small>4</small>Luồng xử lý</h2>
+  <ol class="flow">
+    <li><b>Nhận đầu vào</b>Text từ textarea hoặc file .txt (UTF-8, ≤ 1 MB). Kiểm tra rỗng (E01).</li>
+    <li><b>Nhận và chuẩn hóa khóa</b>Từ lưới số: phần tử phải là số nguyên, chuẩn hóa về 0–25 (số âm được mod 26). Từ từ khóa: đúng m² chữ cái, đọc theo hàng.</li>
+    <li><b>Phân tích khóa</b>Tính det mod 26, ƯCLN, (det)⁻¹, K*, K⁻¹. Nếu ƯCLN ≠ 1 thì dừng với E04, chỉ rõ lý do (det chẵn hay det = 13).</li>
+    <li><b>Tách chữ cái</b>Lấy chuỗi chữ A–Z, ghi lại vị trí và hoa/thường; ký tự khác giữ nguyên chỗ. Tùy chọn bỏ dấu tiếng Việt trước khi tách.</li>
+    <li><b>Chia khối</b>Mã hóa: đệm ký tự <code>X</code> cho đủ bội số của m (W01). Giải mã: số chữ phải chia hết cho m (E05).</li>
+    <li><b>Nhân ma trận</b>Mỗi khối x nhân với K (mã hóa) hoặc K⁻¹ (giải mã), mod 26.</li>
+    <li><b>Ghép kết quả</b>Đặt chữ đã xử lý vào đúng vị trí cũ, khôi phục hoa/thường; chữ đệm thêm vào cuối. Trả về kèm danh sách khối để FE hiển thị từng bước.</li>
+  </ol>
+</section>
+
+<section id="quy-tac">
+  <h2><small>5</small>Quy tắc và trường hợp đặc biệt</h2>
+  <div class="tbl"><table>
+    <tr><th>Tình huống</th><th>Xử lý</th></tr>
+    <tr><td>Dấu cách, số, dấu câu</td><td>Không mã hóa, giữ nguyên vị trí. Không tính vào khối.</td></tr>
+    <tr><td>Chữ thường</td><td>Mã hóa như chữ hoa, trả về đúng kiểu chữ tại vị trí đó.</td></tr>
+    <tr><td>Chữ có dấu tiếng Việt (ế, ư, đ…)</td><td>Mặc định coi là ký tự không mã hóa và báo W02. Bật "Bỏ dấu tiếng Việt" để chuyển thành chữ không dấu (NFD, bỏ dấu; đ→d) rồi mã hóa.</td></tr>
+    <tr><td>Số chữ không chia hết m khi mã hóa</td><td>Đệm <code>X</code> ở cuối, báo W01. Khi giải mã, chữ đệm vẫn xuất hiện trong kết quả (ví dụ HELLO → DPDKKB → HELLOX).</td></tr>
+    <tr><td>Số chữ không chia hết m khi giải mã</td><td>Lỗi E05, không trả kết quả.</td></tr>
+    <tr><td>det K chẵn hoặc det K ≡ 13</td><td>Lỗi E04. Không cho bấm Mã hóa/Giải mã trên FE khi khóa không hợp lệ.</td></tr>
+    <tr><td>K là ma trận đơn vị (hoặc K⁻¹ = K)</td><td>Hợp lệ nhưng yếu: báo W03 (bản mã trùng bản rõ, hoặc mã hóa hai lần ra bản rõ).</td></tr>
+    <tr><td>Phần tử khóa ngoài 0–25</td><td>Chuẩn hóa mod 26, hiển thị giá trị đã chuẩn hóa. Không phải số nguyên thì E03.</td></tr>
+    <tr><td>Khóa ngẫu nhiên</td><td>Sinh ngẫu nhiên m×m trong 0–25, lặp đến khi ƯCLN(det, 26) = 1 và K khác ma trận đơn vị.</td></tr>
+  </table></div>
+</section>
+
+<section id="loi">
+  <h2><small>6</small>Mã lỗi và cảnh báo</h2>
+  <p>E06, E07 chủ yếu do FE bắt khi đọc file; BE chỉ trả E06 khi text vượt 1 MB. Lỗi chặn thao tác (HTTP 422). Cảnh báo vẫn trả kết quả, nằm trong mảng <code>warnings</code>.</p>
+  <div class="tbl"><table>
+    <tr><th>Mã</th><th>Khi nào</th><th>Thông báo hiển thị</th></tr>
+    <tr><td class="id">E01</td><td>Đầu vào rỗng</td><td>Nhập văn bản hoặc tải file .txt để bắt đầu.</td></tr>
+    <tr><td class="id">E02</td><td>Không có chữ cái A–Z</td><td>Văn bản không có chữ cái nào để mã hóa. Hill chỉ xử lý A–Z.</td></tr>
+    <tr><td class="id">E03</td><td>Khóa thiếu ô, không phải số nguyên, sai kích thước</td><td>Ô hàng {i} cột {j} phải là số nguyên.</td></tr>
+    <tr><td class="id">E04</td><td>ƯCLN(det K, 26) ≠ 1</td><td>Khóa không khả nghịch: det K mod 26 = {d}, chia hết cho {2|13}. Hãy đổi khóa.</td></tr>
+    <tr><td class="id">E05</td><td>Giải mã: số chữ không chia hết m</td><td>Bản mã có {n} chữ cái, không chia hết cho m = {m}. Kiểm tra lại bản mã hoặc cấp khóa.</td></tr>
+    <tr><td class="id">E06</td><td>File không phải .txt hoặc lớn hơn 1 MB</td><td>Chỉ hỗ trợ file .txt tối đa 1 MB.</td></tr>
+    <tr><td class="id">E07</td><td>File không đọc được dạng UTF-8</td><td>Không đọc được file. Lưu lại file với mã hóa UTF-8.</td></tr>
+    <tr><td class="id">E08</td><td>m ngoài khoảng 2–4</td><td>Cấp ma trận khóa phải từ 2 đến 4.</td></tr>
+    <tr><td class="id">E09</td><td>Từ khóa không đủ m² chữ cái</td><td>Từ khóa cần đúng {m²} chữ cái, hiện có {n}.</td></tr>
+    <tr><td class="id">W01</td><td>Đã đệm ký tự</td><td>Đã thêm {k} ký tự X vào cuối để đủ khối {m} chữ.</td></tr>
+    <tr><td class="id">W02</td><td>Có chữ có dấu không được mã hóa</td><td>{n} chữ có dấu được giữ nguyên. Bật "Bỏ dấu tiếng Việt" để mã hóa chúng.</td></tr>
+    <tr><td class="id">W03</td><td>Khóa yếu</td><td>Khóa này là ma trận đơn vị hoặc tự nghịch đảo, không đảm bảo bí mật.</td></tr>
+  </table></div>
+</section>
+
+<section id="api">
+  <h2><small>7</small>API contract</h2>
+  <div class="tbl"><table>
+    <tr><th>Method</th><th>Endpoint</th><th>Mục đích</th></tr>
+    <tr><td class="id">POST</td><td class="mono">/api/hill/encrypt</td><td>Mã hóa văn bản</td></tr>
+    <tr><td class="id">POST</td><td class="mono">/api/hill/decrypt</td><td>Giải mã văn bản</td></tr>
+    <tr><td class="id">POST</td><td class="mono">/api/hill/key/analyze</td><td>Kiểm tra khóa, trả det, (det)⁻¹, K*, K⁻¹</td></tr>
+    <tr><td class="id">GET</td><td class="mono">/api/hill/key/random?m=3</td><td>Sinh khóa hợp lệ ngẫu nhiên</td></tr>
+  </table></div>
+<pre><span class="cm">// POST /api/hill/encrypt  — request</span>
+{
+  "text": "HELP",
+  "key": [[3, 3], [2, 5]],            <span class="cm">// hoặc "keyword": "HILL"</span>
+  "options": { "stripDiacritics": false, "padChar": "X" }
+}
+
+<span class="cm">// 200 — response</span>
+{
+  "result": "DPLE",
+  "blocks": [
+    { "input": [7, 4],   "output": [3, 15] },
+    { "input": [11, 15], "output": [11, 4] }
+  ],
+  "key": { "m": 2, "det": 9, "detInverse": 3,
+           "adjugate": [[5, 23], [24, 3]], "inverse": [[15, 17], [20, 9]] },
+  "warnings": []
+}
+
+<span class="cm">// 422 — lỗi</span>
+{
+  "error": { "code": "E04",
+             "message": "Khóa không khả nghịch: det K mod 26 = 2, chia hết cho 2.",
+             "details": { "det": 2, "gcd": 2 } }
+}</pre>
+  <h3>Quy ước chung</h3>
+  <ul>
+    <li>Content-Type <code>application/json; charset=utf-8</code>. Dùng lại format lỗi của tuần 1.</li>
+    <li>Lỗi nghiệp vụ trả HTTP 422; payload quá 1 MB trả 413 với mã E06.</li>
+    <li><code>key</code> và <code>keyword</code> loại trừ nhau; có cả hai thì trả E03.</li>
+    <li>Ma trận trả về luôn đã chuẩn hóa trong 0–25.</li>
+  </ul>
+</section>
+
+<section id="be">
+  <h2><small>8</small>Task Backend</h2>
+  <div class="tbl"><table>
+    <tr><th>ID</th><th>Nội dung</th><th>Định nghĩa hoàn thành</th><th>Ưu tiên</th></tr>
+    <tr><td class="id">BE-H01</td><td>Module số học mod 26: <code>mod</code>, <code>gcd</code>, <code>modInverse</code> (Euclid mở rộng)</td><td>Unit test đủ 12 cặp nghịch đảo ở mục 2 và các giá trị không có nghịch đảo</td><td><span class="pri must">Bắt buộc</span></td></tr>
+    <tr><td class="id">BE-H02</td><td>Module ma trận: <code>det</code>, <code>minor</code>, <code>adjugate</code>, <code>inverseMod26</code>, <code>rowTimesMatrix</code></td><td>K·K⁻¹ ≡ I với mọi khóa trong bộ test, m = 2, 3, 4</td><td><span class="pri must">Bắt buộc</span></td></tr>
+    <tr><td class="id">BE-H03</td><td>Validate và chuẩn hóa khóa (lưới số, từ khóa)</td><td>Trả đúng E03, E04, E08, E09; E04 nêu rõ det chẵn hay bằng 13</td><td><span class="pri must">Bắt buộc</span></td></tr>
+    <tr><td class="id">BE-H04</td><td>Tách chữ cái và dựng lại văn bản (vị trí, hoa/thường, bỏ dấu tùy chọn)</td><td>Ký tự không phải chữ giữ nguyên vị trí; W02 khi có chữ có dấu</td><td><span class="pri must">Bắt buộc</span></td></tr>
+    <tr><td class="id">BE-H05</td><td>Hàm mã hóa có đệm ký tự</td><td>Qua toàn bộ test vector mục 9; trả mảng <code>blocks</code> và W01</td><td><span class="pri must">Bắt buộc</span></td></tr>
+    <tr><td class="id">BE-H06</td><td>Hàm giải mã</td><td>decrypt(encrypt(x)) = x (kèm ký tự đệm); E05 khi độ dài sai</td><td><span class="pri must">Bắt buộc</span></td></tr>
+    <tr><td class="id">BE-H07</td><td>4 endpoint theo mục 7, format lỗi thống nhất với tuần 1</td><td>Test API cho mỗi mã lỗi</td><td><span class="pri must">Bắt buộc</span></td></tr>
+    <tr><td class="id">BE-H08</td><td>Sinh khóa ngẫu nhiên hợp lệ</td><td>1000 lần sinh đều có ƯCLN(det, 26) = 1 và khác I</td><td><span class="pri should">Nên có</span></td></tr>
+    <tr><td class="id">BE-H09</td><td>Cảnh báo khóa yếu W03</td><td>Phát hiện K = I và K = K⁻¹</td><td><span class="pri nice">Tùy chọn</span></td></tr>
+  </table></div>
+</section>
+
+<section id="test">
+  <h2><small>9</small>Bộ test vector</h2>
+  <p>Tất cả theo quy ước vector hàng y = x·K và đã được kiểm chứng bằng bản cài đặt tham chiếu.</p>
+  <div class="tbl"><table>
+    <tr><th>#</th><th>Khóa K</th><th>Bản rõ</th><th>Kỳ vọng</th><th>Ghi chú</th></tr>
+    <tr><td class="id">T01</td><td class="mono">[[3,3],[2,5]]</td><td class="mono">HELP</td><td class="mono">DPLE</td><td>det 9, (det)⁻¹ 3, K⁻¹ [[15,17],[20,9]]</td></tr>
+    <tr><td class="id">T02</td><td class="mono">[[11,8],[3,7]]</td><td class="mono">JULY</td><td class="mono">DELW</td><td>Ví dụ Stinson; det 1 nên K⁻¹ = K* = [[7,18],[23,11]]</td></tr>
+    <tr><td class="id">T03</td><td class="mono">[[6,24,1],[13,16,10],[20,17,15]]</td><td class="mono">ACT</td><td class="mono">QRT</td><td>det 25; K⁻¹ [[8,5,10],[21,8,21],[21,12,8]]</td></tr>
+    <tr><td class="id">T04</td><td class="mono">[[6,13,20],[24,16,17],[1,10,15]]</td><td class="mono">ACT</td><td class="mono">POH</td><td>Chuyển vị của T03, khớp kết quả Wikipedia (vector cột)</td></tr>
+    <tr><td class="id">T05</td><td class="mono">từ khóa HILL</td><td class="mono">HILLCIPHER</td><td class="mono">HOQBYAAPHL</td><td>K = [[7,8],[11,11]], det 15</td></tr>
+    <tr><td class="id">T06</td><td class="mono">[[3,3],[2,5]]</td><td class="mono">HELLO</td><td class="mono">DPDKKB</td><td>W01; giải mã ra HELLOX</td></tr>
+    <tr><td class="id">T07</td><td class="mono">[[3,3],[2,5]]</td><td class="mono">Help, me!</td><td class="mono">Dple, se!</td><td>Giữ dấu câu, hoa/thường</td></tr>
+    <tr><td class="id">T08</td><td class="mono">[[2,4],[1,3]]</td><td class="mono">HELP</td><td>E04</td><td>det = 2 (chẵn)</td></tr>
+    <tr><td class="id">T09</td><td class="mono">[[13,0],[0,1]]</td><td class="mono">HELP</td><td>E04</td><td>det = 13</td></tr>
+    <tr><td class="id">T10</td><td class="mono">[[3,3],[2,5]]</td><td class="mono">DPL (giải mã)</td><td>E05</td><td>3 chữ, m = 2</td></tr>
+    <tr><td class="id">T11</td><td class="mono">[[3,3],[2,5]]</td><td class="mono">"123 !!"</td><td>E02</td><td>Không có chữ cái</td></tr>
+    <tr><td class="id">T12</td><td class="mono">[[1,0],[0,1]]</td><td class="mono">HELP</td><td class="mono">HELP</td><td>W03 khóa yếu</td></tr>
+  </table></div>
+</section>
+
+<section id="thu">
+  <h2><small>10</small>Bản cài đặt tham chiếu</h2>
+  <p>Bản cài đặt tham chiếu của đặc tả trên, dùng để đối chiếu output của BE khi viết unit test. Mặc định là ví dụ HELP → DPLE.</p>
+  <div class="lab">
+    <div class="lab-grid">
+      <div class="pane">
+        <h4 class="k"><span class="dot"></span>Ma trận khóa K</h4>
+        <div class="row">
+          <label for="msel">Cấp m</label>
+          <select id="msel"><option>2</option><option>3</option><option>4</option></select>
+          <button type="button" id="rand">Tạo khóa ngẫu nhiên hợp lệ</button>
+        </div>
+        <div id="matrix" class="matrix" role="group" aria-label="Ma trận khóa"></div>
+        <div id="kstatus" class="status" aria-live="polite"></div>
+        <div id="kmini" class="mini"></div>
+      </div>
+      <div class="pane">
+        <h4 class="p"><span class="dot"></span>Văn bản đầu vào</h4>
+        <textarea id="txt" aria-label="Văn bản đầu vào">HELP</textarea>
+        <div class="row">
+          <button type="button" class="primary" id="doEnc">Mã hóa</button>
+          <button type="button" id="doDec">Giải mã</button>
+          <label><input type="checkbox" id="strip"> Bỏ dấu tiếng Việt</label>
+        </div>
+        <h4 class="c"><span class="dot"></span>Kết quả</h4>
+        <div id="out" class="out" aria-live="polite"></div>
+        <div id="warn" class="warnline"></div>
+        <div id="steps" class="steps"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="nghiem-thu">
+  <h2><small>11</small>Tiêu chí nghiệm thu Backend</h2>
+  <ul class="ac">
+    <li>Unit test pass toàn bộ T01–T12, với m = 2, 3, 4.</li>
+    <li>Kiểm thử ngẫu nhiên: với 1000 khóa hợp lệ và văn bản ngẫu nhiên, decrypt(encrypt(x)) = x (cộng ký tự đệm).</li>
+    <li>Với mọi khóa hợp lệ trong test, K·K⁻¹ ≡ I (mod 26).</li>
+    <li>Mỗi mã lỗi E01–E09 có ít nhất một test API trả đúng HTTP status, <code>code</code> và <code>details</code>.</li>
+    <li>E04 luôn kèm <code>det</code> và <code>gcd</code> để FE hiển thị lý do.</li>
+    <li>Response <code>/key/analyze</code> khớp cách tính trên slide cho T01–T05.</li>
+    <li>Văn bản 1 MB mã hóa xong dưới 1 giây.</li>
+  </ul>
+</section>
+
+<section id="ngoai">
+  <h2><small>12</small>Ngoài phạm vi</h2>
+  <ul>
+    <li>Tấn công bản rõ đã biết (tìm K từ các cặp rõ/mã bằng K = X⁻¹·Y), có thể làm ở tuần sau như phần mở rộng phân tích mã.</li>
+    <li>Affine-Hill (y = x·K + b) và m lớn hơn 4.</li>
+    <li>Bảng chữ cái mở rộng (Z₂₉ có chữ tiếng Việt, số, dấu cách).</li>
+    <li>Lưu lịch sử, đăng nhập, cơ sở dữ liệu.</li>
+  </ul>
+</section>
+
+<footer>Scope Backend: Hệ mã hóa Hill. Dự án Caesar_Cipher. Bản cài đặt tham chiếu chạy hoàn toàn trên trình duyệt.</footer>
+</main>
+</div>
+<script>
+(function(){
+  const A = 65;
+  const mod = (a,n=26)=>((a%n)+n)%n;
+  const gcd = (a,b)=> b===0?Math.abs(a):gcd(b,a%b);
+  function modInverse(a,n=26){
+    let r0=mod(a,n), r1=n, s0=1, s1=0;
+    while(r1!==0){const q=Math.floor(r0/r1);[r0,r1]=[r1,r0-q*r1];[s0,s1]=[s1,s0-q*s1];}
+    return r0===1?mod(s0,n):null;
+  }
+  const minor=(M,i,j)=>M.filter((_,r)=>r!==i).map(row=>row.filter((_,c)=>c!==j));
+  function det(M){
+    if(M.length===1) return M[0][0];
+    let s=0; for(let j=0;j<M.length;j++) s+=(j%2?-1:1)*M[0][j]*det(minor(M,0,j)); return s;
+  }
+  function adj(M){
+    const n=M.length; if(n===1) return [[1]];
+    const out=[];
+    for(let i=0;i<n;i++){out.push([]);for(let j=0;j<n;j++){out[i].push(mod(((i+j)%2?-1:1)*det(minor(M,j,i))));}}
+    return out;
+  }
+  function analyze(K){
+    const d=mod(det(K)), g=gcd(d,26), di=g===1?modInverse(d):null;
+    const ad=adj(K);
+    const inv=di!==null?ad.map(r=>r.map(x=>mod(x*di))):null;
+    return {d,g,di,ad,inv};
+  }
+  const mul=(x,K)=>K[0].map((_,j)=>mod(x.reduce((s,xi,i)=>s+xi*K[i][j],0)));
+  function strip(s){return s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/g,'d').replace(/Đ/g,'D');}
+
+  function run(text,K,dir,doStrip){
+    const m=K.length, warnings=[];
+    if(!text.trim()) return {err:'E01: Nhập văn bản để bắt đầu.'};
+    if(doStrip) text=strip(text);
+    const chars=[...text], pos=[], vals=[];
+    let accented=0;
+    chars.forEach((ch,i)=>{
+      if(/[A-Za-z]/.test(ch)){pos.push(i);vals.push(ch.toUpperCase().charCodeAt(0)-A);}
+      else if(/\p{L}/u.test(ch)) accented++;
+    });
+    if(accented) warnings.push(`W02: ${accented} chữ có dấu được giữ nguyên.`);
+    if(!vals.length) return {err:'E02: Văn bản không có chữ cái A–Z nào.'};
+    const a=analyze(K);
+    if(a.g!==1) return {err:`E04: Khóa không khả nghịch (det = ${a.d}).`};
+    let M=K;
+    if(dir==='dec'){ if(vals.length%m) return {err:`E05: Bản mã có ${vals.length} chữ, không chia hết cho m = ${m}.`}; M=a.inv; }
+    else { let k=0; while(vals.length%m){vals.push(23);k++;} if(k) warnings.push(`W01: Đã thêm ${k} ký tự X để đủ khối.`); }
+    const out=[], log=[];
+    for(let i=0;i<vals.length;i+=m){
+      const b=vals.slice(i,i+m), r=mul(b,M); out.push(...r);
+      log.push(`[${b.join(', ')}] · ${dir==='dec'?'K⁻¹':'K'} = [${r.join(', ')}]  ${b.map(v=>String.fromCharCode(v+A)).join('')} → ${r.map(v=>String.fromCharCode(v+A)).join('')}`);
+    }
+    pos.forEach((p,idx)=>{const up=chars[p]===chars[p].toUpperCase();const c=String.fromCharCode(out[idx]+A);chars[p]=up?c:c.toLowerCase();});
+    let res=chars.join('')+out.slice(pos.length).map(v=>String.fromCharCode(v+A)).join('');
+    return {res,warnings,log};
+  }
+
+  const msel=document.getElementById('msel'), grid=document.getElementById('matrix');
+  const kstatus=document.getElementById('kstatus'), kmini=document.getElementById('kmini');
+  const out=document.getElementById('out'), warn=document.getElementById('warn'), steps=document.getElementById('steps');
+  function build(K){
+    const m=K.length; grid.style.gridTemplateColumns=`repeat(${m},auto)`; grid.innerHTML='';
+    K.forEach((row,i)=>row.forEach((v,j)=>{
+      const inp=document.createElement('input'); inp.type='text'; inp.inputMode='numeric'; inp.value=v;
+      inp.setAttribute('aria-label',`Hàng ${i+1} cột ${j+1}`); inp.addEventListener('input',refresh); grid.appendChild(inp);
+    }));
+    refresh();
+  }
+  function readK(){
+    const m=+msel.value, ins=[...grid.querySelectorAll('input')], K=[];
+    for(let i=0;i<m;i++){K.push([]);for(let j=0;j<m;j++){const s=ins[i*m+j].value.trim();if(!/^-?\d+$/.test(s))return {bad:[i+1,j+1]};K[i].push(mod(parseInt(s,10)));}}
+    return {K};
+  }
+  const fmt=M=>`<span class="m-inline" style="grid-template-columns:repeat(${M.length},auto)">${M.flat().map(x=>`<span>${x}</span>`).join('')}</span>`;
+  let curK=null;
+  function refresh(){
+    const r=readK(); curK=null; kmini.innerHTML='';
+    if(r.bad){kstatus.className='status bad';kstatus.textContent=`E03: Ô hàng ${r.bad[0]} cột ${r.bad[1]} phải là số nguyên.`;return;}
+    const a=analyze(r.K);
+    if(a.g!==1){kstatus.className='status bad';kstatus.textContent=`E04: det K mod 26 = ${a.d}, chia hết cho ${a.d%2===0?2:13}. Khóa không khả nghịch.`;return;}
+    curK=r.K; kstatus.className='status ok'; kstatus.textContent=`Khóa hợp lệ: det = ${a.d}, ƯCLN(${a.d}, 26) = 1, (det)⁻¹ = ${a.di}`;
+    kmini.innerHTML=`<div><span class="lbl">K* (phụ hợp)</span>${fmt(a.ad)}</div><div><span class="lbl">K⁻¹ mod 26</span>${fmt(a.inv)}</div>`;
+  }
+  function go(dir){
+    warn.textContent=''; steps.textContent='';
+    if(!curK){out.textContent='Sửa khóa trước khi chạy.';return;}
+    const r=run(document.getElementById('txt').value,curK,dir,document.getElementById('strip').checked);
+    if(r.err){out.textContent=r.err;return;}
+    out.textContent=r.res; warn.textContent=r.warnings.join('  '); steps.textContent=r.log.join('\n');
+  }
+  function randomKey(m){
+    const I=(i,j)=>i===j?1:0;
+    for(;;){const K=Array.from({length:m},()=>Array.from({length:m},()=>Math.floor(Math.random()*26)));
+      if(gcd(mod(det(K)),26)===1 && !K.every((r,i)=>r.every((v,j)=>v===I(i,j)))) return K;}
+  }
+  msel.addEventListener('change',()=>build(randomKey(+msel.value)));
+  document.getElementById('rand').addEventListener('click',()=>build(randomKey(+msel.value)));
+  document.getElementById('doEnc').addEventListener('click',()=>go('enc'));
+  document.getElementById('doDec').addEventListener('click',()=>go('dec'));
+  build([[3,3],[2,5]]); go('enc');
+})();
+</script>
+</body>
+</html>

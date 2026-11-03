@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Affine Cipher - Thuật toán & Logic</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --panel-2: #1f2937;
+      --text: #e5e7eb;
+      --muted: #94a3b8;
+      --primary: #38bdf8;
+      --primary-2: #0ea5e9;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --border: #334155;
+      --code: #020617;
+    }
+
+    * {
+      box-sizing: border-box;
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top right, rgba(56,189,248,.12), transparent 26%),
+        var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+    }
+
+    .container {
+      width: min(1100px, calc(100% - 32px));
+      margin: 0 auto;
+    }
+
+    header {
+      padding: 64px 0 40px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 6px 12px;
+      border: 1px solid rgba(56,189,248,.35);
+      background: rgba(56,189,248,.08);
+      color: #7dd3fc;
+      border-radius: 999px;
+      font-size: 14px;
+      margin-bottom: 16px;
+    }
+
+    h1 {
+      font-size: clamp(36px, 6vw, 64px);
+      line-height: 1.05;
+      margin: 0 0 16px;
+      letter-spacing: -0.03em;
+    }
+
+    h2 {
+      margin-top: 0;
+      font-size: 28px;
+      color: #f8fafc;
+    }
+
+    h3 {
+      color: #bae6fd;
+      margin-top: 28px;
+    }
+
+    p {
+      color: #cbd5e1;
+    }
+
+    .lead {
+      max-width: 800px;
+      font-size: 18px;
+      color: var(--muted);
+    }
+
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      backdrop-filter: blur(16px);
+      background: rgba(15,23,42,.88);
+      border-bottom: 1px solid var(--border);
+    }
+
+    nav .container {
+      display: flex;
+      gap: 18px;
+      overflow-x: auto;
+      padding: 12px 0;
+    }
+
+    nav a {
+      color: #cbd5e1;
+      text-decoration: none;
+      white-space: nowrap;
+      font-size: 14px;
+    }
+
+    nav a:hover {
+      color: var(--primary);
+    }
+
+    main {
+      padding: 40px 0 80px;
+    }
+
+    section {
+      background: rgba(17,24,39,.82);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 28px;
+      margin-bottom: 24px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.14);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .card {
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px;
+    }
+
+    .formula {
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: clamp(18px, 3vw, 25px);
+      background: var(--code);
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--primary);
+      padding: 18px;
+      border-radius: 12px;
+      overflow-x: auto;
+      color: #e0f2fe;
+      margin: 16px 0;
+    }
+
+    code, pre {
+      font-family: "SFMono-Regular", Consolas, monospace;
+    }
+
+    pre {
+      background: var(--code);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px;
+      overflow-x: auto;
+      color: #dbeafe;
+    }
+
+    .steps {
+      counter-reset: step;
+      display: grid;
+      gap: 12px;
+    }
+
+    .step {
+      position: relative;
+      padding: 16px 16px 16px 54px;
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+    }
+
+    .step::before {
+      counter-increment: step;
+      content: counter(step);
+      position: absolute;
+      left: 16px;
+      top: 15px;
+      width: 26px;
+      height: 26px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--primary-2);
+      color: white;
+      font-weight: 700;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 14px;
+    }
+
+    th, td {
+      border: 1px solid var(--border);
+      padding: 10px;
+      text-align: center;
+    }
+
+    th {
+      background: #0b1220;
+      color: #bae6fd;
+    }
+
+    .good {
+      color: #86efac;
+      font-weight: 700;
+    }
+
+    .bad {
+      color: #fca5a5;
+      font-weight: 700;
+    }
+
+    .demo {
+      display: grid;
+      gap: 18px;
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 160px 160px;
+      gap: 12px;
+    }
+
+    input, textarea, button {
+      width: 100%;
+      font: inherit;
+    }
+
+    input, textarea {
+      color: var(--text);
+      background: #0b1220;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      outline: none;
+    }
+
+    input:focus, textarea:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(56,189,248,.1);
+    }
+
+    textarea {
+      min-height: 120px;
+      resize: vertical;
+    }
+
+    .button-row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 12px 16px;
+      cursor: pointer;
+      font-weight: 700;
+      width: auto;
+    }
+
+    .btn-primary {
+      background: var(--primary-2);
+      color: white;
+    }
+
+    .btn-secondary {
+      background: #334155;
+      color: white;
+    }
+
+    .result {
+      min-height: 72px;
+      background: var(--code);
+      border: 1px dashed #475569;
+      border-radius: 12px;
+      padding: 16px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .notice {
+      border-left: 4px solid var(--warning);
+      background: rgba(245,158,11,.08);
+      padding: 14px 16px;
+      border-radius: 10px;
+      color: #fde68a;
+    }
+
+    footer {
+      color: var(--muted);
+      text-align: center;
+      padding: 26px 0 50px;
+    }
+
+    @media (max-width: 760px) {
+      .grid, .form-row {
+        grid-template-columns: 1fr;
+      }
+
+      section {
+        padding: 20px;
+      }
+
+      header {
+        padding-top: 44px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <span class="badge">Mật mã cổ điển • Affine Cipher</span>
+      <h1>Thuật toán & Logic<br/>Hệ mã Affine</h1>
+      <p class="lead">
+        Tài liệu ngắn gọn giúp hiểu cách Affine Cipher mã hóa, giải mã,
+        điều kiện của khóa và cách triển khai thuật toán trong chương trình.
+      </p>
+    </div>
+  </header>
+
+  <nav>
+    <div class="container">
+      <a href="#idea">Ý tưởng</a>
+      <a href="#encrypt">Mã hóa</a>
+      <a href="#key">Điều kiện khóa</a>
+      <a href="#decrypt">Giải mã</a>
+      <a href="#inverse">Nghịch đảo modulo</a>
+      <a href="#algorithm">Logic code</a>
+      <a href="#demo">Demo</a>
+    </div>
+  </nav>
+
+  <main class="container">
+    <section id="idea">
+      <h2>1. Ý tưởng cốt lõi</h2>
+      <p>
+        Affine Cipher là một hệ mã thay thế đơn bảng. Mỗi ký tự được chuyển thành
+        một số, sau đó áp dụng một hàm tuyến tính theo modulo.
+      </p>
+
+      <div class="grid">
+        <div class="card">
+          <h3>Ánh xạ ký tự</h3>
+          <pre>A = 0
+B = 1
+C = 2
+...
+Z = 25</pre>
+        </div>
+
+        <div class="card">
+          <h3>Khóa</h3>
+          <pre>K = (a, b)
+
+a = khóa nhân
+b = khóa dịch</pre>
+        </div>
+      </div>
+
+      <div class="formula">E(x) = (a × x + b) mod 26</div>
+
+      <p>Trong đó:</p>
+      <ul>
+        <li><b>x</b>: giá trị số của ký tự gốc.</li>
+        <li><b>a</b>: khóa nhân.</li>
+        <li><b>b</b>: khóa dịch.</li>
+        <li><b>26</b>: số chữ cái trong bảng chữ cái tiếng Anh.</li>
+      </ul>
+    </section>
+
+    <section id="encrypt">
+      <h2>2. Logic mã hóa</h2>
+
+      <div class="steps">
+        <div class="step">Nhận ký tự plaintext.</div>
+        <div class="step">Chuyển ký tự thành số từ 0 → 25.</div>
+        <div class="step">Tính <code>(a × x + b) mod 26</code>.</div>
+        <div class="step">Chuyển kết quả ngược lại thành ký tự.</div>
+      </div>
+
+      <h3>Ví dụ</h3>
+      <p>Giả sử:</p>
+      <pre>Plaintext = HELLO
+a = 5
+b = 8</pre>
+
+      <p>Với chữ <b>H</b>:</p>
+      <div class="formula">
+H = 7
+
+E(7) = (5 × 7 + 8) mod 26
+     = 43 mod 26
+     = 17
+     = R
+      </div>
+
+      <p>Vậy <b>H → R</b>.</p>
+
+      <p>Tương tự:</p>
+      <div class="formula">
+E = 4
+
+(5 × 4 + 8) mod 26
+= 28 mod 26
+= 2
+= C
+      </div>
+
+      <p>Kết quả:</p>
+      <pre>HELLO → RCLLA</pre>
+    </section>
+
+    <section id="key">
+      <h2>3. Điều kiện của khóa a</h2>
+
+      <p>
+        Không phải giá trị nào của <b>a</b> cũng dùng được. Điều kiện bắt buộc:
+      </p>
+
+      <div class="formula">gcd(a, 26) = 1</div>
+
+      <p>
+        Tức là <b>a phải nguyên tố cùng nhau với 26</b>. Khi đó a mới tồn tại
+        nghịch đảo modulo 26 để phục vụ quá trình giải mã.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Loại</th>
+            <th>Giá trị a</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="good">Hợp lệ</td>
+            <td>1, 3, 5, 7, 9, 11, 15, 17, 19, 21, 23, 25</td>
+          </tr>
+          <tr>
+            <td class="bad">Ví dụ không hợp lệ</td>
+            <td>2, 4, 6, 13...</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="notice">
+        Ví dụ: gcd(5, 26) = 1 → dùng được. Nhưng gcd(2, 26) = 2 → không dùng được.
+      </div>
+    </section>
+
+    <section id="decrypt">
+      <h2>4. Logic giải mã</h2>
+
+      <p>Công thức giải mã:</p>
+
+      <div class="formula">D(y) = a⁻¹ × (y - b) mod 26</div>
+
+      <p>
+        Trong đó <b>a⁻¹</b> là nghịch đảo modulo của a, thỏa mãn:
+      </p>
+
+      <div class="formula">a × a⁻¹ ≡ 1 (mod 26)</div>
+
+      <h3>Ví dụ</h3>
+
+      <p>Cho:</p>
+      <pre>a = 5
+b = 8
+Cipher character = R = 17</pre>
+
+      <p>Ta có:</p>
+
+      <div class="formula">
+5 × 21 = 105
+105 mod 26 = 1
+
+⇒ 5⁻¹ = 21
+      </div>
+
+      <p>Giải mã R:</p>
+
+      <div class="formula">
+D(17) = 21 × (17 - 8) mod 26
+      = 21 × 9 mod 26
+      = 189 mod 26
+      = 7
+      = H
+      </div>
+
+      <p>Vậy <b>R → H</b>.</p>
+    </section>
+
+    <section id="inverse">
+      <h2>5. Tìm nghịch đảo modulo</h2>
+
+      <p>
+        Có thể dùng thuật toán Euclid mở rộng. Ví dụ tìm nghịch đảo của 5 modulo 26:
+      </p>
+
+      <pre>26 = 5 × 5 + 1
+
+⇒ 1 = 26 - 5 × 5
+
+⇒ 5 × (-5) ≡ 1 (mod 26)
+
+-5 mod 26 = 21
+
+⇒ 5⁻¹ = 21</pre>
+
+      <p>
+        Với chương trình nhỏ, cũng có thể tìm bằng brute-force:
+      </p>
+
+      <pre>for i = 1 → 25:
+    if (a × i) mod 26 == 1:
+        return i</pre>
+    </section>
+
+    <section id="algorithm">
+      <h2>6. Logic thuật toán khi code</h2>
+
+      <div class="grid">
+        <div class="card">
+          <h3>Encryption</h3>
+          <pre>function encrypt(text, a, b):
+
+    if gcd(a, 26) != 1:
+        error "Invalid key"
+
+    result = ""
+
+    for character in text:
+        if character is alphabet:
+            x = charToNumber(character)
+
+            y = (a*x + b) % 26
+
+            result += numberToChar(y)
+
+        else:
+            result += character
+
+    return result</pre>
+        </div>
+
+        <div class="card">
+          <h3>Decryption</h3>
+          <pre>function decrypt(text, a, b):
+
+    inverseA = modularInverse(a, 26)
+
+    for character in text:
+        y = charToNumber(character)
+
+        x = inverseA * (y - b)
+
+        x = ((x % 26) + 26) % 26
+
+        result += numberToChar(x)
+
+    return result</pre>
+        </div>
+      </div>
+
+      <h3>Bản chất toán học</h3>
+      <pre>x
+↓
+nhân với a
+↓
+a × x
+↓
+cộng b
+↓
+a × x + b
+↓
+mod 26
+↓
+ciphertext</pre>
+
+      <p>
+        Có thể hiểu Affine Cipher là sự kết hợp giữa
+        <b>Multiplicative Cipher</b> và <b>Caesar Cipher</b>.
+      </p>
+
+      <div class="formula">
+Caesar: E(x) = (x + b) mod 26
+
+Affine: E(x) = (a × x + b) mod 26
+      </div>
+
+      <h3>Không gian khóa</h3>
+      <p>
+        a có 12 giá trị hợp lệ, b có 26 giá trị.
+      </p>
+
+      <div class="formula">12 × 26 = 312 khóa</div>
+
+      <p>
+        Vì chỉ có 312 khóa nên Affine Cipher không an toàn cho hệ thống hiện đại
+        và có thể bị brute-force khá dễ dàng.
+      </p>
+    </section>
+
+    <section id="demo">
+      <h2>7. Demo mã hóa / giải mã trực tiếp</h2>
+
+      <div class="demo">
+        <div class="form-row">
+          <input id="textInput" placeholder="Nhập nội dung, ví dụ: HELLO" />
+          <input id="aInput" type="number" value="5" placeholder="a" />
+          <input id="bInput" type="number" value="8" placeholder="b" />
+        </div>
+
+        <div class="button-row">
+          <button class="btn-primary" onclick="encryptText()">Mã hóa</button>
+          <button class="btn-secondary" onclick="decryptText()">Giải mã</button>
+          <button class="btn-secondary" onclick="clearResult()">Xóa</button>
+        </div>
+
+        <div>
+          <b>Kết quả:</b>
+          <div id="result" class="result">Chưa có kết quả.</div>
+        </div>
+
+        <div id="keyInfo" class="notice">
+          Khóa mặc định: a = 5, b = 8.
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>8. Tóm tắt cần nhớ</h2>
+
+      <div class="formula">
+Encryption:
+E(x) = (a × x + b) mod 26
+
+Decryption:
+D(y) = a⁻¹ × (y - b) mod 26
+
+Điều kiện:
+gcd(a, 26) = 1
+      </div>
+
+      <p>
+        Khi code, cần nắm 5 phần chính:
+        <b>mapping ký tự → modulo → kiểm tra khóa → modular inverse → encrypt/decrypt</b>.
+      </p>
+    </section>
+  </main>
+
+  <footer>
+    Affine Cipher • Tài liệu học thuật toán & logic mã hóa cổ điển
+  </footer>
+
+  <script>
+    function gcd(a, b) {
+      a = Math.abs(a);
+      b = Math.abs(b);
+
+      while (b !== 0) {
+        const temp = b;
+        b = a % b;
+        a = temp;
+      }
+
+      return a;
+    }
+
+    function mod(n, m) {
+      return ((n % m) + m) % m;
+    }
+
+    function modInverse(a, m) {
+      a = mod(a, m);
+
+      for (let i = 1; i < m; i++) {
+        if ((a * i) % m === 1) {
+          return i;
+        }
+      }
+
+      return null;
+    }
+
+    function validateKey(a, b) {
+      if (!Number.isInteger(a) || !Number.isInteger(b)) {
+        return "a và b phải là số nguyên.";
+      }
+
+      if (gcd(a, 26) !== 1) {
+        return `Khóa a = ${a} không hợp lệ vì gcd(${a}, 26) ≠ 1.`;
+      }
+
+      return null;
+    }
+
+    function transformText(text, a, b, decrypt = false) {
+      const invA = decrypt ? modInverse(a, 26) : null;
+
+      return [...text].map(char => {
+        const code = char.charCodeAt(0);
+
+        let base = null;
+
+        if (code >= 65 && code <= 90) {
+          base = 65;
+        } else if (code >= 97 && code <= 122) {
+          base = 97;
+        } else {
+          return char;
+        }
+
+        const x = code - base;
+
+        let y;
+
+        if (decrypt) {
+          y = mod(invA * (x - b), 26);
+        } else {
+          y = mod(a * x + b, 26);
+        }
+
+        return String.fromCharCode(base + y);
+      }).join("");
+    }
+
+    function getInputs() {
+      return {
+        text: document.getElementById("textInput").value,
+        a: Number(document.getElementById("aInput").value),
+        b: Number(document.getElementById("bInput").value)
+      };
+    }
+
+    function showKeyInfo(a, b) {
+      const info = document.getElementById("keyInfo");
+      const inv = modInverse(a, 26);
+
+      info.textContent =
+        `Khóa K = (${a}, ${b}) | gcd(${a}, 26) = ${gcd(a, 26)}` +
+        (inv !== null ? ` | a⁻¹ = ${inv}` : "");
+    }
+
+    function encryptText() {
+      const { text, a, b } = getInputs();
+      const error = validateKey(a, b);
+      const result = document.getElementById("result");
+
+      if (error) {
+        result.textContent = error;
+        return;
+      }
+
+      result.textContent = transformText(text, a, b, false);
+      showKeyInfo(a, b);
+    }
+
+    function decryptText() {
+      const { text, a, b } = getInputs();
+      const error = validateKey(a, b);
+      const result = document.getElementById("result");
+
+      if (error) {
+        result.textContent = error;
+        return;
+      }
+
+      result.textContent = transformText(text, a, b, true);
+      showKeyInfo(a, b);
+    }
+
+    function clearResult() {
+      document.getElementById("textInput").value = "";
+      document.getElementById("result").textContent = "Chưa có kết quả.";
+    }
+  </script>
+</body>
+</html>

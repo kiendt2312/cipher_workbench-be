@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RSA từng bước</title>
+<style>
+:root{
+  --bg:#f7f6f2;--card:#ffffff;--ink:#1d1d1b;--muted:#6b6a65;--line:#e3e1da;
+  --accent:#1f6f5c;--accent-soft:#e3f1ec;--warn:#b4531a;--warn-soft:#fbeee4;
+  --pub:#2f5fb3;--pub-soft:#e6eefb;--priv:#a3324a;--priv-soft:#f8e6ea;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#151614;--card:#1f201d;--ink:#ecebe6;--muted:#a3a29b;--line:#34352f;
+  --accent:#5cc4a6;--accent-soft:#1d3530;--warn:#f0a06a;--warn-soft:#3a2a1e;
+  --pub:#7fa6ee;--pub-soft:#1f2a40;--priv:#ee8aa0;--priv-soft:#3d2229;}}
+:root[data-theme="dark"]{
+  --bg:#151614;--card:#1f201d;--ink:#ecebe6;--muted:#a3a29b;--line:#34352f;
+  --accent:#5cc4a6;--accent-soft:#1d3530;--warn:#f0a06a;--warn-soft:#3a2a1e;
+  --pub:#7fa6ee;--pub-soft:#1f2a40;--priv:#ee8aa0;--priv-soft:#3d2229;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:860px;margin:0 auto;padding:24px 16px 64px}
+h1{font-size:1.9rem;line-height:1.2;margin:8px 0 4px}
+h2{font-size:1.3rem;margin:0 0 12px;display:flex;gap:10px;align-items:center}
+h2 .num{flex:none;width:30px;height:30px;border-radius:50%;background:var(--accent);color:var(--card);display:grid;place-items:center;font-size:.95rem}
+h3{font-size:1.05rem;margin:18px 0 8px}
+p{margin:8px 0}
+.lead{color:var(--muted);margin-bottom:20px}
+section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;margin:18px 0}
+code,.mono{font-family:var(--mono);font-size:.92em}
+.formula{font-family:var(--mono);background:var(--accent-soft);border-radius:8px;padding:10px 14px;margin:10px 0;overflow-x:auto;white-space:nowrap}
+.pub{color:var(--pub);font-weight:600}.priv{color:var(--priv);font-weight:600}
+.flow{display:grid;grid-template-columns:1fr;gap:10px;margin-top:8px}
+.step{border:1px solid var(--line);border-radius:10px;padding:12px 14px;position:relative}
+.step b{display:block}
+.step .who{font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.step.bob{border-left:4px solid var(--priv)}.step.alice{border-left:4px solid var(--pub)}.step.net{border-left:4px solid var(--warn);background:var(--warn-soft)}
+.arrow{text-align:center;color:var(--muted);line-height:1}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px}
+label{font-size:.85rem;color:var(--muted);display:block;margin-bottom:4px}
+input,textarea{width:100%;font:inherit;font-family:var(--mono);padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
+textarea{min-height:60px;resize:vertical}
+button{font:inherit;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:8px;padding:7px 12px;cursor:pointer}
+button.primary{background:var(--accent);color:var(--card);border-color:var(--accent)}
+.row{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+.out{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:12px}
+.kv{border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.kv span{display:block;font-size:.8rem;color:var(--muted)}
+.kv strong{font-family:var(--mono);font-size:1.05rem;word-break:break-all}
+.kv.pubk{background:var(--pub-soft)}.kv.privk{background:var(--priv-soft)}
+.msg{border-radius:8px;padding:10px 12px;margin:10px 0}
+.msg.err{background:var(--warn-soft);color:var(--warn)}
+.msg.ok{background:var(--accent-soft)}
+.tbl{overflow-x:auto;margin:8px 0}
+table{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:.88rem}
+th,td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:right;white-space:nowrap}
+th{color:var(--muted);font-weight:500}
+td.l,th.l{text-align:left}
+tr.hit td{background:var(--accent-soft)}
+details{margin-top:10px}
+summary{cursor:pointer;color:var(--accent);font-weight:600}
+ul{padding-left:20px}
+li{margin:4px 0}
+.note{font-size:.9rem;color:var(--muted)}
+.theme{position:absolute;top:16px;right:16px}
+@media (min-width:720px){
+  .flow{grid-template-columns:1fr auto 1fr auto 1fr auto 1fr}
+  .arrow{align-self:center}
+}
+</style>
+</head>
+<body>
+<main>
+<header style="position:relative">
+  <button class="theme" id="themeBtn" aria-label="Đổi giao diện sáng/tối">◐</button>
+  <h1>RSA: thuật toán, logic và workflow</h1>
+  <p class="lead">Mô hình đảm bảo bí mật bằng RSA: ai cũng mã hóa được bằng <span class="pub">khóa công khai</span> của người nhận, nhưng chỉ người nhận giải mã được bằng <span class="priv">khóa riêng</span>. Mọi phép tính bên dưới chạy thật trong trình duyệt, bạn có thể đổi số để thử.</p>
+</header>
+
+<section>
+  <h2><span class="num">1</span>Workflow tổng quan</h2>
+  <div class="flow">
+    <div class="step bob"><span class="who">Bob (bên nhận)</span><b>Sinh cặp khóa</b>Giữ <span class="priv">KR = {d, n}</span>, công bố <span class="pub">KU = {e, n}</span></div>
+    <div class="arrow">→</div>
+    <div class="step alice"><span class="who">Alice (bên gửi)</span><b>Mã hóa</b>Lấy KU của Bob, tính <code>C = Pᵉ mod n</code></div>
+    <div class="arrow">→</div>
+    <div class="step net"><span class="who">Kênh truyền</span><b>Gửi C</b>Kẻ nghe lén thấy C, e, n nhưng không có d</div>
+    <div class="arrow">→</div>
+    <div class="step bob"><span class="who">Bob</span><b>Giải mã</b>Dùng KR, tính <code>P = Cᵈ mod n</code></div>
+  </div>
+  <p class="note">Điểm mấu chốt: mã hóa dùng khóa của <b>người nhận</b>, không phải của người gửi. Ngược lại, nếu Alice "mã hóa" bằng khóa riêng của mình thì đó là chữ ký số (xác thực), không phải bảo mật.</p>
+</section>
+
+<section>
+  <h2><span class="num">2</span>Sinh khóa</h2>
+  <div class="formula">n = p·q &nbsp;&nbsp; φ(n) = (p−1)(q−1) &nbsp;&nbsp; gcd(e, φ(n)) = 1 &nbsp;&nbsp; e·d ≡ 1 (mod φ(n))</div>
+  <ul>
+    <li><b>p, q</b>: hai số nguyên tố khác nhau, giữ bí mật. Thực tế mỗi số dài khoảng 1024 bit trở lên.</li>
+    <li><b>n</b>: modulus, công khai. Mọi giá trị đều nằm trong khoảng 0…n−1.</li>
+    <li><b>φ(n)</b>: số các số từ 1 đến n nguyên tố cùng nhau với n. Chỉ tính được dễ dàng khi biết p, q.</li>
+    <li><b>e</b>: số mũ công khai, phải nguyên tố cùng nhau với φ(n) để tồn tại nghịch đảo. Thực tế hay dùng 65537.</li>
+    <li><b>d</b>: nghịch đảo của e theo mod φ(n), tìm bằng thuật toán Euclid mở rộng.</li>
+  </ul>
+  <div class="row">
+    <button data-preset="17,11,7">Ví dụ giáo trình (17, 11, 7)</button>
+    <button data-preset="61,53,17">p=61, q=53, e=17</button>
+    <button data-preset="101,113,3533">p=101, q=113 (đủ cho tiếng Việt)</button>
+  </div>
+  <div class="grid">
+    <div><label for="p">p (nguyên tố)</label><input id="p" value="17" inputmode="numeric"></div>
+    <div><label for="q">q (nguyên tố)</label><input id="q" value="11" inputmode="numeric"></div>
+    <div><label for="e">e</label><input id="e" value="7" inputmode="numeric"></div>
+  </div>
+  <div class="row"><button class="primary" id="genBtn">Sinh khóa</button></div>
+  <div id="genMsg"></div>
+  <div class="out" id="genOut"></div>
+  <details id="egcdBox"><summary>Xem từng bước Euclid mở rộng tìm d</summary>
+    <p class="note">Chạy Euclid trên (φ(n), e). Mỗi dòng: r<sub>i+1</sub> = r<sub>i−1</sub> − q·r<sub>i</sub> và t<sub>i+1</sub> = t<sub>i−1</sub> − q·t<sub>i</sub>. Khi r về 1, giá trị t tương ứng chính là e⁻¹ (lấy mod φ(n) nếu âm).</p>
+    <div class="tbl" id="egcdTbl"></div>
+  </details>
+</section>
+
+<section>
+  <h2><span class="num">3</span>Mã hóa và giải mã một khối số</h2>
+  <div class="formula"><span class="pub">C = Pᵉ mod n</span> &nbsp;&nbsp;&nbsp; <span class="priv">P = Cᵈ mod n</span> &nbsp;&nbsp;&nbsp; điều kiện 0 ≤ P &lt; n</div>
+  <div class="grid">
+    <div><label for="P">Bản rõ P (số)</label><input id="P" value="88" inputmode="numeric"></div>
+  </div>
+  <div class="row"><button class="primary" id="encBtn">Mã hóa rồi giải mã</button></div>
+  <div id="encMsg"></div>
+  <div class="out" id="encOut"></div>
+  <h3>Lũy thừa modulo nhanh (bình phương và nhân)</h3>
+  <p>Không thể tính Pᵉ rồi mới lấy mod, vì số sẽ khổng lồ. Thay vào đó, viết số mũ dạng nhị phân. Duyệt từng bit từ phải sang trái: luôn bình phương cơ số, và nếu bit = 1 thì nhân cơ số vào kết quả. Sau mỗi phép nhân đều lấy mod n, nên số không bao giờ vượt n². Số bước chỉ khoảng log₂(e).</p>
+  <details open><summary>Bảng tính C = Pᵉ mod n</summary><div class="tbl" id="encTbl"></div></details>
+  <details><summary>Bảng tính P = Cᵈ mod n</summary><div class="tbl" id="decTbl"></div></details>
+</section>
+
+<section>
+  <h2><span class="num">4</span>Văn bản và chia khối</h2>
+  <p>Slide có ghi "thông báo P phải nhỏ hơn n, phân thành nhiều khối nếu cần". Lý do: mọi phép tính đều mod n, nên giá trị ≥ n sẽ bị "quấn vòng" và giải mã ra P mod n thay vì P. Ở đây mỗi ký tự được đổi sang mã Unicode và coi là một khối, vì vậy n phải lớn hơn mã của mọi ký tự. Với n = 187, chữ có dấu tiếng Việt (mã ~7900) sẽ lỗi; hãy thử preset p=101, q=113.</p>
+  <label for="txt">Thông điệp</label>
+  <textarea id="txt">Xin chao</textarea>
+  <div class="row"><button class="primary" id="txtBtn">Mã hóa văn bản</button></div>
+  <div id="txtMsg"></div>
+  <div class="tbl" id="txtTbl"></div>
+  <p class="note">Mã hóa từng ký tự riêng lẻ chỉ để minh họa. Nó không an toàn: cùng một ký tự luôn ra cùng một C, nên đoán được bằng phân tích tần suất như mã Caesar. Thực tế gộp nhiều byte vào một khối lớn và thêm padding ngẫu nhiên.</p>
+</section>
+
+<section>
+  <h2><span class="num">5</span>Vì sao giải mã ra đúng bản rõ?</h2>
+  <p>Vì e·d ≡ 1 (mod φ(n)), ta viết được e·d = 1 + k·φ(n) với k nguyên. Khi đó:</p>
+  <div class="formula">Cᵈ ≡ (Pᵉ)ᵈ = P<sup>1 + k·φ(n)</sup> = P · (P<sup>φ(n)</sup>)ᵏ (mod n)</div>
+  <p>Theo định lý Euler, nếu gcd(P, n) = 1 thì P<sup>φ(n)</sup> ≡ 1 (mod n), nên Cᵈ ≡ P · 1ᵏ = P. Trường hợp P chia hết cho p hoặc q vẫn đúng (chứng minh riêng theo mod p và mod q rồi ghép bằng định lý số dư Trung Hoa). Do P &lt; n, kết quả mod n chính là P.</p>
+</section>
+
+<section>
+  <h2><span class="num">6</span>Vì sao an toàn, và thực tế dùng thế nào</h2>
+  <ul>
+    <li>Kẻ tấn công biết e và n. Muốn tìm d phải biết φ(n), mà muốn biết φ(n) phải phân tích n thành p·q. Với n từ 2048 bit (mức tối thiểu NIST khuyến nghị đến 2030), chưa có cách phân tích khả thi.</li>
+    <li>Vì vậy p, q, φ(n), d tuyệt đối không được lộ. Ví dụ ở trang này dùng số nhỏ nên phân tích được ngay, chỉ để học.</li>
+    <li>RSA "trần" (textbook RSA) như trên slide là tất định và dễ bị tấn công. Thực tế phải thêm padding ngẫu nhiên; chuẩn PKCS#1 (RFC 8017) khuyến nghị OAEP cho ứng dụng mới.</li>
+    <li>RSA chậm hơn mã hóa đối xứng rất nhiều, nên thường chỉ mã hóa một khóa phiên AES. Dữ liệu chính mã hóa bằng AES. Đây là mã hóa lai, dùng trong TLS/HTTPS.</li>
+  </ul>
+</section>
+</main>
+
+<script>
+(function(){
+  const $ = id => document.getElementById(id);
+  const root = document.documentElement;
+  $('themeBtn').onclick = () => {
+    const dark = root.dataset.theme ? root.dataset.theme === 'dark'
+      : matchMedia('(prefers-color-scheme: dark)').matches;
+    root.dataset.theme = dark ? 'light' : 'dark';
+  };
+
+  let key = null;
+
+  const big = s => { s = String(s).trim(); if (!/^\d+$/.test(s)) return null; return BigInt(s); };
+  function isPrime(n){
+    if (n < 2n) return false;
+    if (n % 2n === 0n) return n === 2n;
+    for (let i = 3n; i * i <= n; i += 2n) if (n % i === 0n) return false;
+    return true;
+  }
+  function gcd(a,b){ while (b) [a,b] = [b, a % b]; return a; }
+  function egcd(phi, e){
+    const rows = [];
+    let r0 = phi, r1 = e, t0 = 0n, t1 = 1n;
+    rows.push({q:'', r:r0, t:t0});
+    rows.push({q:'', r:r1, t:t1});
+    while (r1 !== 0n){
+      const q = r0 / r1;
+      [r0, r1] = [r1, r0 - q * r1];
+      [t0, t1] = [t1, t0 - q * t1];
+      rows.push({q, r:r1, t:t1});
+    }
+    return {rows, g:r0, inv:((t0 % phi) + phi) % phi};
+  }
+  function modPow(b, e, n){
+    const rows = [];
+    let base = b % n, res = 1n, exp = e, i = 0;
+    while (exp > 0n){
+      const bit = exp & 1n;
+      const before = res;
+      if (bit) res = (res * base) % n;
+      rows.push({i, bit, base, before, res});
+      base = (base * base) % n;
+      exp >>= 1n; i++;
+    }
+    return {res, rows};
+  }
+  const msg = (el, text, cls) => { $(el).innerHTML = text ? `<div class="msg ${cls}">${text}</div>` : ''; };
+  const kv = (label, val, cls='') => `<div class="kv ${cls}"><span>${label}</span><strong>${val}</strong></div>`;
+
+  function gen(){
+    $('genOut').innerHTML = ''; $('egcdTbl').innerHTML = ''; key = null;
+    const p = big($('p').value), q = big($('q').value), e = big($('e').value);
+    if (p === null || q === null || e === null) return msg('genMsg', 'p, q, e phải là số nguyên dương.', 'err');
+    if (p > 10n**12n || q > 10n**12n) return msg('genMsg', 'Để kiểm tra nguyên tố nhanh, hãy dùng p, q ≤ 10¹².', 'err');
+    if (!isPrime(p)) return msg('genMsg', `p = ${p} không phải số nguyên tố.`, 'err');
+    if (!isPrime(q)) return msg('genMsg', `q = ${q} không phải số nguyên tố.`, 'err');
+    if (p === q) return msg('genMsg', 'p và q phải khác nhau (nếu bằng nhau thì n = p², căn bậc hai là ra p).', 'err');
+    const n = p * q, phi = (p - 1n) * (q - 1n);
+    if (e <= 1n || e >= phi) return msg('genMsg', `e phải thỏa 1 < e < φ(n) = ${phi}.`, 'err');
+    const g = gcd(e, phi);
+    if (g !== 1n){
+      let s = 3n; while (gcd(s, phi) !== 1n) s += 2n;
+      return msg('genMsg', `gcd(e, φ(n)) = gcd(${e}, ${phi}) = ${g} ≠ 1 nên không tồn tại d. Gợi ý: thử e = ${s}.`, 'err');
+    }
+    const r = egcd(phi, e);
+    const d = r.inv;
+    key = {p, q, n, phi, e, d};
+    msg('genMsg', `Kiểm tra: e·d mod φ(n) = ${e}·${d} mod ${phi} = ${(e * d) % phi} ✓`, 'ok');
+    $('genOut').innerHTML =
+      kv('n = p·q', n) + kv('φ(n) = (p−1)(q−1)', phi) +
+      kv('Khóa công khai KU', `{${e}, ${n}}`, 'pubk') + kv('Khóa riêng KR', `{${d}, ${n}}`, 'privk');
+    let h = '<table><tr><th>q</th><th>r</th><th>t</th></tr>';
+    r.rows.forEach(x => {
+      const hit = x.r === 1n ? ' class="hit"' : '';
+      h += `<tr${hit}><td>${x.q}</td><td>${x.r}</td><td>${x.t}</td></tr>`;
+    });
+    h += `</table><p class="note">Dòng tô màu có r = 1, t = ${r.rows.find(x => x.r === 1n)?.t}. Lấy mod ${phi} được d = ${d}.</p>`;
+    $('egcdTbl').innerHTML = h;
+    enc(); txt();
+  }
+
+  function powTable(rows, n, label){
+    let h = `<table><tr><th class="l">bit thứ</th><th>bit</th><th class="l">cơ số (b^2ⁱ mod ${n})</th><th class="l">kết quả</th></tr>`;
+    rows.forEach(x => {
+      const act = x.bit ? `${x.before}·${x.base} mod ${n} = ${x.res}` : `giữ nguyên ${x.res}`;
+      h += `<tr${x.bit ? ' class="hit"' : ''}><td class="l">${x.i}</td><td>${x.bit}</td><td class="l">${x.base}</td><td class="l">${act}</td></tr>`;
+    });
+    return h + `</table><p class="note">${label}</p>`;
+  }
+
+  function enc(){
+    $('encOut').innerHTML = ''; $('encTbl').innerHTML = ''; $('decTbl').innerHTML = '';
+    if (!key) return msg('encMsg', 'Hãy sinh khóa ở bước 2 trước.', 'err');
+    const P = big($('P').value);
+    if (P === null) return msg('encMsg', 'P phải là số nguyên không âm.', 'err');
+    const {n, e, d} = key;
+    const E = modPow(P, e, n), D = modPow(E.res, d, n);
+    if (P >= n) msg('encMsg', `P = ${P} ≥ n = ${n}. Giải mã chỉ ra ${D.res} = P mod n, không phải P. Đây là lý do phải chia khối.`, 'err');
+    else msg('encMsg', D.res === P ? `Giải mã ra đúng P = ${P} ✓` : 'Có lỗi.', D.res === P ? 'ok' : 'err');
+    $('encOut').innerHTML = kv('Bản rõ P', P) + kv(`C = P^${e} mod ${n}`, E.res, 'pubk') + kv(`C^${d} mod ${n}`, D.res, 'privk');
+    $('encTbl').innerHTML = powTable(E.rows, n, `e = ${e} = ${e.toString(2)}₂, chỉ cần ${E.rows.length} vòng.`);
+    $('decTbl').innerHTML = powTable(D.rows, n, `d = ${d} = ${d.toString(2)}₂, chỉ cần ${D.rows.length} vòng.`);
+  }
+
+  function txt(){
+    $('txtTbl').innerHTML = '';
+    if (!key) return msg('txtMsg', 'Hãy sinh khóa ở bước 2 trước.', 'err');
+    const {n, e, d} = key;
+    const chars = Array.from($('txt').value);
+    if (!chars.length) return msg('txtMsg', 'Nhập thông điệp.', 'err');
+    let h = '<table><tr><th class="l">ký tự</th><th>P (mã)</th><th>C</th><th>Cᵈ mod n</th><th class="l">giải ra</th></tr>';
+    let bad = 0; const cs = [];
+    chars.forEach(ch => {
+      const P = BigInt(ch.codePointAt(0));
+      const C = modPow(P, e, n).res, R = modPow(C, d, n).res;
+      const ok = R === P; if (!ok) bad++;
+      cs.push(C);
+      const shown = ch === ' ' ? '␣' : ch;
+      h += `<tr${ok ? '' : ' style="color:var(--warn)"'}><td class="l">${shown}</td><td>${P}</td><td>${C}</td><td>${R}</td><td class="l">${ok ? (R === 32n ? '␣' : String.fromCodePoint(Number(R))) : '✗ sai'}</td></tr>`;
+    });
+    h += '</table>';
+    $('txtTbl').innerHTML = h;
+    if (bad) msg('txtMsg', `${bad} ký tự có mã ≥ n = ${n} nên giải mã sai. Cần n lớn hơn, hoặc chia thông điệp thành khối nhỏ hơn n.`, 'err');
+    else msg('txtMsg', `Bản mã gửi đi: <span class="mono">${cs.join(' ')}</span>`, 'ok');
+  }
+
+  document.querySelectorAll('[data-preset]').forEach(b => b.onclick = () => {
+    const [p, q, e] = b.dataset.preset.split(',');
+    $('p').value = p; $('q').value = q; $('e').value = e; gen();
+  });
+  $('genBtn').onclick = gen; $('encBtn').onclick = enc; $('txtBtn').onclick = txt;
+  gen();
+})();
+</script>
+</body>
+</html>
